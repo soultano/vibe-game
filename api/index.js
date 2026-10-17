@@ -13,7 +13,7 @@ async function getApp() {
       store,
       env: {
         ...process.env,
-        LOCAL_DEV: process.env.LOCAL_DEV ?? 'true',
+        LOCAL_DEV: false,
         APP_ORIGIN: process.env.APP_ORIGIN || '',
       },
       serveAsset: async () => new Response('Not found', { status: 404 }),
@@ -49,14 +49,12 @@ export default async function handler(req, res) {
       ...(!['GET', 'HEAD'].includes(req.method) && chunks.length ? { body: Buffer.concat(chunks) } : {}),
     });
     const response = await app.fetch(request);
-    res.writeHead(
-      response.status,
-      Object.fromEntries([...response.headers].filter(([k]) => k !== 'set-cookie'))
-    );
-    for (const value of response.headers.getSetCookie()) {
-      res.appendHeader('Set-Cookie', value);
-    }
-    res.end(Buffer.from(await response.arrayBuffer()));
+    const body = Buffer.from(await response.arrayBuffer());
+    const headers = Object.fromEntries([...response.headers].filter(([k]) => k !== 'set-cookie'));
+    const cookies = response.headers.getSetCookie();
+    if (cookies.length) headers['set-cookie'] = cookies;
+    res.writeHead(response.status, headers);
+    res.end(body);
   } catch (err) {
     console.error('Serverless error:', err);
     if (!res.headersSent) res.writeHead(500);
