@@ -2,13 +2,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/server/router.js';
 import { createLocalStore } from '../src/server/local-store.js';
+import { createNeonStore } from '../src/server/neon-store.js';
 
 let appInstance = null;
 
 async function getApp() {
   if (!appInstance) {
-    const dbPath = process.env.DATABASE_PATH || join(tmpdir(), 'vibe-game-world.sqlite');
-    const store = await createLocalStore(dbPath);
+    const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+    const store = dbUrl
+      ? await createNeonStore(dbUrl)
+      : await createLocalStore(process.env.DATABASE_PATH || join(tmpdir(), 'vibe-game-world.sqlite'));
+
     appInstance = createApp({
       store,
       env: {

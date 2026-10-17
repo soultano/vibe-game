@@ -10,3 +10,6 @@ artifacts/
 .data/
 build/assets.json
 dist/
+
+.vercel
+.env*
