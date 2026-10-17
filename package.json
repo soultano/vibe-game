@@ -6,6 +6,15 @@
   "description": "Пиксельная стратегия на карте мира",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "check:worker": "node scripts/check-worker.mjs",
+    "terrain:import": "node scripts/import-terrain.mjs"
+  },
+  "dependencies": {
+    "h3-js": "4.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }

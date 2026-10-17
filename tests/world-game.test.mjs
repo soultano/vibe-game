@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { GameEngine } from '../dist/game-engine.js';
+import { GameEngine } from '../src/client/practice-engine.js';
 
-const map = JSON.parse(readFileSync(new URL('../dist/world-mask.json', import.meta.url), 'utf8'));
+const map = JSON.parse(readFileSync(new URL('../data/world-mask.json', import.meta.url), 'utf8'));
 const create = seed => new GameEngine({ ...map, seed });
 const city = name => map.cities.find(c => c.name === name);
 

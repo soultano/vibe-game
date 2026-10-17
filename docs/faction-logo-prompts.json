@@ -1,0 +1,32 @@
+{
+  "mode": "built-in ImageGen",
+  "transparent_background": true,
+  "prompts": [
+    {
+      "id": "protocol",
+      "name": "ПРОТОКОЛ",
+      "prompt": "Use case: logo-brand. Asset type: original faction emblem for a pixel-art modern-world strategy game, one square game-ready PNG, genuinely transparent background. Style: premium tactical pixel art, deliberately stepped hard pixel edges and bold readable silhouette, limited palette, strong negative space, cohesive military-science-fiction heraldic language, crisp front view, very restrained material shading. Centered single emblem occupying about 75% of canvas, generous transparent padding. Must remain recognizable at 48 pixels. No text, no letters, no typography, no watermark, no scenery, no enclosing rectangle, no mockup. It is a symbolic logo, not a detailed environmental illustration. Faction ПРОТОКОЛ / THE PROTOCOL: autonomous drones, AI and robotic geodetic platforms. Logo: a heavy geometric ground-drill/tech anchor as central vertical mark, split mechanical arms and three tiny sensor-drone satellite nodes connected by precise circuit traces, suggesting grounded energy extraction and a coordinated network. Steel-black and luminous electric cyan with small pale highlights. Disciplined, symmetric, machine intelligence."
+    },
+    {
+      "id": "vanguard",
+      "name": "ДЕЗАНТ",
+      "prompt": "Use case: logo-brand. Asset type: original faction emblem for a pixel-art modern-world strategy game, one square game-ready PNG, genuinely transparent background. Style: premium tactical pixel art, deliberately stepped hard pixel edges and bold readable silhouette, limited palette, strong negative space, cohesive military-science-fiction heraldic language, crisp front view, very restrained material shading. Centered single emblem occupying about 75% of canvas, generous transparent padding. Must remain recognizable at 48 pixels. No text, no letters, no typography, no watermark, no scenery, no enclosing rectangle, no mockup. It is a symbolic logo, not a detailed environmental illustration. Faction ДЕЗАНТ / VANGUARD: human assault operators in exoskeletons and field engineers. Logo: a compact armored forward-post silhouette combined with an angular ballistic shield and exoskeleton visor; fortified stacked armor wings and a subtle chevron communicate defense and readiness. Gunmetal, warm sand and signal amber/orange. Strong grounded silhouette, serious contemporary expeditionary military character, no real military insignia."
+    },
+    {
+      "id": "bloom",
+      "name": "МИЦЕЛИЙ",
+      "prompt": "Use case: logo-brand. Asset type: original faction emblem for a pixel-art modern-world strategy game, one square game-ready PNG, genuinely transparent background. Style: premium tactical pixel art, deliberately stepped hard pixel edges and bold readable silhouette, limited palette, strong negative space, cohesive military-science-fiction heraldic language, crisp front view, very restrained material shading. Centered single emblem occupying about 75% of canvas, generous transparent padding. Must remain recognizable at 48 pixels. No text, no letters, no typography, no watermark, no scenery, no enclosing rectangle, no mockup. It is a symbolic logo, not a detailed environmental illustration. Faction МИЦЕЛИЙ / THE BLOOM: mutated fungi, bacterial biomass, luminous spores that digest magnetic anomalies. Logo: a central split mushroom crown and branching mycelial root neural network, forming an organic radial crest, three bright spore seeds in negative space. Deep violet and glowing magenta with bioluminescent lilac highlights. Eerie living growth, not a cute mushroom, no skull."
+    },
+    {
+      "id": "swarm",
+      "name": "ИНСЕКТА",
+      "prompt": "Use case: logo-brand. Asset type: original faction emblem for a pixel-art modern-world strategy game, one square game-ready PNG, genuinely transparent background. Style: premium tactical pixel art, deliberately stepped hard pixel edges and bold readable silhouette, limited palette, strong negative space, cohesive military-science-fiction heraldic language, crisp front view, very restrained material shading. Centered single emblem occupying about 75% of canvas, generous transparent padding. Must remain recognizable at 48 pixels. No text, no letters, no typography, no watermark, no scenery, no enclosing rectangle, no mockup. It is a symbolic logo, not a detailed environmental illustration. Faction ИНСЕКТА / THE SWARM: insectoid mutant colonies and chitinous swarms. Logo: a sharply segmented insect thorax shaped like a vertical termite cocoon, symmetrical mandibles and six angular leg/wing prongs, acidic gland-shaped negative spaces. Obsidian chitin with acidic chartreuse/lime and small pale-yellow highlights. Dense organized collective, angular compact and intimidating, clearly distinct from a fungal emblem."
+    },
+    {
+      "id": "pack",
+      "name": "СТАЯ",
+      "prompt": "Use case: logo-brand. Asset type: original faction emblem for a pixel-art modern-world strategy game, one square game-ready PNG, genuinely transparent background. Style: premium tactical pixel art, deliberately stepped hard pixel edges and bold readable silhouette, limited palette, strong negative space, cohesive military-science-fiction heraldic language, crisp front view, very restrained material shading. Centered single emblem occupying about 75% of canvas, generous transparent padding. Must remain recognizable at 48 pixels. No text, no letters, no typography, no watermark, no scenery, no enclosing rectangle, no mockup. It is a symbolic logo, not a detailed environmental illustration. Faction СТАЯ / THE PACK: modified beasts, cyber predators and symbiotes. Logo: a forward-facing stylized wolf/panther predator head with cybernetic cheek plates, three strong claw cuts below the muzzle and a compact fang silhouette, communicate close combat and fast movement. Dark graphite, cold ice-blue and silver-white highlights. Feral controlled aggression, no full animal body, distinct bold silhouette."
+    }
+  ]
+}
+
