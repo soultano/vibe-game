@@ -9,3 +9,4 @@ artifacts/
 .env.*.local
 .data/
 build/assets.json
+dist/
