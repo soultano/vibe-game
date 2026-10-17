@@ -1,8 +1,8 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist/client",
+  "framework": null,
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/(.*)", "destination": "/$1" }
+    { "source": "/api/(.*)", "destination": "/api" }
   ]
 }
