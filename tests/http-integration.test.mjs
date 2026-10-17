@@ -142,3 +142,27 @@ test('HTTP: billing portal and cancel require CSRF and use only saved private pr
   assert.equal(cancel.status, 200, JSON.stringify(cancel.data)); assert.equal(cancel.data.cancelAtPeriodEnd, true);
   assert.equal((await h.store.get(`player:${account.id}`)).value.vipUntil, h.now() + 86400000); assert.equal(calls, 2);
 });
+
+test('HTTP: abilities require a base, session and CSRF; canonical boosts and paid replay stay server-authoritative', async () => {
+  const h=harness(),payload={abilityId:'infantry',requestId:'http-ability-free-0001'};
+  assert.equal((await h.call('/api/abilities/use',{method:'POST',body:payload,authenticated:false})).status,401);
+  assert.equal((await h.call('/api/abilities/use')).status,405);
+  const account=await h.login();
+  assert.equal((await h.call('/api/abilities/use',{method:'POST',body:payload})).status,409);
+  await h.call('/api/base',{method:'POST',body:{cell:base,faction:'protocol'}});
+  assert.equal((await h.call('/api/abilities/use',{method:'POST',body:payload,token:'forged'})).status,403);
+  assert.equal((await h.call('/api/abilities/use',{method:'POST',body:payload,headers:{origin:'https://attacker.example'}})).status,403);
+  const cast=await h.call('/api/abilities/use',{method:'POST',body:{...payload,bonus:999,cooldownMs:0,durationMs:1e30,crystals:1e20,now:1e20}});
+  assert.equal(cast.status,200,JSON.stringify(cast.data));
+  const infantry=cast.data.player.abilities.find(a=>a.id==='infantry');
+  assert.equal(infantry.activeUntil-h.now(),30_000);assert.equal(infantry.readyAt-h.now(),60_000);
+  assert.equal(cast.data.player.captureMultiplier,1.25);assert.equal(cast.data.player.crystals,0);
+  assert.equal(cast.data.player.abilityReceipts,undefined);
+  assert.equal((await h.call('/api/abilities/use',{method:'POST',body:{...payload,requestId:'http-ability-free-0002'}})).status,429);
+  const paid={...payload,requestId:'http-ability-paid-0001',resetCooldown:true};
+  assert.equal((await h.call('/api/abilities/use',{method:'POST',body:paid})).status,409);
+  const row=await h.store.get('player:'+account.id);
+  await h.store.atomic({checks:[{key:'player:'+account.id,version:row.version}],puts:[{key:'player:'+account.id,value:{...row.value,crystals:3}}]});
+  const repeat=await h.call('/api/abilities/use',{method:'POST',body:paid});assert.equal(repeat.status,200);assert.equal(repeat.data.player.crystals,1);
+  const duplicate=await h.call('/api/abilities/use',{method:'POST',body:paid});assert.equal(duplicate.status,200);assert.equal(duplicate.data.player.crystals,1);
+});

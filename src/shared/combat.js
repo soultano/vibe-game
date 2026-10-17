@@ -1,10 +1,10 @@
 import { CONFIG, getFaction } from './config.js';
 import { deriveLevel, powerAt, projectTerritory, captureArrivalTime } from './economy.js';
 import { terrainForCell } from './geography.js';
+import { abilityBoundaryTimes, captureMultiplierAt } from './abilities.js';
 
 const HOUR = 3_600_000;
 const EPS_TIME = 0.0001;
-const EPS_PRESSURE = 1e-10;
 const pairId = (a, b) => [a, b].sort().join(':');
 const edgeId = (a, b) => [a, b].sort().join(':');
 const entries = (value) => value instanceof Map ? value : new Map(Object.entries(value ?? {}));
@@ -47,6 +47,7 @@ export async function resolveCombat({ players, now, initialPlayers, captures, re
       terrainAverage: start.energyTerrainAverage ?? start.terrainAverage ?? 1, availableAt: at,
       growthPixels: (start.energyPixels ?? start.pixels) + (start.growthRemainder ?? 0), growthBlocked: false });
     for (const event of timeline) if (event.at > at && event.at <= now) external.push({ ...event, id: player.id, kind: 'level' });
+    for (const boundary of abilityBoundaryTimes(start, at, now)) external.push({ at: boundary, id: player.id, kind: 'ability' });
     // Snapshot this ledger: combat appends to it below but applies those deltas
     // immediately, so they must not be processed as external events a second time.
     for (const event of [...(ledgers.get(player.id) ?? [])]) {
@@ -132,7 +133,8 @@ export async function resolveCombat({ players, now, initialPlayers, captures, re
     const totals = new Map();
     for (const edge of result) totals.set(edge.attacker.id, (totals.get(edge.attacker.id) ?? 0) + edge.rate);
     for (const edge of result) {
-      const maximum = deriveLevel(edge.attacker.level, edge.attacker.faction).capturePerHour * captureShare;
+      const maximum = deriveLevel(edge.attacker.level, edge.attacker.faction).capturePerHour
+        * captureMultiplierAt(edge.attacker, cursor) * captureShare;
       const total = totals.get(edge.attacker.id);
       if (total > maximum) edge.rate *= maximum / total;
     }
@@ -154,7 +156,7 @@ export async function resolveCombat({ players, now, initialPlayers, captures, re
     if (growth?.claim) for (const player of frames.values()) {
       if (player.growthBlocked || player.availableAt > cursor + EPS_TIME) continue;
       const at = captureArrivalTime({ pixels: player.growthPixels, tLast: cursor,
-        level: player.level, faction: player.faction }, Math.floor(player.pixels) + 1);
+        level: player.level, faction: player.faction, abilities: player.abilities }, Math.floor(player.pixels) + 1);
       if (at <= now + EPS_TIME && (at < next - EPS_TIME || Math.abs(at - next) <= EPS_TIME
         && (!expansion || player.id.localeCompare(expansion.player.id) < 0))) {
         next = Math.min(now, at); expansion = { player, at };
@@ -173,7 +175,8 @@ export async function resolveCombat({ players, now, initialPlayers, captures, re
     if (growth?.claim) for (const player of frames.values()) {
       if (player.availableAt > next || player.growthBlocked) continue;
       player.growthPixels = projectTerritory({ pixels: player.growthPixels,
-        tLast: Math.max(cursor, player.availableAt), level: player.level, faction: player.faction }, next);
+        tLast: Math.max(cursor, player.availableAt), level: player.level, faction: player.faction,
+        abilities: player.abilities }, next);
     }
     cursor = next;
     // External mutations win exact-time ties. Recompute the crossing using the
@@ -201,7 +204,10 @@ export async function resolveCombat({ players, now, initialPlayers, captures, re
       }
       continue;
     }
-    if (crossing && crossing.pressure.value >= 1 - EPS_PRESSURE) {
+    // The inverse rate selected this crossing at `cursor`. Unix timestamps
+    // cannot represent every sub-millisecond remainder, so checking the
+    // re-integrated pressure against 1 again can stall at the same timestamp.
+    if (crossing) {
       if (await readOwner(crossing.target) === crossing.defender.id) {
         const terrain = await terrainAt(crossing.target);
         const multiplier = typeof terrain === 'number' ? terrain : terrain?.multiplier ?? 1;

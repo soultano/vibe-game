@@ -76,6 +76,7 @@ async function checkWorker() {
       assert.equal(response.status, 200, path); assert.equal(response.headers.get('content-type'), 'image/png');
       assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(join(project, 'src/client', path)), `embedded ${id}.png must exactly match the source`);
     }
+    for (const id of factionIds) { const response=await call(`/assets/headquarters/${id}.png`);assert.equal(response.status,302);assert.equal(response.headers.get('location'),`https://raw.githubusercontent.com/soultano/vibe-game/main/src/client/assets/headquarters/${id}.png`); }
     const config = await (await call('/api/config')).json();
     assert.equal(config.cellResolution, 8); assert.equal(config.tileResolution, 5);
     assert.deepEqual(config.factions.map(faction => faction.id), factionIds);

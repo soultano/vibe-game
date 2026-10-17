@@ -14,6 +14,7 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
     ['/api/abandon',(id,body)=>service.abandon(id,body)],
     ['/api/daily/claim',id=>service.claimDaily(id)],
     ['/api/crystals/spend',(id,body)=>service.spendCrystals(id,body)],
+    ['/api/abilities/use',(id,body)=>service.useAbility(id,body)],
   ]);
   return {
     service,

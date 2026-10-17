@@ -10,7 +10,11 @@ await cp('src/client/index.html','dist/client/index.html');await cp('src/client/
 await build({entryPoints:['src/client/main.js'],outfile:'dist/client/main.js',bundle:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'none'});
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.svg':'image/svg+xml'};
 const assets={};
-async function walk(dir,prefix=''){for(const name of await readdir(dir)){const p=dir+'/'+name,key=prefix+'/'+name;if((await stat(p)).isDirectory())await walk(p,key);else {const bytes=await readFile(p);assets[key]={type:types[extname(name)]||'application/octet-stream',body:bytes.toString('base64'),etag:'"'+createHash('sha256').update(bytes).digest('hex').slice(0,24)+'"'};}}}
+async function walk(dir,prefix=''){for(const name of await readdir(dir)){const p=dir+'/'+name,key=prefix+'/'+name;if((await stat(p)).isDirectory())await walk(p,key);else {const bytes=await readFile(p);const etag='"'+createHash('sha256').update(bytes).digest('hex').slice(0,24)+'"';
+// Original HQ artwork stays in the public source repository. Keep large sprites
+// outside the Worker script; local development serves the same source files.
+if(key.startsWith('/assets/headquarters/'))assets[key]={type:types[extname(name)],etag,redirect:'https://raw.githubusercontent.com/soultano/vibe-game/main/src/client'+key};
+else assets[key]={type:types[extname(name)]||'application/octet-stream',body:bytes.toString('base64'),etag};}}}
 await walk('dist/client');await writeFile('build/assets.json',JSON.stringify(assets));
 await build({entryPoints:['src/server/worker.js'],outfile:'dist/server/index.js',bundle:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'none'});
 await cp('.openai/hosting.json','dist/.openai/hosting.json');await cp('drizzle','dist/.openai/drizzle',{recursive:true});

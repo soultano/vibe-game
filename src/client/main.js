@@ -3,12 +3,16 @@ import { CONFIG, FACTIONS, getFaction } from "../shared/config.js";
 import { decodeTile, cellIsLand } from "../shared/geography.js";
 import worldMask from "../../data/world-mask.json";
 import { skipCost } from "../shared/economy.js";
+import { ABILITIES, factionAbilityName } from "../shared/abilities.js";
+import { headquartersFor } from "../shared/headquarters.js";
 const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), ctx = canvas.getContext("2d", { alpha: false });
 const nf = new Intl.NumberFormat("ru-RU"), fmt = (n) => nf.format(Math.floor(Number(n) || 0)), escape = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 let account = null, csrfToken = "", providers = {}, model = null, leaderboard = [], selectedFaction = "protocol", placing = false, selecting = false, selectedCells = /* @__PURE__ */ new Set();
 let cw = 0, ch = 0, dpr = 1, zoom = 1, panX = 0, panY = 0, drag = null, moved = false, mouse = null, serverOffset = 0, tilesBusy = false, pollBusy = false, connectionErrors = 0;
 let lastRender = 0, lastDetails = 0, dirty = true, toastTimer, sound = false, audio, autoCentered = false, stopped = false, authGeneration = 0, deviceFingerprintSeed = "", activePanel = null, welcomeDismissed = false;
 const profiles = /* @__PURE__ */ new Map(), tileCache = /* @__PURE__ */ new Map(), cellCache = /* @__PURE__ */ new Map(), boundaryCache = /* @__PURE__ */ new Map(), effects = [], events = [], seenEvents = /* @__PURE__ */ new Set(), emblems = /* @__PURE__ */ new Map();
+const headquartersImages = /* @__PURE__ */ new Map(), abilityBursts = [], pointers = /* @__PURE__ */ new Map();
+let abilityBusy = null, pendingAbilityReset = null, pinch = null, gestureMoved = false;
 const terrain = document.createElement("canvas");
 terrain.width = 360;
 terrain.height = 180;
@@ -23,6 +27,10 @@ for (const f of FACTIONS) {
   image.src = f.logo;
   image.onload = () => dirty = true;
   emblems.set(f.id, image);
+}
+function headquartersSprite(faction) {
+  if(!headquartersImages.has(faction)){const image=new Image();image.src=headquartersFor(faction).sprite;image.onload=()=>dirty=true;headquartersImages.set(faction,image);}
+  return headquartersImages.get(faction);
 }
 function mapColor(faction) {
   return { protocol: "#649eac", vanguard: "#d4a16e", bloom: "#aa8dbc", swarm: "#95b66f", pack: "#85a7be" }[faction] || "#a2ad9d";
@@ -42,6 +50,10 @@ function openPanel(name) {
   closePanels();
   closeAccount();
   if (wasOpen) return;
+  if (account && !model?.player) {
+    $("spawnCard").hidden = placing;
+    return;
+  }
   if (placing) {
     placing = false;
     $("placementHint").hidden = true;
@@ -162,8 +174,11 @@ function renderFactions() {
   updateFaction();
 }
 function updateFaction() {
-  const f = getFaction(selectedFaction);
-  $("factionDescription").innerHTML = `<strong>${escape(f.description)}</strong>${escape(f.bonus)}`;
+  const f = getFaction(selectedFaction), hq = headquartersFor(selectedFaction);
+  $("headquartersPreview").src = hq.sprite;
+  $("headquartersPreview").alt = hq.name;
+  $("headquartersName").textContent = hq.name;
+  $("factionDescription").innerHTML = `<strong>${escape(f.name)}</strong>${escape(f.bonus)}`;
   document.querySelectorAll("[data-faction]").forEach((b) => {
     const selected = b.dataset.faction === selectedFaction;
     b.classList.toggle("selected", selected);
@@ -181,6 +196,12 @@ function resetWorldState() {
   cellCache.clear();
   profiles.clear();
   effects.length = 0;
+  abilityBursts.length = 0;
+  pointers.clear();
+  pinch = null;
+  abilityBusy = null;
+  pendingAbilityReset = null;
+  $("abilityDialog").close();
   events.length = 0;
   seenEvents.clear();
   $("eventLog").innerHTML = '<p class="empty-state">Здесь появятся события вашей базы.</p>';
@@ -272,7 +293,7 @@ function acceptModel(next) {
   }
   if (next.player?.expansionBlocked) appendEvent("В направлении захвата не осталось свободной суши.", "blocked");
   $("authCard").hidden = !!account || welcomeDismissed;
-  $("spawnCard").hidden = !account || !!next.player || placing || welcomeDismissed;
+  $("spawnCard").hidden = !account || !!next.player || placing;
   if (next.player && (!prior || prior.azimuth !== next.player.azimuth)) $("azimuth").value = next.player.azimuth;
   if (next.player && !autoCentered) {
     autoCentered = true;
@@ -318,6 +339,10 @@ async function refreshLeaderboard() {
 function updateUI() {
   const p = model?.player, now = serverNow(), f = getFaction(p?.faction || selectedFaction);
   $("resourceBar").hidden = !p;
+  $("gameNav").hidden = !p;
+  $("abilityBar").hidden = !p;
+  $("gameRoot").classList.toggle("has-base", !!p);
+  updateAbilities();
   $("profileName").textContent = account?.name?.split(" ")[0] || "Войти";
   $("accountName").textContent = account?.name || "Командир";
   $("commanderName").textContent = p?.name || account?.name || "Командир";
@@ -575,23 +600,27 @@ function draw(now) {
     if (!p.baseCell) continue;
     const [lat, lng] = cellToLatLng(p.baseCell), pos = project(lat, lng);
     if (pos.x < -45 || pos.x > cw + 45 || pos.y < -45 || pos.y > ch + 45) continue;
-    const own = p.id === account?.id, r = own ? 20 : 16, color = mapColor(p.faction);
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, r + 3, 0, Math.PI * 2);
-    ctx.fillStyle = "#334a3412";
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = "#fffefa";
-    ctx.fill();
-    ctx.strokeStyle = own ? "#799b6e" : color + "55";
-    ctx.lineWidth = own ? 2 : 1;
-    ctx.stroke();
-    const emblem = emblems.get(p.faction);
-    if (emblem?.complete && emblem.naturalWidth) ctx.drawImage(emblem, pos.x - r + 3, pos.y - r + 3, r * 2 - 6, r * 2 - 6);
-    else {
-      ctx.fillStyle = color;
-      ctx.fillRect(pos.x - 3, pos.y - 3, 6, 6);
+    const own = p.id === account?.id, color = mapColor(p.faction), sprite = headquartersSprite(p.faction), size = own ? 78 : 60;
+    let labelY = pos.y + 42;
+    if (zoom >= 64 && sprite?.complete && sprite.naturalWidth) {
+      ctx.fillStyle = "#536c591a";
+      ctx.beginPath();
+      ctx.ellipse(pos.x, pos.y + 18, size * 0.38, size * 0.13, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.drawImage(sprite, pos.x - size / 2, pos.y - size * 0.77, size, size);
+      labelY = pos.y + 42;
+    } else {
+      const r = own ? 18 : 14;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#fffefa";
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = own ? 2 : 1;
+      ctx.stroke();
+      const emblem = emblems.get(p.faction);
+      if (emblem?.complete && emblem.naturalWidth) ctx.drawImage(emblem, pos.x - r + 3, pos.y - r + 3, r * 2 - 6, r * 2 - 6);
+      labelY = pos.y + r + 24;
     }
     if (own) {
       const label = `${p.name} · ${p.level} ур.`;
@@ -599,11 +628,11 @@ function draw(now) {
       const width = ctx.measureText(label).width + 18;
       ctx.fillStyle = "#fffefaed";
       ctx.beginPath();
-      ctx.roundRect(pos.x - width / 2, pos.y + r + 8, width, 24, 8);
+      ctx.roundRect(pos.x - width / 2, labelY - 16, width, 24, 8);
       ctx.fill();
       ctx.textAlign = "center";
       ctx.fillStyle = "#59724f";
-      ctx.fillText(label, pos.x, pos.y + r + 24);
+      ctx.fillText(label, pos.x, labelY);
       ctx.textAlign = "left";
     }
   }
@@ -623,11 +652,19 @@ function draw(now) {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+  drawAbilityBursts(now);
   if (mouse && placing && zoom >= 256) {
     const p = atPoint(mouse.x, mouse.y), cell = latLngToCell(p.lat, p.lng, 8);
     cellPath(cell);
     ctx.fillStyle = cellIsLand(cell) ? "#6c9c7477" : "#c8847155";
     ctx.fill();
+    const sprite = headquartersSprite(selectedFaction);
+    if (sprite?.complete && sprite.naturalWidth) {
+      const at = project(...cellToLatLng(cell));
+      ctx.globalAlpha = 0.75;
+      ctx.drawImage(sprite, at.x - 35, at.y - 54, 70, 70);
+      ctx.globalAlpha = 1;
+    }
   }
 }
 async function refreshTiles() {
@@ -687,10 +724,35 @@ function beginPlacement() {
 }
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
-  drag = { x: e.clientX, y: e.clientY, panX, panY };
-  moved = false;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1) {
+    drag = { x: e.clientX, y: e.clientY, panX, panY };
+    moved = false;
+    gestureMoved = false;
+    pinch = null;
+  }
+  if (pointers.size >= 2) {
+    const [a, b] = [...pointers.values()], rect = canvas.getBoundingClientRect(), x = (a.x + b.x) / 2 - rect.left, y = (a.y + b.y) / 2 - rect.top;
+    pinch = { distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), zoom, world: atPoint(x, y) };
+    drag = null;
+    moved = true;
+    gestureMoved = true;
+  }
 });
 canvas.addEventListener("pointermove", (e) => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()], rect = canvas.getBoundingClientRect(), x = (a.x + b.x) / 2 - rect.left, y = (a.y + b.y) / 2 - rect.top;
+    zoom = Math.max(1, Math.min(8192, pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance));
+    const anchor = project(pinch.world.lat, pinch.world.lng);
+    panX += x - anchor.x;
+    panY += y - anchor.y;
+    clampPan();
+    dirty = true;
+    lastDetails = 0;
+    $("mapTooltip").hidden = true;
+    return;
+  }
   if (drag) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (Math.hypot(dx, dy) > 5) moved = true;
@@ -706,7 +768,7 @@ canvas.addEventListener("pointermove", (e) => {
   }
   mouse = pointFor(e);
   const p = atPoint(mouse.x, mouse.y);
-  if (zoom >= 256) {
+  if (zoom >= 256 && !placing) {
     const cell = latLngToCell(p.lat, p.lng, 8), owner = ownerCells().get(cell), known = playerById(owner);
     $("mapTooltip").textContent = known ? `${known.name} · ${getFaction(known.faction).name}` : owner ? "Занятая ячейка" : cellIsLand(cell) ? "Свободная ячейка" : "Вода";
     $("mapTooltip").style.left = `${Math.max(8, Math.min(cw - 225, mouse.x + 12))}px`;
@@ -716,14 +778,26 @@ canvas.addEventListener("pointermove", (e) => {
   dirty = true;
 });
 canvas.addEventListener("pointerup", async (e) => {
-  const didMove = moved;
+  const didMove = moved || gestureMoved;
+  pointers.delete(e.pointerId);
+  pinch = null;
   drag = null;
+  if (pointers.size) {
+    const remaining = [...pointers.values()][0];
+    drag = { x: remaining.x, y: remaining.y, panX, panY };
+    moved = true;
+    return;
+  }
   if (didMove) {
     refreshTiles();
     return;
   }
   const point = pointFor(e), p = atPoint(point.x, point.y), cell = latLngToCell(p.lat, p.lng, 8);
   if (placing) {
+    if (zoom < 256) {
+      focusAt(p.lat, p.lng, 384);
+      return;
+    }
     const result = await action("/api/base", { cell, azimuth: Number($("startAzimuth").value), faction: selectedFaction, name: account.name }, "База основана. Сектор активирован.");
     if (result) {
       placing = false;
@@ -748,7 +822,13 @@ canvas.addEventListener("pointerleave", () => {
   mouse = null;
   $("mapTooltip").hidden = true;
 });
-canvas.addEventListener("pointercancel", () => drag = null);
+canvas.addEventListener("pointercancel", () => {
+  pointers.clear();
+  pinch = null;
+  drag = null;
+  moved = true;
+  gestureMoved = true;
+});
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   const p = pointFor(e);
@@ -830,9 +910,6 @@ $("skipBtn").onclick = () => action("/api/crystals/spend", { kind: "skip" }, "С
 $("azimuth").oninput = () => {
   $("azimuthValue").textContent = `${$("azimuth").value}°`;
 };
-$("startAzimuth").oninput = () => {
-  $("startBearing").textContent = `${$("startAzimuth").value}°`;
-};
 $("rotateBtn").onclick = () => action("/api/azimuth", { azimuth: Number($("azimuth").value) }, "Сектор повёрнут.");
 $("dailyBtn").onclick = () => action("/api/daily/claim", {}, "Получено 40 кристаллов.");
 $("energyBtn").onclick = () => action("/api/crystals/spend", { kind: "energy", crystals: 10 }, "Заряд добавлен на склад.");
@@ -887,6 +964,108 @@ $("confirmCancelBilling").onclick = async () => {
     await refreshState();
   }
 };
+function abilityTime(ms) {
+  const seconds = Math.max(0, Math.ceil(ms / 1e3));
+  if (seconds >= 3600) return `${Math.floor(seconds / 3600)} ч${Math.floor(seconds % 3600 / 60) ? " " + Math.floor(seconds % 3600 / 60) + " м" : ""}`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+function effectTime(ms) {
+  return ms < 6e4 ? `${ms / 1e3} с` : duration(ms);
+}
+function abilityState(id) {
+  return model?.player?.abilities?.find?.((ability) => ability.id === id) || ABILITIES.find((ability) => ability.id === id);
+}
+function renderAbilities() {
+  const labels = { infantry: "Пехота", field: "Поле", heavy: "Техника", ultimate: "Ульта" };
+  $("abilityBar").innerHTML = ABILITIES.map((a) => `<button id="ability-${a.id}" class="ability-button" data-ability="${a.id}"><span class="ability-icon"><svg><use href="#i-${a.id === "infantry" ? "infantry" : a.id}"/></svg></span><span class="ability-label">${labels[a.id]}</span><span class="ability-state" id="ability-state-${a.id}">Готово</span></button>`).join("");
+}
+function updateAbilities() {
+  const p = model?.player, now = serverNow();
+  for (const definition of ABILITIES) {
+    const state = abilityState(definition.id), button = $(`ability-${definition.id}`), label = $(`ability-state-${definition.id}`);
+    if (!button) continue;
+    const active = (state?.activeUntil || 0) > now, cooling = (state?.readyAt || 0) > now;
+    button.disabled = !p || !!abilityBusy;
+    button.classList.toggle("active", active);
+    button.classList.toggle("cooling", cooling && !active);
+    button.classList.toggle("ready", !cooling);
+    label.textContent = abilityBusy === definition.id ? "…" : active ? `+${definition.bonus * 100}% · ${abilityTime(state.activeUntil - now)}` : cooling ? abilityTime(state.readyAt - now) : `+${definition.bonus * 100}%`;
+    const name = factionAbilityName(p?.faction || selectedFaction, definition.id);
+    button.title = `${name} · +${definition.bonus * 100}% к захвату на ${effectTime(definition.durationMs)}`;
+    button.setAttribute("aria-label", `${name}. ${label.textContent}${cooling ? ". Повторить за " + definition.resetCrystalCost + " кристаллов" : ". Запустить"}`);
+  }
+  if (pendingAbilityReset && $("abilityDialog").open) {
+    const state = abilityState(pendingAbilityReset), definition = ABILITIES.find((a) => a.id === pendingAbilityReset), price = (state?.readyAt || 0) > now ? definition.resetCrystalCost : 0;
+    $("confirmAbilityReset").disabled = !!abilityBusy || !p || p.crystals < price;
+    $("confirmAbilityReset").textContent = price ? `Запустить за ${price} ◇` : "Запустить бесплатно";
+    $("abilityShopBtn").hidden = !p || p.crystals >= price;
+  }
+}
+async function useAbility(id, resetCooldown = false) {
+  if (!model?.player || abilityBusy) return;
+  const state = abilityState(id), definition = ABILITIES.find((a) => a.id === id);
+  if (!definition) return;
+  if ((state?.readyAt || 0) > serverNow() && !resetCooldown) {
+    pendingAbilityReset = id;
+    $("abilityDialogTitle").textContent = factionAbilityName(model.player.faction, id);
+    $("abilityDialogEffect").textContent = `+${definition.bonus * 100}% к скорости захвата на ${effectTime(definition.durationMs)}.`;
+    $("abilityDialogNote").textContent = (state.activeUntil || 0) > serverNow() ? "Повтор обновит длительность текущего эффекта. Его сила не складывается с предыдущим запуском." : "Сбросьте ожидание и запустите способность снова.";
+    $("abilityDialog").showModal();
+    updateAbilities();
+    return;
+  }
+  abilityBusy = id;
+  updateAbilities();
+  try {
+    const result = await action("/api/abilities/use", { abilityId: id, resetCooldown, requestId: crypto.randomUUID() }, `${factionAbilityName(model.player.faction, id)}: захват +${definition.bonus * 100}%.`);
+    if (result) {
+      if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) abilityBursts.push({ id, at: performance.now(), cell: result.player.baseCell, faction: result.player.faction, azimuth: result.player.azimuth });
+      dirty = true;
+      pendingAbilityReset = null;
+      $("abilityDialog").close();
+    }
+  } finally {
+    abilityBusy = null;
+    updateAbilities();
+  }
+}
+function drawAbilityBursts(now) {
+  for (let i = abilityBursts.length - 1; i >= 0; i--) {
+    const burst = abilityBursts[i], age = (now - burst.at) / 1800;
+    if (age >= 1) {
+      abilityBursts.splice(i, 1);
+      continue;
+    }
+    const at = project(...cellToLatLng(burst.cell));
+    if (at.x < -100 || at.x > cw + 100 || at.y < -100 || at.y > ch + 100) continue;
+    ctx.globalAlpha = (1 - age) * 0.65;
+    ctx.strokeStyle = ctx.fillStyle = mapColor(burst.faction);
+    ctx.lineWidth = burst.id === "ultimate" ? 2 : 1;
+    if (burst.id === "field" || burst.id === "ultimate") {
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, 12 + age * (burst.id === "ultimate" ? 100 : 65), 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      const angle = (burst.azimuth - 90) * Math.PI / 180;
+      for (let unit = 0; unit < (burst.id === "heavy" ? 1 : 3); unit++) {
+        const t = age * 85 + unit * 8, x = at.x + Math.cos(angle) * t + Math.sin(angle) * (unit - 1) * 6, y = at.y + Math.sin(angle) * t - Math.cos(angle) * (unit - 1) * 6, size = burst.id === "heavy" ? 6 : 3;
+        ctx.fillRect(x - size / 2, y - size / 2, size, size);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+$("abilityBar").onclick = (e) => {
+  const button = e.target.closest("[data-ability]");
+  if (button) return useAbility(button.dataset.ability);
+};
+$("confirmAbilityReset").onclick = () => {
+  if (pendingAbilityReset) return useAbility(pendingAbilityReset, true);
+};
+$("abilityShopBtn").onclick = () => {
+  $("abilityDialog").close();
+  return openShop().catch((e) => toast(e.message, true));
+};
 for (const button of document.querySelectorAll("[data-open]")) button.onclick = () => openPanel(button.dataset.open);
 for (const button of document.querySelectorAll("[data-panel-close]")) button.onclick = closePanels;
 for (const button of document.querySelectorAll("[data-dismiss]")) button.onclick = () => {
@@ -899,10 +1078,10 @@ $("profileButton").onclick = () => {
     return;
   }
   const wasOpen = !$("accountPanel").hidden;
-  welcomeDismissed = true;
+  welcomeDismissed = !!model?.player;
   closePanels();
   $("authCard").hidden = true;
-  $("spawnCard").hidden = true;
+  $("spawnCard").hidden = !!model?.player || placing;
   $("accountPanel").hidden = wasOpen;
   $("profileButton").setAttribute("aria-expanded", String(!wasOpen));
 };
@@ -941,7 +1120,7 @@ document.addEventListener("visibilitychange", () => {
 });
 new ResizeObserver(fit).observe($("mapViewport"));
 function frame(now) {
-  if (now - lastRender > 32 && (dirty || effects.length)) {
+  if (now - lastRender > 32 && (dirty || effects.length || abilityBursts.length)) {
     draw(now);
     lastRender = now;
     dirty = false;
@@ -950,6 +1129,7 @@ function frame(now) {
 }
 async function init() {
   renderFactions();
+  renderAbilities();
   fit();
   updateUI();
   requestAnimationFrame(frame);

@@ -22,11 +22,15 @@
   <symbol id="i-crystal" viewBox="0 0 24 24"><path d="m7 3-5 7 10 12 10-12-5-7H7ZM2 10h20M7 3l5 19 5-19"/></symbol>
   <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c6 5 6 13 0 18-6-5-6-13 0-18Z"/></symbol>
+  <symbol id="i-infantry" viewBox="0 0 24 24"><circle cx="9" cy="7" r="3"/><path d="M3 20v-3a6 6 0 0 1 12 0v3m1-16a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v2"/></symbol>
+  <symbol id="i-field" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14M8 8a6 6 0 0 0 0 8m8-8a6 6 0 0 1 0 8"/></symbol>
+  <symbol id="i-heavy" viewBox="0 0 24 24"><path d="M3 14h18v6H3zM6 14l2-6h8l3 6M13 8V5h8M7 17h10"/></symbol>
+  <symbol id="i-ultimate" viewBox="0 0 24 24"><path d="m12 2 3 6 7 1-5 5 1 8-6-4-6 4 1-8-5-5 7-1 3-6Z"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
   <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></symbol>
   <symbol id="i-telegram" viewBox="0 0 24 24"><path d="m3 10 18-7-4 18-6-6-4 3 1-6 10-6-7 9"/></symbol>
 </defs></svg>
-<main class="game" aria-label="Pixel Dominion">
+<main class="game" id="gameRoot" aria-label="Pixel Dominion">
   <section class="map-viewport" id="mapViewport" aria-label="Карта мира">
     <canvas id="worldCanvas" tabindex="0" aria-label="Карта мира: перетаскивайте для перемещения и меняйте масштаб кнопками"></canvas>
     <div class="map-tooltip" id="mapTooltip" hidden></div>
@@ -61,13 +65,14 @@
   </section>
 
   <section class="floating-card welcome-card" id="spawnCard" aria-labelledby="spawnTitle" hidden>
-    <button class="close-button" data-dismiss="spawnCard" aria-label="Свернуть выбор фракции"><svg><use href="#i-close"/></svg></button>
-    <span class="eyebrow">Ваша история начинается здесь</span>
-    <h2 id="spawnTitle">Выберите фракцию</h2>
+    <span class="eyebrow">Первый шаг</span>
+    <h2 id="spawnTitle">Ваша главная база</h2>
+    <p class="card-description onboarding-copy">Выберите фракцию и место на карте.</p>
+    <div class="headquarters-preview"><img id="headquartersPreview" src="/assets/headquarters/protocol.png" alt="Геоузел Протокола"><h3 id="headquartersName">Геоузел Протокола</h3></div>
     <div class="faction-picker" id="factionPicker"></div>
     <div class="faction-description" id="factionDescription"></div>
-    <details class="simple-details"><summary>Направление захвата <b id="startBearing">0°</b></summary><input id="startAzimuth" type="range" min="0" max="359" value="0" aria-label="Направление первого захвата"></details>
-    <button id="startBtn" class="primary-button">Выбрать место на карте <span>↗</span></button>
+    <input id="startAzimuth" type="hidden" value="0">
+    <button id="startBtn" class="primary-button">Разместить базу <span>↗</span></button>
   </section>
 
   <section class="floating-card game-panel" data-panel="base" id="basePanel" aria-labelledby="baseTitle" hidden>
@@ -103,7 +108,8 @@
   <div class="placement-hint surface" id="placementHint" hidden><span>Нажмите на свободную ячейку</span><button id="cancelPlacement" aria-label="Отменить выбор места"><svg><use href="#i-close"/></svg></button></div>
   <div class="selection-bar surface" id="selectionBar" hidden><span>Выбрано <b id="selectedCount">0</b></span><button id="abandonBtn" class="primary-button" disabled>Освободить</button><button id="cancelSelection" class="close-button" aria-label="Отменить выделение"><svg><use href="#i-close"/></svg></button></div>
 
-  <nav class="map-dock surface" aria-label="Управление игрой">
+  <div id="abilityBar" class="ability-bar surface" aria-label="Ускорить захват" hidden></div>
+  <nav class="map-dock surface" id="gameNav" aria-label="Управление игрой" hidden>
     <button data-open="base" aria-controls="basePanel" aria-expanded="false"><svg><use href="#i-base"/></svg><span>База</span><i id="buildDot" class="notification-dot" hidden></i></button>
     <button data-open="sector" id="sectorNav" aria-controls="sectorPanel" aria-expanded="false" disabled><svg><use href="#i-sector"/></svg><span>Сектор</span></button>
     <button data-open="rewards" id="rewardsNav" aria-controls="rewardsPanel" aria-expanded="false" disabled><svg><use href="#i-gift"/></svg><span>Награды</span><i id="rewardDot" class="notification-dot" hidden></i></button>
@@ -113,6 +119,7 @@
   <div class="map-tools"><button class="surface home-button" id="homeBtn" aria-label="К моей базе" title="К моей базе"><svg><use href="#i-target"/></svg></button><div class="zoom-controls surface"><button id="zoomIn" aria-label="Приблизить карту">+</button><button id="zoomOut" aria-label="Отдалить карту">−</button></div><button class="surface globe-button" id="zoomReset" aria-label="Показать весь мир" title="Весь мир"><svg><use href="#i-globe"/></svg></button></div>
 </main>
 
+<dialog id="abilityDialog"><button class="close-button" data-close="abilityDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button><span class="eyebrow">Ускорение захвата</span><h2 id="abilityDialogTitle">Запустить снова?</h2><p class="card-description" id="abilityDialogEffect"></p><p class="card-description" id="abilityDialogNote"></p><button id="confirmAbilityReset" class="primary-button">Запустить</button><button id="abilityShopBtn" class="secondary-button" hidden>Получить кристаллы</button></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <dialog id="helpDialog"><button class="close-button" data-close="helpDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button><span class="eyebrow">Немного о мире</span><h2>Начните с одной базы</h2><div class="help-steps"><p><b>Выберите свою сторону</b>Войдите через Telegram, выберите фракцию и поставьте базу на свободной суше вокруг Ташкента.</p><p><b>Наблюдайте за ростом</b>База сама захватывает соседние ячейки в выбранном направлении. Территория приносит энергию даже пока вы не играете.</p><p><b>Развивайте базу</b>Вкладывайте энергию в новый уровень. Он расширяет сектор и ускоряет захват. Проект можно оплачивать частями.</p><p><b>Удерживайте границу</b>Когда территории встречаются, начинается борьба. Силу определяют уровень базы, размер территории и ваша фракция.</p></div><button class="primary-button" data-close="helpDialog">Начать играть</button></dialog>
 <dialog id="factionsDialog" class="factions-dialog"><button class="close-button" data-close="factionsDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button><span class="eyebrow">Разные силы. Один мир.</span><h2>На чьей вы стороне?</h2><div id="factionAtlas" class="faction-atlas"></div></dialog>

@@ -1,0 +1,31 @@
+{
+  "mode": "built-in image_gen",
+  "purpose": "Faction headquarters sprites",
+  "prompts": [
+    {
+      "id": "protocol",
+      "name": "ПРОТОКОЛ",
+      "prompt": "Use case: stylized-concept. Asset type: single transparent game headquarters sprite for a light pixel-art world map. Subject: an automated robotic headquarters: ivory armored central geodrill tower, cyan energy core, four compact relay pylons, two tiny docked survey drones, neat mechanical foundation. Style: refined isometric pixel art, coherent 128-pixel sprite enlarged with crisp square pixels, 3/4 overhead orthographic view, charming readable game architecture. Exactly ONE distinct headquarters building on a small hexagonal platform. Whole base fits comfortably inside a square canvas with 12% empty margins. Restrained muted palette and a clear readable silhouette at 64px UI size. Clean solid pixel shading, daylight from upper left, compact silhouette, no wisps or particles outside its platform. Truly transparent background, no scenery, no text, no logo, no frame, no UI, no watermark. Faction: ПРОТОКОЛ."
+    },
+    {
+      "id": "vanguard",
+      "name": "ДЕЗАНТ",
+      "prompt": "Use case: stylized-concept. Asset type: single transparent game headquarters sprite for a light pixel-art world map. Subject: a human military headquarters: sand colored armored command bunker, compact field containers, amber antenna mast, reinforced low barricades, one exosuit sentinel on the foundation. Style: refined isometric pixel art, coherent 128-pixel sprite enlarged with crisp square pixels, 3/4 overhead orthographic view, charming readable game architecture. Exactly ONE distinct headquarters building on a small hexagonal platform. Whole base fits comfortably inside a square canvas with 12% empty margins. Restrained muted palette and a clear readable silhouette at 64px UI size. Clean solid pixel shading, daylight from upper left, compact silhouette, no wisps or particles outside its platform. Truly transparent background, no scenery, no text, no logo, no frame, no UI, no watermark. Faction: ДЕЗАНТ."
+    },
+    {
+      "id": "bloom",
+      "name": "МИЦЕЛИЙ",
+      "prompt": "Use case: stylized-concept. Asset type: single transparent game headquarters sprite for a light pixel-art world map. Subject: an organic mycelium headquarters: a large purple mushroom command cap with glowing lilac gills, intertwined ivory roots, three smaller bioluminescent mushrooms, a compact living rhizome foundation. Style: refined isometric pixel art, coherent 128-pixel sprite enlarged with crisp square pixels, 3/4 overhead orthographic view, charming readable game architecture. Exactly ONE distinct headquarters building on a small hexagonal platform. Whole base fits comfortably inside a square canvas with 12% empty margins. Restrained muted palette and a clear readable silhouette at 64px UI size. Clean solid pixel shading, daylight from upper left, compact silhouette, no wisps or particles outside its platform. Truly transparent background, no scenery, no text, no logo, no frame, no UI, no watermark. Faction: МИЦЕЛИЙ."
+    },
+    {
+      "id": "swarm",
+      "name": "ИНСЕКТА",
+      "prompt": "Use case: stylized-concept. Asset type: single transparent game headquarters sprite for a light pixel-art world map. Subject: an insectoid headquarters: a ribbed dark olive chitin termite fortress, lime glowing egg sacs, pointed carapace arches, two little worker beetles, compact honeycomb foundation. Style: refined isometric pixel art, coherent 128-pixel sprite enlarged with crisp square pixels, 3/4 overhead orthographic view, charming readable game architecture. Exactly ONE distinct headquarters building on a small hexagonal platform. Whole base fits comfortably inside a square canvas with 12% empty margins. Restrained muted palette and a clear readable silhouette at 64px UI size. Clean solid pixel shading, daylight from upper left, compact silhouette, no wisps or particles outside its platform. Truly transparent background, no scenery, no text, no logo, no frame, no UI, no watermark. Faction: ИНСЕКТА."
+    },
+    {
+      "id": "pack",
+      "name": "СТАЯ",
+      "prompt": "Use case: stylized-concept. Asset type: single transparent game headquarters sprite for a light pixel-art world map. Subject: a cyber predator headquarters: a rocky ivory den, wolf head shaped entrance, ice blue energy spine, scavenged technological plates, two small cyber hounds, compact stone foundation. Style: refined isometric pixel art, coherent 128-pixel sprite enlarged with crisp square pixels, 3/4 overhead orthographic view, charming readable game architecture. Exactly ONE distinct headquarters building on a small hexagonal platform. Whole base fits comfortably inside a square canvas with 12% empty margins. Restrained muted palette and a clear readable silhouette at 64px UI size. Clean solid pixel shading, daylight from upper left, compact silhouette, no wisps or particles outside its platform. Truly transparent background, no scenery, no text, no logo, no frame, no UI, no watermark. Faction: СТАЯ."
+    }
+  ]
+}

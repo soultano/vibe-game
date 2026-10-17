@@ -1,5 +1,6 @@
 import { gridDistance, cellToLatLng, greatCircleDistance } from 'h3-js';
 import { CONFIG, ENERGY_DAILY_CAP_HOURS, getFaction } from './config.js';
+import { abilityBoundaryTimes, abilityWorkMs, captureWorkArrival } from './abilities.js';
 
 const HOUR = 3_600_000;
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -44,11 +45,11 @@ export function projectTerritory(player, nowMs) {
   const end = Math.max(start, finite(nowMs, start));
   const completion = completionTime(player);
   if (completion > start && completion <= end) {
-    const atCompletion = grow(player.pixels, completion - start, player.level, player.faction);
-    return grow(atCompletion, end - completion, player.upgradeTargetLevel, player.faction);
+    const atCompletion = grow(player.pixels, abilityWorkMs(player, start, completion), player.level, player.faction);
+    return grow(atCompletion, abilityWorkMs(player, completion, end), player.upgradeTargetLevel, player.faction);
   }
   const level = completion <= start ? player.upgradeTargetLevel : player.level;
-  return grow(player.pixels, end - start, level, player.faction);
+  return grow(player.pixels, abilityWorkMs(player, start, end), level, player.faction);
 }
 
 /** Inverse growth, split at a pending upgrade, for authoritative claim arrivals. */
@@ -64,12 +65,12 @@ export function captureArrivalTime(player, targetPixels) {
     return -tauHours * HOUR * Math.log1p(-(target - pixels) / (cap - pixels));
   };
   const completion = completionTime(player);
-  if (completion <= start) return start + inverse(initial, player.upgradeTargetLevel);
-  if (!Number.isFinite(completion)) return start + inverse(initial, player.level);
-  const oldArrival = start + inverse(initial, player.level);
+  if (completion <= start) return captureWorkArrival(player, start, inverse(initial, player.upgradeTargetLevel));
+  if (!Number.isFinite(completion)) return captureWorkArrival(player, start, inverse(initial, player.level));
+  const oldArrival = captureWorkArrival(player, start, inverse(initial, player.level));
   if (oldArrival <= completion) return oldArrival;
-  const atCompletion = grow(initial, completion - start, player.level, player.faction);
-  return completion + inverse(atCompletion, player.upgradeTargetLevel);
+  const atCompletion = grow(initial, abilityWorkMs(player, start, completion), player.level, player.faction);
+  return captureWorkArrival(player, completion, inverse(atCompletion, player.upgradeTargetLevel));
 }
 
 function modifiersFor(terrainAverage, factionId, modifiers = {}) {
@@ -150,7 +151,7 @@ function integrateSegment(player, start, end) {
   const half = (end - start) / 2;
   const node = Math.sqrt(3 / 5);
   function value(time) {
-    const x = grow(player.pixels, time - player.tLast, player.level, player.faction) / data.cap;
+    const x = grow(player.pixels, abilityWorkMs(player, player.tLast, time), player.level, player.faction) / data.cap;
     const g = lookupG(x);
     return coefficient * (modifiers.upkeep * g + (modifiers.gross - modifiers.upkeep) * x);
   }
@@ -174,14 +175,17 @@ function advanceSegment(player, end) {
   const breakEven = m.upkeep > 0 ? (m.gross / m.upkeep) ** (1 / (CONFIG.UPKEEP_BETA - 1)) : Infinity;
   const initialX = player.pixels / cap;
   const zeroTime = initialX < breakEven && breakEven < 1 && initialX < 1
-    ? player.tLast - tauHours * HOUR * Math.log((1 - breakEven) / (1 - initialX)) : Infinity;
+    ? captureWorkArrival(player, player.tLast, -tauHours * HOUR * Math.log((1 - breakEven) / (1 - initialX))) : Infinity;
+  const boundaries = abilityBoundaryTimes(player, cursor, end);
+  let boundaryIndex = 0;
   while (cursor < end) {
-    let next = Math.min(end, cursor + CONFIG.INTEGRATION_STEP_MS);
+    while (boundaries[boundaryIndex] <= cursor) boundaryIndex++;
+    let next = Math.min(end, cursor + CONFIG.INTEGRATION_STEP_MS, boundaries[boundaryIndex] ?? Infinity);
     // Split where NET changes sign: overflow discounts income, never upkeep.
     if (zeroTime > cursor + 0.001 && zeroTime < next) next = zeroTime;
     energy = storeDelta(energy, integrateSegment(player, cursor, next), storage);
     cursor = next;
-    const futureX = grow(player.pixels, cursor - player.tLast, player.level, player.faction) / cap;
+    const futureX = grow(player.pixels, abilityWorkMs(player, player.tLast, cursor), player.level, player.faction) / cap;
     if ((energy >= storage * CONFIG.HARD_CEILING_MULTIPLIER && futureX <= breakEven && breakEven >= 1)
       || (energy <= 0 && futureX >= breakEven)) break;
     // Once the growth's remaining contribution is negligible, integrate the
@@ -191,7 +195,8 @@ function advanceSegment(player, end) {
       break;
     }
   }
-  return { ...player, energy, energyTLast: end, pixels: grow(player.pixels, end - player.tLast, player.level, player.faction), tLast: end };
+  return { ...player, energy, energyTLast: end,
+    pixels: grow(player.pixels, abilityWorkMs(player, player.tLast, end), player.level, player.faction), tLast: end };
 }
 
 /** Pure checkpoint. Call only with server time, before any player mutation. */

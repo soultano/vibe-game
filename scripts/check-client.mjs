@@ -78,13 +78,22 @@ assert.equal($('mapLoading').hidden,true);assert.equal($('resourceBar').hidden,t
 assert.equal($('googleLogin').disabled,true);assert.match($('googleLogin').innerHTML,/скоро/);
 client.draw(performance.now());
 await $('devLogin').onclick();assert.ok(client.state().account);assert.equal($('spawnCard').hidden,false);
-client.openPanel('ranking');assert.equal($('spawnCard').hidden,true);await client.refreshState(true);assert.equal($('spawnCard').hidden,true,'polling must not reopen onboarding over another panel');
+assert.equal($('gameNav').hidden,true);assert.equal($('abilityBar').hidden,true);client.openPanel('ranking');assert.equal($('spawnCard').hidden,false,'placing the first headquarters takes priority');await client.refreshState(true);assert.equal($('spawnCard').hidden,false);
 client.openPanel('base');assert.equal($('spawnCard').hidden,false);
 const swarm=document.querySelectorAll('[data-faction]').find(node=>node.dataset.faction==='swarm');$('factionPicker').onclick({target:swarm});
 $('startBtn').onclick();assert.equal(client.state().placing,true);assert.equal($('placementHint').hidden,false);
-await $('worldCanvas').listeners.get('pointerup')({clientX:640,clientY:400});
+const canvas=$('worldCanvas'),down=canvas.listeners.get('pointerdown'),move=canvas.listeners.get('pointermove'),up=canvas.listeners.get('pointerup');
+down({pointerId:1,clientX:600,clientY:400});down({pointerId:2,clientX:680,clientY:400});move({pointerId:2,clientX:720,clientY:400});await up({pointerId:1,clientX:600,clientY:400});await up({pointerId:2,clientX:720,clientY:400});assert.equal(client.state().model.player,null,'pinching must not place a base');assert.equal(client.state().placing,true);
+down({pointerId:3,clientX:640,clientY:400});move({pointerId:3,clientX:675,clientY:400});await up({pointerId:3,clientX:675,clientY:400});assert.equal(client.state().model.player,null,'dragging must not place a base');
+down({pointerId:4,clientX:640,clientY:400});await up({pointerId:4,clientX:640,clientY:400});
 assert.equal(client.state().model.player.faction,'swarm');assert.equal(client.state().model.player.level,1);assert.equal($('resourceBar').hidden,false);assert.equal($('authCard').hidden,true);assert.equal($('spawnCard').hidden,true);
 client.draw(performance.now());
+assert.equal($('gameNav').hidden,false);assert.equal($('abilityBar').hidden,false);
+const pressAbility=id=>$('abilityBar').onclick({target:$('ability-'+id)});
+await pressAbility('infantry');assert.equal(client.state().model.player.captureMultiplier,1.25);assert.match($('ability-state-infantry').textContent,/25%/);
+await pressAbility('infantry');assert.equal($('abilityDialog').open,true);assert.equal($('confirmAbilityReset').disabled,true,'a paid reset cannot be confirmed without crystals');
+const accountId=client.state().account.id,row=await app.service.store.get('player:'+accountId);await app.service.store.atomic({checks:[{key:'player:'+accountId,version:row.version}],puts:[{key:'player:'+accountId,value:{...row.value,crystals:10}}]});await client.refreshState(true);assert.equal($('confirmAbilityReset').disabled,false);await $('confirmAbilityReset').onclick();assert.equal(client.state().model.player.crystals,8);assert.equal($('abilityDialog').open,false);
+for(const id of ['field','heavy','ultimate'])await pressAbility(id);assert.equal(client.state().model.player.captureMultiplier,4.75);client.draw(performance.now());
 const nav=name=>document.querySelectorAll('[data-open]').find(node=>node.dataset.open===name);
 for(const name of ['base','sector','rewards','ranking']){nav(name).onclick();assert.equal(client.state().activePanel,name);assert.equal(document.querySelectorAll('[data-panel]').filter(node=>!node.hidden).length,1);assert.equal(nav(name).getAttribute('aria-expanded'),'true');}
 nav('ranking').onclick();assert.equal(client.state().activePanel,null);assert.equal(document.querySelectorAll('[data-panel]').filter(node=>!node.hidden).length,0);
@@ -95,4 +104,4 @@ offline=true;await client.refreshState(true);assert.equal($('connectionNotice').
 await $('shopBtn').onclick();assert.equal($('shopDialog').open,true);assert.doesNotMatch($('shopNotice').textContent,/Stripe|сервер|настро/);$('shopDialog').close();
 $('profileButton').onclick();assert.equal($('accountPanel').hidden,false);assert.equal(document.querySelectorAll('[data-panel]').filter(node=>!node.hidden).length,0);
 await $('logoutBtn').onclick();assert.equal(client.state().account,null);assert.equal($('resourceBar').hidden,true);assert.equal($('authCard').hidden,false);assert.equal($('accountPanel').hidden,true);
-console.log(`Client flow OK: real API login, faction choice, placement, resource HUD, four exclusive panels, selection, upgrade, rewards, connection recovery, shop and logout (${requests.length} API requests).`);
+console.log(`Client flow OK: real API login, faction choice, placement, resource HUD, four exclusive panels, pinch/drag without accidental placement, four abilities, paid reset, selection, upgrade, rewards, connection recovery, shop and logout (${requests.length} API requests).`);

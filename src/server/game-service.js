@@ -2,6 +2,7 @@ import { gridDisk, gridDistance, isValidCell, getResolution, cellToLatLng, great
 import { CONFIG, FACTIONS, getFaction } from '../shared/config.js';
 import { deriveLevel, netIncome, optimumNetIncome, upgradeCost, upgradeDurationMs, storageCapacity, skipCost, powerAt } from '../shared/economy.js';
 import { advanceProgression, progressionArrivalTime } from '../shared/progression.js';
+import { ABILITIES, abilityDefinition, factionAbilityName, captureMultiplierAt } from '../shared/abilities.js';
 import { CATALOG } from '../shared/catalog.js';
 import { resolveCombat } from '../shared/combat.js';
 import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.js';
@@ -151,9 +152,14 @@ export class GameService {
       cost, status: player.upgradeCompletesAt ? 'building' : 'funding', startedAt: player.upgradeStartedAt ?? null,
       completesAt: player.upgradeCompletesAt ?? null, durationMs: upgradeDurationMs(player.level) } : null;
     const { fingerprintHash, seed, captureDebts, captureCursors, levelTimeline, energyPixels, energyTerrainAverage,
-      stripeCustomerId, stripeSubscriptionId, borderCells, frontierBirths, ...safe } = player;
+      stripeCustomerId, stripeSubscriptionId, borderCells, frontierBirths, abilities, abilityReceipts, ...safe } = player;
+    const multiplier = captureMultiplierAt(player, now);
     return { ...safe, pixels: Math.floor(player.pixels), cap: stats.cap, sectorAngle: stats.sectorAngle ?? stats.angle,
-      capturePerHour: stats.capturePerHour, netPerHour: net, grossPerHour: gross,
+      capturePerHour: stats.capturePerHour * multiplier, baseCapturePerHour: stats.capturePerHour,
+      captureMultiplier: multiplier, netPerHour: net, grossPerHour: gross,
+      abilities: ABILITIES.map(definition => ({ ...definition, name: factionAbilityName(player.faction, definition.id),
+        readyAt: abilities?.[definition.id]?.readyAt ?? 0, activeFrom: abilities?.[definition.id]?.activeFrom ?? 0,
+        activeUntil: abilities?.[definition.id]?.activeUntil ?? 0 })),
       upkeepPerHour: upkeep, storage: storageCapacity(player.level, player.terrainAverage ?? 1, player.faction),
       optimumNetPerHour: optimumNetIncome(player.level, player.terrainAverage ?? 1, player.faction),
       project, queuedProject: player.queuedProject ?? null, catchingUp: (player.pendingCaptures ?? 0) > 0,
@@ -208,6 +214,7 @@ export class GameService {
         upgradeTargetLevel: anchor.upgradeTargetLevel, upgradeStartedAt: anchor.upgradeStartedAt,
         upgradeCompletesAt: anchor.upgradeCompletesAt, queuedProject: anchor.queuedProject,
         azimuth: anchor.azimuth, levelTimeline: anchor.levelTimeline,
+        abilities: clone(anchor.abilities ?? {}),
       }, nextOrdinal: first, endOrdinal: last });
     }
     // Simultaneous contenders are ordered by theoretical arrival time, then stable account id.
@@ -466,7 +473,8 @@ export class GameService {
         tLast: now, energyTLast: now, createdAt: now, accountCreatedAt: account.createdAt ?? now,
         shieldUntil: now + this.config.shieldHours * HOUR, fingerprintHash, seasonId: this.config.seasonId,
         levelTimeline: [{ at: now, level: 1 }], energyPixels: 1, borderCells: [cell], frontierBirths: { [cell]: now },
-        upgradeInvestment: 0, upgradeStartedAt: null, upgradeCompletesAt: null, upgradeTargetLevel: null };
+        upgradeInvestment: 0, upgradeStartedAt: null, upgradeCompletesAt: null, upgradeTargetLevel: null,
+        abilities: {}, abilityReceipts: [] };
       await this.writeOwner(tx, cell, accountId, now);
       await tx.put(`player:${accountId}`, player);
       await indexPlayer(tx, player);
@@ -487,6 +495,39 @@ export class GameService {
       await tx.put(`player:${accountId}`, player);
       await indexPlayer(tx, player);
       return this.model(tx, accountId, now, conflicts);
+    });
+  }
+
+  async useAbility(accountId, { abilityId, resetCooldown = false, requestId } = {}) {
+    const definition = abilityDefinition(abilityId);
+    fail(definition, 'Неизвестная способность.');
+    fail(typeof resetCooldown === 'boolean', 'Некорректный способ запуска.');
+    fail(typeof requestId === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(requestId), 'Повторите запуск способности.');
+    return this.action(accountId, async (player, tx, now) => {
+      const paymentKey = `ability-payment:${accountId}:${requestId}`;
+      const paidReceipt = await tx.get(paymentKey);
+      if (paidReceipt) {
+        fail(paidReceipt.abilityId === abilityId, 'Этот запуск уже использован другой способностью.', 409);
+        return;
+      }
+      const receipts = Array.isArray(player.abilityReceipts) ? player.abilityReceipts : [];
+      const previous = receipts.find(receipt => receipt.requestId === requestId);
+      if (previous) {
+        fail(previous.abilityId === abilityId, 'Этот запуск уже использован другой способностью.', 409);
+        return;
+      }
+      const state = player.abilities?.[abilityId];
+      const cooling = (state?.readyAt ?? 0) > now;
+      fail(!cooling || resetCooldown, 'Способность восстанавливается.', 429, 'ABILITY_COOLDOWN');
+      const price = cooling ? definition.resetCrystalCost : 0;
+      fail(player.crystals >= price, 'Недостаточно кристаллов для повторного запуска.', 409, 'INSUFFICIENT_CRYSTALS');
+      player.crystals -= price;
+      player.abilities ??= {};
+      player.abilities[abilityId] = { lastUsedAt: now, readyAt: now + definition.cooldownMs,
+        activeFrom: now, activeUntil: now + definition.durationMs };
+      if (price > 0) await tx.put(paymentKey, { accountId, abilityId, crystals: price, activatedAt: now });
+      // A duplicate network request returns the result without another charge.
+      player.abilityReceipts = [...receipts, { requestId, abilityId, at: now, price }].slice(-64);
     });
   }
 
