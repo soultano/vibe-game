@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const source = await readFile(new URL('../dist/game-engine.js', import.meta.url), 'utf8');
+const source = await readFile(new URL('../src/client/practice-engine.js', import.meta.url), 'utf8');
 const { GameEngine } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const make = () => new GameEngine({ width: 40, height: 24, land: Array(960).fill(1), seed: 42 });
 const memory = new Map();
@@ -92,7 +92,7 @@ test('sea expeditions unlock islands after level 2 without stealing nonadjacent 
 });
 
 test('frontier contact produces real battles while neutral land remains', async () => {
-  const map = JSON.parse(await readFile(new URL('../dist/world-mask.json', import.meta.url), 'utf8'));
+  const map = JSON.parse(await readFile(new URL('../data/world-mask.json', import.meta.url), 'utf8'));
   const city = map.cities.find(city => city.name === 'Ташкент');
   const engine = new GameEngine(map); engine.buildBase(city.x, city.y);
   for (let i = 0; i < 600; i++) {

@@ -4,3 +4,9 @@ node_modules/
 *.tgz
 .openai/*.local.json
 artifacts/
+.env
+.env.local
+.env.*.local
+.data/
+build/assets.json
+dist/
