@@ -5,6 +5,7 @@ import { advanceProgression, progressionArrivalTime } from '../shared/progressio
 import { ABILITIES, abilityDefinition, factionAbilityName, captureMultiplierAt } from '../shared/abilities.js';
 import { CATALOG } from '../shared/catalog.js';
 import { resolveCombat } from '../shared/combat.js';
+import { troopDeployment } from '../shared/troops.js';
 import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.js';
 export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
@@ -157,6 +158,7 @@ export class GameService {
     return { ...safe, pixels: Math.floor(player.pixels), cap: stats.cap, sectorAngle: stats.sectorAngle ?? stats.angle,
       capturePerHour: stats.capturePerHour * multiplier, baseCapturePerHour: stats.capturePerHour,
       captureMultiplier: multiplier, netPerHour: net, grossPerHour: gross,
+      troops: troopDeployment(player, now), frontier: (borderCells ?? [player.baseCell]).slice(0, 8),
       abilities: ABILITIES.map(definition => ({ ...definition, name: factionAbilityName(player.faction, definition.id),
         readyAt: abilities?.[definition.id]?.readyAt ?? 0, activeFrom: abilities?.[definition.id]?.activeFrom ?? 0,
         activeUntil: abilities?.[definition.id]?.activeUntil ?? 0 })),
@@ -713,6 +715,8 @@ export class GameService {
           level: player.level,
           pixels: player.pixels,
           baseCell: player.baseCell,
+          troops: troopDeployment(player, now),
+          frontier: (player.borderCells ?? [player.baseCell]).slice(0, 8),
           color: player.color ?? null,
           customLink: player.customLink ?? null,
           customLinkTitle: player.customLinkTitle ?? null,

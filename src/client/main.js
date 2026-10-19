@@ -4,6 +4,8 @@ import { decodeTile, cellIsLand } from "../shared/geography.js";
 import worldMask from "../../data/world-mask.json";
 import { skipCost } from "../shared/economy.js";
 import { ABILITIES, factionAbilityName } from "../shared/abilities.js";
+import { troopForAbility, troopFor, TROOP_CLASSES, TROOP_ANIMATIONS } from '../shared/troops.js';
+import { createBattlefieldState } from './battlefield-state.js';
 import { headquartersFor } from "../shared/headquarters.js";
 import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./telegram.js";
 import { getLang, setLang, t, LANGUAGES } from "./i18n.js";
@@ -48,6 +50,53 @@ for (const f of FACTIONS) {
   image.onload = invalidate;
   emblems.set(f.id, image);
 }
+const battlefield = createBattlefieldState({ maxUnits: Math.min(window.innerWidth || 1280, screen.width) < 760 ? 24 : 36 });
+const tileConflicts = new Map();
+let troops3D = null, troopsPromise = null, troopsUnavailable = false, troopsEnabled = true, inspectingTroop = null, troopGeneration = 0;
+try { troopsEnabled = localStorage.getItem('pd-troops') !== 'off'; } catch {}
+const animationLabels = { idle: 'Ожидание', walk: 'Шаг', run: 'Бег', attack: 'Атака', capture: 'Захват', death: 'Поражение' };
+function syncBattlefield() {
+  const now = serverNow();
+  for (const [id, conflict] of tileConflicts) if ((conflict.lastResolvedAt || 0) < now - 15000) tileConflicts.delete(id);
+  battlefield.sync({ player: model?.player, players: [...leaderboard, ...profiles.values()], conflicts: [...tileConflicts.values(), ...(model?.conflicts || [])] }, now);
+}
+async function ensureTroops3D() {
+  if (troopsUnavailable || typeof window.WebGL2RenderingContext === 'undefined') return null;
+  if (!troopsPromise) troopsPromise = import('./troops-3d.js').then(module => {
+    troops3D = module.createTroops3D({ canvas: $('troopsCanvas'), reducedMotion, maxUnits: (window.innerWidth || 1280) < 760 ? 24 : 36, onReady: invalidate,
+      onUnavailable(id) { if (!id) { troopsUnavailable = true; $('troopsCanvas').hidden = true; } } });
+    return troops3D;
+  }).catch(() => { troopsUnavailable = true; return null; });
+  return troopsPromise;
+}
+function troopsNeedFrame() { return !!troops3D && ($('troopsDialog').open || troopsEnabled && zoom >= 512) && troops3D.needsFrame(); }
+function drawTroops(now) {
+  const inspecting = $('troopsDialog').open;
+  if (!inspecting && (!troopsEnabled || zoom < 512 || !account)) { $('troopsCanvas').hidden = true; return; }
+  const units = battlefield.units(serverNow());
+  if (!troops3D) { if (units.length || inspecting) ensureTroops3D().then(engine => { if (engine) invalidate(); }); return; }
+  $('troopsCanvas').hidden = inspecting ? $('troopsCanvas').hidden : !units.length;
+  troops3D.render(now, { width: cw, height: ch, zoom, units, projectCell(cell) { try { return project(...cellToLatLng(cell)); } catch { return null; } } });
+}
+async function inspectTroop(faction, type = 'infantry') {
+  const spec = troopFor(faction, type), generation = ++troopGeneration;
+  inspectingTroop = spec;
+  setText('troopTitle', spec.name); setText('troopDescription', spec.label + ' · ' + spec.description);
+  $('troopPoster').src = spec.poster; $('troopPoster').alt = spec.name; $('troopPoster').hidden = false;
+  $('troopModelCanvas').hidden = true; $('troopAnimations').hidden = true; $('troopRotateControls').hidden = true;
+  setText('troopStatus', 'Готовим модель и анимации…');
+  $('troopRolePicker').innerHTML = TROOP_CLASSES.map(role => { const unit = troopFor(spec.faction, role.id); return `<button data-troop-role="${role.id}" aria-pressed="${role.id === spec.type}" class="${role.id === spec.type ? 'selected' : ''}"><img src="${unit.poster}" alt="" width="70" height="62"><b>${role.label}</b></button>`; }).join('');
+  $('troopFactionPicker').innerHTML = FACTIONS.map(side => `<button data-troop-faction="${side.id}" style="--faction:${side.color}" aria-pressed="${side.id === spec.faction}" class="${side.id === spec.faction ? 'selected' : ''}"><img src="${side.logo}" alt=""><b>${side.name}</b></button>`).join('');
+  $('troopAnimations').innerHTML = TROOP_ANIMATIONS.map(name => `<button data-troop-animation="${name}" aria-pressed="${name === 'walk'}" class="${name === 'walk' ? 'selected' : ''}">${animationLabels[name]}</button>`).join('');
+  if (!$('troopsDialog').open) $('troopsDialog').showModal();
+  const fallback = () => { if (generation !== troopGeneration) return; $('troopPoster').hidden = false; $('troopModelCanvas').hidden = true; $('troopAnimations').hidden = true; $('troopRotateControls').hidden = true; setText('troopStatus', 'Сейчас доступно изображение отряда.'); };
+  const engine = await ensureTroops3D();
+  if (generation !== troopGeneration || !$('troopsDialog').open) return;
+  if (!engine) { fallback(); return; }
+  engine.inspect($('troopModelCanvas'), spec.faction, spec.type, { ready() { if (generation !== troopGeneration) return; $('troopPoster').hidden = true; $('troopModelCanvas').hidden = false; $('troopAnimations').hidden = false; $('troopRotateControls').hidden = false; setText('troopStatus', 'Выберите анимацию. Потяните модель в сторону для вращения.'); }, fallback });
+  invalidate();
+}
+
 function readySprite(sprite) {
   return !!sprite && !!(sprite.hq3dReady || sprite.complete && sprite.naturalWidth);
 }
@@ -308,6 +357,7 @@ function resetWorldState() {
   neutralKey = "";
   profiles.clear();
   effects.length = 0;
+  battlefield.clear(); tileConflicts.clear(); troops3D?.clear(); inspectingTroop = null; troopGeneration++; $("troopsDialog").close();
   abilityBursts.length = 0;
   pointers.clear();
   pinch = null;
@@ -402,7 +452,9 @@ function acceptModel(next) {
   if (model?.player && !next.player) return;
   if (Number.isFinite(next.serverTime)) serverOffset = next.serverTime - Date.now();
   const prior = model?.player;
+  for (const [id, conflict] of tileConflicts) if (conflict.players?.includes(account?.id)) tileConflicts.delete(id);
   model = next;
+  syncBattlefield();
   if (next.player && prior?.level && prior.level !== next.player.level) appendEvent(`База достигла уровня ${next.player.level}.`, `level:${next.player.level}`);
   for (const conflict of next.conflicts || []) {
     const status = conflict.status === "shielded" ? "Границу защищает щит." : conflict.status === "active" ? "На границе идёт борьба за ячейки." : "На границе установилось равновесие.";
@@ -845,6 +897,7 @@ function draw(now) {
     ctx.globalAlpha = 1;
   }
   drawAbilityBursts(now);
+  drawTroops(now);
 }
 
 async function refreshTiles() {
@@ -864,6 +917,7 @@ async function refreshTiles() {
       const result = await api("/api/tiles?parents=" + encodeURIComponent(parents.join(",")) + "&versions=" + encodeURIComponent(JSON.stringify(versions)));
       if (generation !== authGeneration || account?.id !== id) return;
       for (const p of result.players || []) profiles.set(p.id, p);
+      for (const conflict of result.conflicts || []) tileConflicts.set(conflict.id, conflict);
       for (const t of result.tiles || []) {
         if (!t.unchanged) ownershipDirty = true;
         if (t.unchanged) continue;
@@ -873,12 +927,15 @@ async function refreshTiles() {
         } else for (const change of t.changes || []) {
           if (change.owner) {
             cells.set(change.cell, change.owner);
+            const fromCell = gridDisk(change.cell, 1).find(cell => cell !== change.cell && cells.get(cell) === change.owner);
+            battlefield.capture({ ...change, fromCell }, serverNow());
             if (!reducedMotion && effects.length < 100) effects.push({ cell: change.cell, owner: change.owner, at: performance.now() });
           } else cells.delete(change.cell);
         }
         tileCache.set(t.parent, { version: t.version, cells });
       }
     }
+    syncBattlefield();
     if (tileCache.size > 300) {
       const keep = visible;
       for (const key of tileCache.keys()) if (!keep.has(key) && tileCache.size > 100) tileCache.delete(key);
@@ -1068,6 +1125,21 @@ $("factionPicker").onclick = (e) => {
   }
 };
 $("factionPreview").onclick = () => $("factionsDialog").showModal();
+$('troopsBtn').onclick = () => inspectTroop(model?.player?.faction || selectedFaction);
+$('troopRolePicker').onclick = event => { const button = event.target.closest('[data-troop-role]'); if (button) return inspectTroop(inspectingTroop?.faction || selectedFaction, button.dataset.troopRole); };
+$('troopFactionPicker').onclick = event => { const button = event.target.closest('[data-troop-faction]'); if (button) return inspectTroop(button.dataset.troopFaction, inspectingTroop?.type || 'infantry'); };
+$('troopAnimations').onclick = event => { const button = event.target.closest('[data-troop-animation]'); if (!button) return; troops3D?.animate(button.dataset.troopAnimation); document.querySelectorAll('[data-troop-animation]').forEach(node => { const selected = node === button; node.classList.toggle('selected', selected); node.setAttribute('aria-pressed', String(selected)); }); invalidate(); };
+$('troopRotateLeft').onclick = () => troops3D?.rotate(-.25);
+$('troopRotateRight').onclick = () => troops3D?.rotate(.25);
+$('troopsDialog').addEventListener('close', () => { troopGeneration++; troops3D?.close(); invalidate(); });
+$('troopsToggle').setAttribute('aria-pressed', String(troopsEnabled));
+$('troopsToggle').onclick = () => { troopsEnabled = !troopsEnabled; $('troopsToggle').setAttribute('aria-pressed', String(troopsEnabled)); try { localStorage.setItem('pd-troops', troopsEnabled ? 'on' : 'off'); } catch {} invalidate(); };
+let troopPointer = null;
+$('troopModelCanvas').addEventListener('pointerdown', event => { troopPointer = { id: event.pointerId, x: event.clientX }; $('troopModelCanvas').setPointerCapture(event.pointerId); });
+$('troopModelCanvas').addEventListener('pointermove', event => { if (troopPointer?.id !== event.pointerId) return; troops3D?.rotate((event.clientX - troopPointer.x) * .012); troopPointer.x = event.clientX; });
+for (const name of ['pointerup','pointercancel','lostpointercapture']) $('troopModelCanvas').addEventListener(name, () => { troopPointer = null; });
+$('troopModelCanvas').addEventListener('keydown', event => { if (!['ArrowLeft','ArrowRight'].includes(event.key)) return; event.preventDefault(); troops3D?.rotate(event.key === 'ArrowLeft' ? -.2 : .2); });
+
 $("factionsBtn").onclick = () => $("factionsDialog").showModal();
 $("factionAtlas").onclick = event => {
   const button = event.target.closest("[data-model]");
@@ -1214,14 +1286,16 @@ function abilityState(id) {
   return model?.player?.abilities?.find?.((ability) => ability.id === id) || ABILITIES.find((ability) => ability.id === id);
 }
 function renderAbilities() {
-  const labels = { infantry: "Пехота", field: "Поле", heavy: "Техника", ultimate: "Ульта" };
-  $("abilityBar").innerHTML = ABILITIES.map((a, index) => `<button id="ability-${a.id}" class="ability-button" data-ability="${a.id}"><span class="ability-key" aria-hidden="true">${index + 1}</span><span class="ability-icon"><svg><use href="#i-${a.id === "infantry" ? "infantry" : a.id}"/></svg></span><span class="ability-label">${labels[a.id]}</span><span class="ability-state" id="ability-state-${a.id}">Готово</span></button>`).join("");
+  const labels = { infantry: "Пехота", field: "Тяжёлые", heavy: "Авиация", ultimate: "Ульта" };
+  $("abilityBar").innerHTML = ABILITIES.map((a, index) => `<button id="ability-${a.id}" class="ability-button" data-ability="${a.id}"><span class="ability-key" aria-hidden="true">${index + 1}</span><span class="ability-icon"><img id="ability-unit-${a.id}" src="${troopForAbility(selectedFaction, a.id).poster}" alt="" width="38" height="30"></span><span class="ability-label">${labels[a.id]}</span><span class="ability-state" id="ability-state-${a.id}">Готово</span></button>`).join("");
 }
 function updateAbilities() {
   const p = model?.player, now = serverNow();
   for (const definition of ABILITIES) {
     const state = abilityState(definition.id), button = $(`ability-${definition.id}`), label = $(`ability-state-${definition.id}`);
     if (!button) continue;
+    const unit = troopForAbility(p?.faction || selectedFaction, definition.id), image = $("ability-unit-" + definition.id);
+    if (image.dataset.troop !== unit.id) { image.src = unit.poster; image.dataset.troop = unit.id; }
     const active = (state?.activeUntil || 0) > now, cooling = (state?.readyAt || 0) > now;
     button.disabled = !p || !!abilityBusy;
     button.classList.toggle("active", active);
@@ -1754,12 +1828,12 @@ new ResizeObserver(fit).observe($("mapViewport"));
 function frame(now) {
   frameHandle = null;
   if (document.hidden) return;
-  if (now - lastRender > 32 && (dirty || effects.length || abilityBursts.length)) {
+  if (now - lastRender > 32 && (dirty || effects.length || abilityBursts.length || troopsNeedFrame())) {
     draw(now);
     lastRender = now;
     dirty = false;
   }
-  if (dirty || effects.length || abilityBursts.length) requestFrame();
+  if (dirty || effects.length || abilityBursts.length || troopsNeedFrame()) requestFrame();
 }
 async function init() {
   captureReferralParam();

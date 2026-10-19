@@ -1,0 +1,961 @@
+{
+  "generator": "Meshy",
+  "models": {
+    "protocol-infantry": {
+      "file": "/assets/troops/protocol-infantry.glb",
+      "poster": "/assets/troops/protocol-infantry.webp",
+      "taskId": "01a1559c-7937-73fa-9d1c-10a8285055f7",
+      "rigTaskId": "01a155a5-10be-7701-bd72-378c7961239a",
+      "attackTaskId": "01a155a8-921a-73f4-9169-51fbd6f71763",
+      "actionId": 690,
+      "consumedCredits": 23,
+      "rig": "Meshy-auto-rig",
+      "joints": 24,
+      "triangles": 2976,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "walk",
+          "channels": 67,
+          "duration": 1.066666603088379
+        },
+        {
+          "name": "run",
+          "channels": 67,
+          "duration": 0.6666666865348816
+        },
+        {
+          "name": "attack",
+          "channels": 67,
+          "duration": 3.299999952316284
+        },
+        {
+          "name": "idle",
+          "channels": 2,
+          "duration": 2
+        },
+        {
+          "name": "capture",
+          "channels": 2,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 2,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 721848,
+      "sha256": "153e6a594859b575f330223a3ef4fb6f59e8b47fc8a16c1899d170a349f9c03f"
+    },
+    "protocol-armor": {
+      "file": "/assets/troops/protocol-armor.glb",
+      "poster": "/assets/troops/protocol-armor.webp",
+      "taskId": "01a1559c-d492-7710-ac4c-77570fc6adec",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 10,
+      "rig": "authored-creature-skeleton",
+      "height": 0.9310158451782631,
+      "triangles": 3793,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 12,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 12,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 12,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 12,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 12,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 12,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 732716,
+      "sha256": "74b1aba2db2c8e5fdf526ced59836268df4e6b097a4f488c859ae76a1908b5e8"
+    },
+    "protocol-air": {
+      "file": "/assets/troops/protocol-air.glb",
+      "poster": "/assets/troops/protocol-air.webp",
+      "taskId": "01a155a1-5bfa-767c-aa23-b86655343ccf",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 6,
+      "rig": "authored-creature-skeleton",
+      "height": 0.4679549132928955,
+      "triangles": 3768,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 7,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 7,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 7,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 7,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 7,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 7,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 670000,
+      "sha256": "83f938e0a2eda8e48a35bff369c76656a64ef2c647f3d26243163d138531d6d7"
+    },
+    "protocol-ultimate": {
+      "file": "/assets/troops/protocol-ultimate.glb",
+      "poster": "/assets/troops/protocol-ultimate.webp",
+      "taskId": "01a155a1-693c-71dc-85ba-2ba0265a9a2c",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 5,
+      "rig": "authored-creature-skeleton",
+      "height": 1.4820142603239121,
+      "triangles": 4744,
+      "repairedNormals": 8,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 9,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 9,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 9,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 9,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 9,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 9,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 823368,
+      "sha256": "b5949e704230938064d10331d160f8836a17e6f19a769cf7d6f76f23f69bbcc9"
+    },
+    "vanguard-infantry": {
+      "file": "/assets/troops/vanguard-infantry.glb",
+      "poster": "/assets/troops/vanguard-infantry.webp",
+      "taskId": "01a1559c-8fdd-7615-96ce-7b5b7ec9f345",
+      "rigTaskId": "01a155a5-383c-760a-ad73-b2b3f94e4e1c",
+      "attackTaskId": "01a155a8-e7b6-7207-a1e8-0b5dfc45c08a",
+      "actionId": 690,
+      "consumedCredits": 23,
+      "rig": "Meshy-auto-rig",
+      "joints": 24,
+      "triangles": 3210,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "walk",
+          "channels": 67,
+          "duration": 1.066666603088379
+        },
+        {
+          "name": "run",
+          "channels": 67,
+          "duration": 0.6666666865348816
+        },
+        {
+          "name": "attack",
+          "channels": 67,
+          "duration": 3.299999952316284
+        },
+        {
+          "name": "idle",
+          "channels": 2,
+          "duration": 2
+        },
+        {
+          "name": "capture",
+          "channels": 2,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 2,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 648092,
+      "sha256": "fe744fc7fb878322eaa5756e0e2963aff9ee652b08d30af6aaf62bf7c9a80c81"
+    },
+    "vanguard-armor": {
+      "file": "/assets/troops/vanguard-armor.glb",
+      "poster": "/assets/troops/vanguard-armor.webp",
+      "taskId": "01a1559c-e266-755e-a43e-eb57468d4b01",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 6,
+      "rig": "authored-creature-skeleton",
+      "height": 0.6363171611007868,
+      "triangles": 3707,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 9,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 9,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 9,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 9,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 9,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 9,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 545688,
+      "sha256": "6a85848b54a2734d2fcc443d64516e644e015b3b230684628e0a1c31039ad26e"
+    },
+    "vanguard-air": {
+      "file": "/assets/troops/vanguard-air.glb",
+      "poster": "/assets/troops/vanguard-air.webp",
+      "taskId": "01a155a1-7758-7695-a6c5-d45581d5f0af",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 10,
+      "rig": "authored-creature-skeleton",
+      "height": 0.9073412674253729,
+      "triangles": 3843,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 11,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 11,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 11,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 11,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 11,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 11,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 602640,
+      "sha256": "6b66ec909598eaddb377a85ab68f8324844c976c3fd74d276a17a1a75814b4bc"
+    },
+    "vanguard-ultimate": {
+      "file": "/assets/troops/vanguard-ultimate.glb",
+      "poster": "/assets/troops/vanguard-ultimate.webp",
+      "taskId": "01a155a1-8422-7455-948d-a8cbd93c7d03",
+      "rigTaskId": "01a155a6-de63-717b-8cf5-9cb6bbb121fe",
+      "attackTaskId": "01a155a9-a470-7057-972d-dd692dc57aa5",
+      "actionId": 690,
+      "consumedCredits": 23,
+      "rig": "Meshy-auto-rig",
+      "joints": 24,
+      "triangles": 5023,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "walk",
+          "channels": 67,
+          "duration": 1.066666603088379
+        },
+        {
+          "name": "run",
+          "channels": 67,
+          "duration": 0.6666666865348816
+        },
+        {
+          "name": "attack",
+          "channels": 67,
+          "duration": 3.299999952316284
+        },
+        {
+          "name": "idle",
+          "channels": 2,
+          "duration": 2
+        },
+        {
+          "name": "capture",
+          "channels": 2,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 2,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 1046736,
+      "sha256": "4b2ed45784fb14ce42d8a48dcc2507f4e0ef6ecb65e7c855fce8f13229356021"
+    },
+    "bloom-infantry": {
+      "file": "/assets/troops/bloom-infantry.glb",
+      "poster": "/assets/troops/bloom-infantry.webp",
+      "taskId": "01a1559c-9dae-7155-9dd4-bee8b0f5edb0",
+      "rigTaskId": "01a155a5-5fdb-776c-8622-ce96f2e71118",
+      "attackTaskId": "01a155a9-4462-750d-b57b-453861e2bf85",
+      "actionId": 690,
+      "consumedCredits": 23,
+      "rig": "Meshy-auto-rig",
+      "joints": 24,
+      "triangles": 3012,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "walk",
+          "channels": 67,
+          "duration": 1.066666603088379
+        },
+        {
+          "name": "run",
+          "channels": 67,
+          "duration": 0.6666666865348816
+        },
+        {
+          "name": "attack",
+          "channels": 67,
+          "duration": 3.299999952316284
+        },
+        {
+          "name": "idle",
+          "channels": 2,
+          "duration": 2
+        },
+        {
+          "name": "capture",
+          "channels": 2,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 2,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 808508,
+      "sha256": "8ddeb53199777b4403cf534caf11513b7fc8292fb04ab17e01e5580d6a87f27b"
+    },
+    "bloom-armor": {
+      "file": "/assets/troops/bloom-armor.glb",
+      "poster": "/assets/troops/bloom-armor.webp",
+      "taskId": "01a1559c-f014-70e8-b07b-6adb5b2f72a0",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 10,
+      "rig": "authored-creature-skeleton",
+      "height": 1.0244407515835574,
+      "triangles": 4265,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 12,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 12,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 12,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 12,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 12,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 12,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 600988,
+      "sha256": "3bc8a05ac4cf7f4ec07be4ac0e7e19e10c3fabb793d9827bfbafc4eac02537da"
+    },
+    "bloom-air": {
+      "file": "/assets/troops/bloom-air.glb",
+      "poster": "/assets/troops/bloom-air.webp",
+      "taskId": "01a155a1-91e6-700b-accc-b0a993fb1797",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 6,
+      "rig": "authored-creature-skeleton",
+      "height": 1.0765314409606785,
+      "triangles": 4260,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 7,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 7,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 7,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 7,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 7,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 7,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 578460,
+      "sha256": "fb2a4527b9657337423c9f5cbf7e075f57830980d7e6286f56f88b11d38b804f"
+    },
+    "bloom-ultimate": {
+      "file": "/assets/troops/bloom-ultimate.glb",
+      "poster": "/assets/troops/bloom-ultimate.webp",
+      "taskId": "01a155a1-9ff7-73d7-b5f0-4345dc28d953",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 14,
+      "rig": "authored-creature-skeleton",
+      "height": 1.2607793148246855,
+      "triangles": 5315,
+      "repairedNormals": 6,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 16,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 16,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 16,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 16,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 16,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 16,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 828108,
+      "sha256": "ba6bdfb4de80a205002059fddbc165aeb48aa0cc0c695650f87e52a002cf6bbe"
+    },
+    "swarm-infantry": {
+      "file": "/assets/troops/swarm-infantry.glb",
+      "poster": "/assets/troops/swarm-infantry.webp",
+      "taskId": "01a1559c-b65a-779b-bf4f-58c26b987f8a",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 12,
+      "rig": "authored-creature-skeleton",
+      "height": 1.1737999895368376,
+      "triangles": 3151,
+      "repairedNormals": 4,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 14,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 14,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 14,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 14,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 14,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 14,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 677008,
+      "sha256": "34d2207321a885a9a2aee1cd6769f9b3a08b87127231dd54cbae272b20ed2642"
+    },
+    "swarm-armor": {
+      "file": "/assets/troops/swarm-armor.glb",
+      "poster": "/assets/troops/swarm-armor.webp",
+      "taskId": "01a1559c-fe2a-769d-8944-dea1e37131b3",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 14,
+      "rig": "authored-creature-skeleton",
+      "height": 0.9976025997570451,
+      "triangles": 4232,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 16,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 16,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 16,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 16,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 16,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 16,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 608496,
+      "sha256": "f13ba84e380f2c523ca8a34d4317568b447d9c13155a62b85b4257f839db0fce"
+    },
+    "swarm-air": {
+      "file": "/assets/troops/swarm-air.glb",
+      "poster": "/assets/troops/swarm-air.webp",
+      "taskId": "01a155a1-cf1f-7321-875a-b25fc3d0368c",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 8,
+      "rig": "authored-creature-skeleton",
+      "height": 0.7696256947212662,
+      "triangles": 4144,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 9,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 9,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 9,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 9,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 9,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 9,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 563172,
+      "sha256": "3ac56d702503dd6f0fbaeefcf61dc5e0084658736b6ef21dce96cddfc81840cc"
+    },
+    "swarm-ultimate": {
+      "file": "/assets/troops/swarm-ultimate.glb",
+      "poster": "/assets/troops/swarm-ultimate.webp",
+      "taskId": "01a155a1-dc48-73a7-9359-fb28ad20adf4",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 31,
+      "rig": "authored-creature-skeleton",
+      "height": 0.5381080433729,
+      "triangles": 5244,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 33,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 33,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 33,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 33,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 33,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 33,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 800904,
+      "sha256": "21f5eb89274d69dbb9209c941e575f127fb20f807f84d8e42d13baa5488c9aee"
+    },
+    "pack-infantry": {
+      "file": "/assets/troops/pack-infantry.glb",
+      "poster": "/assets/troops/pack-infantry.webp",
+      "taskId": "01a1559c-c54e-708b-9ebf-7abbfd32f1e4",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 10,
+      "rig": "authored-creature-skeleton",
+      "height": 0.7721446819011303,
+      "triangles": 2954,
+      "repairedNormals": 2,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 12,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 12,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 12,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 12,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 12,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 12,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 630908,
+      "sha256": "25835525ab9347680bbc19f4e6883518dc98a0fc1b50e2e7f586cf580adafc3d"
+    },
+    "pack-armor": {
+      "file": "/assets/troops/pack-armor.glb",
+      "poster": "/assets/troops/pack-armor.webp",
+      "taskId": "01a1559d-0c07-70d5-8155-9fb3385edc69",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 10,
+      "rig": "authored-creature-skeleton",
+      "height": 1.022015204961714,
+      "triangles": 3658,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 12,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 12,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 12,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 12,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 12,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 12,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 561788,
+      "sha256": "90fb62590a0c6c88a27df056c60b3f3cfb9f7ebbe3138047760a38b1f160ef4e"
+    },
+    "pack-air": {
+      "file": "/assets/troops/pack-air.glb",
+      "poster": "/assets/troops/pack-air.webp",
+      "taskId": "01a155a1-ea1b-71c3-893a-7dbc83ddcf70",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 6,
+      "rig": "authored-creature-skeleton",
+      "height": 0.9032571029383654,
+      "triangles": 3360,
+      "repairedNormals": 205,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 7,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 7,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 7,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 7,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 7,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 7,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 651936,
+      "sha256": "b14c5cb8117a8ac7a617d8c39b03b4b78ba49a106c8d5c3f6a548f8b48a30f9f"
+    },
+    "pack-ultimate": {
+      "file": "/assets/troops/pack-ultimate.glb",
+      "poster": "/assets/troops/pack-ultimate.webp",
+      "taskId": "01a155a1-f773-7238-bf85-afaa1afbd089",
+      "rigTaskId": null,
+      "attackTaskId": null,
+      "actionId": null,
+      "consumedCredits": 15,
+      "joints": 14,
+      "rig": "authored-creature-skeleton",
+      "height": 1.107142821553836,
+      "triangles": 5312,
+      "repairedNormals": 0,
+      "animations": [
+        {
+          "name": "idle",
+          "channels": 16,
+          "duration": 2.4000000953674316
+        },
+        {
+          "name": "walk",
+          "channels": 16,
+          "duration": 1.2000000476837158
+        },
+        {
+          "name": "run",
+          "channels": 16,
+          "duration": 0.6499999761581421
+        },
+        {
+          "name": "attack",
+          "channels": 16,
+          "duration": 1.399999976158142
+        },
+        {
+          "name": "capture",
+          "channels": 16,
+          "duration": 2
+        },
+        {
+          "name": "death",
+          "channels": 16,
+          "duration": 1.5
+        }
+      ],
+      "bytes": 708264,
+      "sha256": "393560b050c6c0d8c9053f8a59d6a08ffaa4c7ecaf4f4339ecbe707dd305e8af"
+    }
+  }
+}

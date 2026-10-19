@@ -548,3 +548,24 @@ dialog .secondary-button { margin-top: 16px; justify-content: center; }
 .tooltip-social-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #0088cc26; border: 1px solid #0088cc88; color: #29b6f6; text-decoration: none; font-size: 12px; font-weight: 700; }
 .tooltip-social-link:hover { background: #0088cc44; color: #fff; }
 
+
+
+.troops-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; image-rendering: auto; }
+#troopsToggle[aria-pressed=false] { opacity: .5; }
+.troop-role-picker { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; margin-top: 18px; }
+.troop-role-picker button { display: grid; justify-items: center; gap: 7px; padding: 6px 2px 10px; background: #102031; border: 1px solid #30495e; border-radius: 8px; min-width: 0; }
+.troop-role-picker button.selected { border-color: var(--accent); background: #1d3d43; }
+.troop-role-picker img { width: 100%; max-height: 62px; object-fit: contain; }
+.troop-role-picker b { font-size: 9px; }
+.troop-animation-controls { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.troop-animation-controls button { border: 1px solid #38546a; background: #172b3d; color: #b7d2df; padding: 9px 10px; border-radius: 6px; font-size: 10px; min-height: 36px; }
+.troop-animation-controls button.selected { border-color: var(--accent); color: var(--accent); background: #1d3b40; }
+#troopRotateControls { justify-content: center; margin: 8px 0; }
+@media (max-width: 560px) { .troop-role-picker img { max-height: 45px; } .troop-role-picker b { font-size: 8px; } }
+.ability-icon img { width: 44px; height: 29px; object-fit: contain; }
+
+#troopsBtn { flex-direction: column; gap: 3px; font-size: 8px; min-height: 48px; }
+#troopsToggle { font-size: 14px; font-weight: 700; }
+.troop-role-picker button, .troops-dialog .faction-picker button { color: #d5e5ef; }
+:root[data-theme="light"] .troops-dialog { background: #f3f8fc; color: #142a3c; }
+:root[data-theme="light"] .troops-dialog .model-status { color: #405e75; }

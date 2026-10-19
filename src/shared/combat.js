@@ -259,6 +259,7 @@ export async function resolveCombat({ players, now, initialPlayers, captures, re
       { pressure: edge.pressure.value, attacker: edge.pressure.attacker, contactAt: edge.contactAt }]));
     conflicts.push({ id, players: [summary.aId, summary.bId].sort(), firstContactAt: pairStats.get(id)?.firstContactAt,
       contactLength: edges.length, ratio: summary.ratio, attacker: summary.attacker.id, defender: summary.defender.id,
+      fronts: edges.slice(0, 6).map(edge => ({ aCell: edge.aCell, bCell: edge.bCell, aId: edge.aId, bId: edge.bId })),
       status: shielded ? 'shielded' : edges.some((edge) => edge.rate > 0) ? 'active' : 'stalemate',
       transferred: pairStats.get(id)?.transferred ?? 0, pressureByEdge,
       pressure: edges.reduce((sum, edge) => sum + edge.pressure.value, 0), lastResolvedAt: now,

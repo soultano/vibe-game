@@ -101,6 +101,23 @@ async function checkWorker() {
     assert.ok(Buffer.byteLength(main) < 600000, 'initial client must stay under 600 KB');
     const chunk = await call(lazyModule.slice(1));
     assert.equal(chunk.status, 200); assert.match(chunk.headers.get('content-type'), /javascript/);
+    const armyModule = main.match(/import\("(\.\/chunks\/troops-3d-[^"]+\.js)"\)/)?.[1];
+    assert.ok(armyModule, 'animated troops must load on demand');
+    const armyManifest = await (await call('/assets/troops/manifest.json')).json();
+    assert.equal(Object.keys(armyManifest.models).length, 20);
+    let armyBytes = 0;
+    for (const record of Object.values(armyManifest.models)) for (const [path, type] of [[record.file, 'model/gltf-binary'], [record.poster, 'image/webp']]) {
+      const response = await call(path); assert.equal(response.status, 200, path);
+      assert.equal(response.headers.get('content-type'), type);
+      const bytes = Buffer.from(await response.arrayBuffer()); armyBytes += bytes.length;
+      assert.deepEqual(bytes, await readFile(join(project, 'dist/client', path)));
+      assert.equal((await call(path, { headers: { 'if-none-match': response.headers.get('etag') } })).status, 304);
+    }
+    assert.ok(armyBytes < 16000000, `animated army download budget: ${armyBytes}`);
+    for (const name of await readdir(join(project, 'dist/client/chunks'))) {
+      const response = await call('/chunks/' + name); assert.equal(response.status, 200);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(join(project, 'dist/client/chunks', name)));
+    }
     const config = await (await call('/api/config')).json();
     assert.equal(config.cellResolution, 8); assert.equal(config.tileResolution, 5);
     assert.deepEqual(config.factions.map(faction => faction.id), factionIds);

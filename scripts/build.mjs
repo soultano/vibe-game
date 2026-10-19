@@ -26,6 +26,7 @@ async function optimizeArtwork() {
   console.log(`Artwork: ${originalBytes} → ${optimizedBytes} bytes (${(100 * (1 - optimizedBytes / originalBytes)).toFixed(1)}% smaller)`);
 }
 await cp('src/client/assets/models','dist/client/assets/models',{recursive:true});
+await cp('src/client/assets/troops','dist/client/assets/troops',{recursive:true});
 await build({entryPoints:['src/client/main.js'],outdir:'dist/client',chunkNames:'chunks/[name]-[hash]',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'none'});
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.webp':'image/webp','.svg':'image/svg+xml','.glb':'model/gltf-binary'};
 const assets={};
