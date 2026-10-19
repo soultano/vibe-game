@@ -219,6 +219,11 @@ export async function resolveCombat({ players, now, initialPlayers, captures, re
             crossing.attacker.growthPixels += 1;
           }
           addArea(actual.get(crossing.defender.id), -1, multiplier); addArea(actual.get(crossing.attacker.id), 1, multiplier);
+          const attackerPlayer = actual.get(crossing.attacker.id);
+          if (attackerPlayer) {
+            attackerPlayer.battlesWon = (attackerPlayer.battlesWon ?? 0) + 1;
+            attackerPlayer.energy = (attackerPlayer.energy ?? 0) + 25;
+          }
           const event = { cell: crossing.target, from: crossing.defender.id, to: crossing.attacker.id, at: cursor, terrain: multiplier };
           transfers.push(event);
           for (const [id, delta] of [[event.from, -1], [event.to, 1]]) {
@@ -260,7 +265,7 @@ export async function resolveCombat({ players, now, initialPlayers, captures, re
       shieldUntil: shielded ? Math.max(...edges.flatMap((edge) => [frames.get(edge.aId).shieldUntil ?? 0, frames.get(edge.bId).shieldUntil ?? 0])) : null });
   }
   // Write back arrays for callers using a plain object rather than a Map.
-  if (!(captures instanceof Map)) for (const [id, ledger] of ledgers) captures[id] = ledger;
+  if (captures && !(captures instanceof Map)) for (const [id, ledger] of ledgers) captures[id] = ledger;
   if (growth?.claim) for (const [id, player] of frames) {
     const target = actual.get(id);
     target.growthRemainder = Math.max(0, Math.min(1 - 1e-12, player.growthPixels - player.pixels));

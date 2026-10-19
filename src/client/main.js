@@ -6,6 +6,9 @@ import { skipCost } from "../shared/economy.js";
 import { ABILITIES, factionAbilityName } from "../shared/abilities.js";
 import { headquartersFor } from "../shared/headquarters.js";
 import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./telegram.js";
+import { getLang, setLang, t, LANGUAGES } from "./i18n.js";
+import { ACHIEVEMENTS, playAchievementFanfare, launchFireworks } from "./achievements.js";
+import { initTutorial, isTutorialDone, setTutorialDone } from "./tutorial.js";
 const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), displayCtx = canvas.getContext("2d", { alpha: false });
 let ctx = displayCtx;
 const mapLayer = document.createElement("canvas"), mapCtx = mapLayer.getContext("2d", { alpha: false });
@@ -24,7 +27,7 @@ const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").ma
 function invalidate() { dirty = true; requestFrame(); }
 function requestFrame() { if (frameHandle === null && !document.hidden) frameHandle = requestAnimationFrame(frame); }
 function scheduleTiles() { clearTimeout(tileTimer); tileTimer = setTimeout(refreshTiles, 160); }
-function setText(id, value) { const node = $(id), text = String(value); if (node.textContent !== text) node.textContent = text; }
+function setText(id, value) { const node = $(id), text = String(value); if (node && node.textContent !== text) node.textContent = text; }
 try { sessionToken = sessionStorage.getItem('pd-session') || ''; } catch {}
 function saveSession(token = '') {
   sessionToken = token;
@@ -117,6 +120,13 @@ function headquartersSprite(faction) {
 }
 function mapColor(faction) {
   return getFaction(faction)?.color || "#7796ad";
+}
+function playerColor(playerOrId, fallbackFaction) {
+  const p = typeof playerOrId === "object" ? playerOrId : playerById(playerOrId);
+  if (p?.color && /^#[0-9a-fA-F]{6}$/i.test(p.color)) {
+    return p.color;
+  }
+  return mapColor(p?.faction || fallbackFaction);
 }
 function closeAccount() {
   $("accountPanel").hidden = true;
@@ -406,6 +416,10 @@ function acceptModel(next) {
     autoCentered = true;
     home();
   }
+  if (next.player) {
+    checkAchievements(next.player);
+    $("refDot").hidden = !(next.player.reserveEnergy > 0);
+  }
   updateUI();
   invalidate();
 }
@@ -663,9 +677,10 @@ function drawSector(p) {
     ctx.lineTo(q.x, q.y);
   }
   ctx.closePath();
-  ctx.fillStyle = mapColor(p.faction) + "0a";
+  const color = playerColor(p, p.faction);
+  ctx.fillStyle = color + "0a";
   ctx.fill();
-  ctx.strokeStyle = mapColor(p.faction) + "77";
+  ctx.strokeStyle = color + "77";
   ctx.lineWidth = 1;
   ctx.setLineDash([5, 6]);
   ctx.stroke();
@@ -708,7 +723,7 @@ function drawMap(now) {
   if (activePanel === "sector") drawSector(model?.player);
   for (const [cell, id] of ownerCells()) {
     if (!cellVisible(cell)) continue;
-    const owner = playerById(id), color = mapColor(owner?.faction);
+    const owner = playerById(id), color = playerColor(owner, owner?.faction);
     cellPath(cell);
     ctx.fillStyle = color + "ad";
     ctx.fill();
@@ -756,7 +771,7 @@ function drawMap(now) {
     if (!p.baseCell) continue;
     const [lat, lng] = cellToLatLng(p.baseCell), pos = project(lat, lng);
     if (pos.x < -45 || pos.x > cw + 45 || pos.y < -45 || pos.y > ch + 45) continue;
-    const own = p.id === account?.id, color = mapColor(p.faction), sprite = headquartersDisplaySprite(p.faction), size = own ? 78 : 60;
+    const own = p.id === account?.id, color = playerColor(p, p.faction), sprite = headquartersDisplaySprite(p.faction), size = own ? 78 : 60;
     let labelY = pos.y + 42;
     if (zoom >= 64 && readySprite(sprite)) {
       ctx.fillStyle = "#02080c77";
@@ -822,7 +837,7 @@ function draw(now) {
     const [lat, lng] = cellToLatLng(e.cell), p = project(lat, lng);
     if (p.x < 0 || p.x > cw || p.y < 0 || p.y > ch) continue;
     ctx.globalAlpha = (1 - age) * 0.6;
-    ctx.strokeStyle = mapColor(playerById(e.owner)?.faction);
+    ctx.strokeStyle = playerColor(playerById(e.owner), playerById(e.owner)?.faction);
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(p.x, p.y, 3 + age * 8, 0, Math.PI * 2);
@@ -938,9 +953,19 @@ canvas.addEventListener("pointermove", (e) => {
   const p = atPoint(mouse.x, mouse.y);
   if (zoom >= 256 && !placing) {
     const cell = latLngToCell(p.lat, p.lng, 8), owner = ownerCells().get(cell), known = playerById(owner);
-    setText("mapTooltip", known ? `${known.name} · ${getFaction(known.faction).name}` : owner ? "Занятая ячейка" : cellIsLand(cell) ? "Свободная ячейка" : "Вода");
-    $("mapTooltip").style.left = `${Math.max(8, Math.min(cw - 225, mouse.x + 12))}px`;
-    $("mapTooltip").style.top = `${Math.max(35, mouse.y - 38)}px`;
+    if (known) {
+      const pCol = playerColor(known, known.faction);
+      let html = `<div class="tooltip-header"><span style="color:${pCol}">●</span> <b>${escape(known.name)}</b> <small>(${escape(getFaction(known.faction).name)})</small></div>`;
+      if (known.customLink) {
+        const linkTitle = known.customLinkTitle || 'Канал / Сайт';
+        html += `<a href="${escape(known.customLink)}" target="_blank" rel="noopener noreferrer" class="tooltip-social-link">🔗 ${escape(linkTitle)} ↗</a>`;
+      }
+      $("mapTooltip").innerHTML = html;
+    } else {
+      $("mapTooltip").innerHTML = owner ? escape(t('occupied_cell')) : cellIsLand(cell) ? escape(t('free_land')) : escape(t('water'));
+    }
+    $("mapTooltip").style.left = `${Math.max(8, Math.min(cw - 280, mouse.x + 12))}px`;
+    $("mapTooltip").style.top = `${Math.max(35, mouse.y - 48)}px`;
     $("mapTooltip").hidden = false;
   }
   if (placing) invalidate();
@@ -966,7 +991,16 @@ canvas.addEventListener("pointerup", async (e) => {
       focusAt(p.lat, p.lng, 384);
       return;
     }
-    const result = await action("/api/base", { cell, azimuth: Number($("startAzimuth").value), faction: selectedFaction, name: account.name }, "База основана. Сектор активирован.");
+    const referrer = localStorage.getItem("pd_referrer") || undefined;
+    const chosenColor = localStorage.getItem("pd_custom_color") || undefined;
+    const result = await action("/api/base", { 
+      cell, 
+      azimuth: Number($("startAzimuth").value), 
+      faction: selectedFaction, 
+      name: account.name,
+      referrer,
+      color: chosenColor
+    }, "База основана. Сектор активирован.");
     if (result) {
       placing = false;
       $("placementHint").hidden = true;
@@ -975,6 +1009,11 @@ canvas.addEventListener("pointerup", async (e) => {
       await refreshLeaderboard();
       home();
       appendEvent("База основана. Началась экспансия.", "base-founded");
+      if (!isTutorialDone()) {
+        setTimeout(() => {
+          tutorialController?.start();
+        }, 600);
+      }
     }
   } else if (selecting && model?.player) {
     if (ownerCells().get(cell) === account.id && cell !== model.player.baseCell) {
@@ -986,9 +1025,13 @@ canvas.addEventListener("pointerup", async (e) => {
     focusAt(p.lat, p.lng, 384);
   }
 });
-canvas.addEventListener("pointerleave", () => {
+canvas.addEventListener("pointerleave", (e) => {
+  if (e.relatedTarget && ($("mapTooltip").contains(e.relatedTarget) || e.relatedTarget === $("mapTooltip"))) return;
   mouse = null;
   if (placing) invalidate();
+  $("mapTooltip").hidden = true;
+});
+$("mapTooltip").addEventListener("pointerleave", () => {
   $("mapTooltip").hidden = true;
 });
 canvas.addEventListener("pointercancel", () => {
@@ -1325,6 +1368,373 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("online", () => { clearTimeout(pollTimer); pollWorld(); });
 $("missionBtn").onclick = () => openPanel("base");
+
+// ==========================================
+// ACHIEVEMENTS & FANFARE
+// ==========================================
+const unlockedAchievements = new Set();
+let achievementsInitialized = false;
+
+function showAchievementWoW(ach) {
+  const lang = getLang();
+  setText("wowTitle", ach.title[lang] || ach.title.ru);
+  setText("wowDesc", ach.desc[lang] || ach.desc.ru);
+  setText("wowPointsVal", `+${ach.points}`);
+  const shield = $("wowAchievement")?.querySelector('.wow-shield');
+  if (shield) shield.textContent = ach.icon || '🏆';
+
+  if ($("wowAchievement")) {
+    $("wowAchievement").hidden = false;
+    $("wowAchievement").classList.remove("hide");
+    $("wowAchievement").classList.add("show");
+  }
+
+  playAchievementFanfare();
+  launchFireworks($("saluteCanvas"));
+
+  setTimeout(() => {
+    if ($("wowAchievement")) {
+      $("wowAchievement").classList.remove("show");
+      $("wowAchievement").classList.add("hide");
+      setTimeout(() => {
+        if ($("wowAchievement")) $("wowAchievement").hidden = true;
+      }, 500);
+    }
+  }, 3500);
+}
+
+function checkAchievements(p) {
+  if (!p) return;
+  for (const ach of ACHIEVEMENTS) {
+    if (ach.check(p)) {
+      if (!unlockedAchievements.has(ach.id)) {
+        unlockedAchievements.add(ach.id);
+        if (achievementsInitialized) {
+          showAchievementWoW(ach);
+          appendEvent(`Достижение получено: ${ach.title[getLang()] || ach.title.ru}`, `ach:${ach.id}`);
+        }
+      }
+    }
+  }
+  achievementsInitialized = true;
+}
+
+function renderAchievementsDialog() {
+  if (!$("achievementsList")) return;
+  const p = model?.player;
+  const lang = getLang();
+  let totalPoints = 0;
+  let unlockedCount = 0;
+
+  const html = ACHIEVEMENTS.map(ach => {
+    const isUnlocked = p ? ach.check(p) : false;
+    const progressVal = p ? ach.progress(p) : 0;
+    const pct = Math.min(100, Math.round((progressVal / ach.target) * 100));
+    if (isUnlocked) {
+      totalPoints += ach.points;
+      unlockedCount++;
+    }
+    const title = ach.title[lang] || ach.title.ru;
+    const desc = ach.desc[lang] || ach.desc.ru;
+
+    return `
+      <div class="ach-card ${isUnlocked ? 'unlocked' : 'locked'}">
+        <span class="ach-card-icon">${ach.icon}</span>
+        <div class="ach-card-info">
+          <h4>${escape(title)}</h4>
+          <p>${escape(desc)}</p>
+        </div>
+        <div class="ach-card-meta">
+          <span class="ach-card-points">+${ach.points} AP</span>
+          <div class="ach-progress-bar">
+            <i style="width: ${pct}%"></i>
+          </div>
+          <small style="color:var(--muted); font-size:10px;">${fmt(progressVal)} / ${fmt(ach.target)}</small>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  $("achievementsList").innerHTML = html;
+  setText("achPointsTotal", totalPoints);
+  setText("achUnlockedCount", `${unlockedCount} / ${ACHIEVEMENTS.length}`);
+}
+
+// ==========================================
+// REFERRAL & RESERVE ENERGY
+// ==========================================
+function captureReferralParam() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    let ref = params.get('ref') || params.get('startapp') || params.get('start');
+    if (!ref && window.Telegram?.WebApp?.initDataUnsafe?.start_param) {
+      ref = window.Telegram.WebApp.initDataUnsafe.start_param;
+    }
+    if (ref) {
+      if (ref.startsWith('ref_')) ref = ref.slice(4);
+      localStorage.setItem('pd_referrer', ref.trim());
+    }
+  } catch {}
+}
+
+function updateReferralsUI() {
+  const p = model?.player;
+  const reserve = p?.reserveEnergy || 0;
+  const friends = p?.referralsCount || 0;
+  const claimed = p?.claimedReserveEnergy || 0;
+
+  setText("refReserveVal", `${fmt(reserve)} ⚡`);
+  setText("refFriendsCount", friends);
+  setText("refClaimedTotal", `${fmt(claimed)} ⚡`);
+  if ($("claimReserveBtn")) $("claimReserveBtn").disabled = !p || reserve <= 0;
+  if ($("refDot")) $("refDot").hidden = reserve <= 0;
+
+  const refCode = account?.id || '';
+  const origin = window.location.origin;
+  const webRefLink = `${origin}/?ref=${encodeURIComponent(refCode)}`;
+  if ($("refLinkInput")) $("refLinkInput").value = webRefLink;
+}
+
+function setupReferralDialogButtons() {
+  if ($("copyRefBtn")) $("copyRefBtn").onclick = async () => {
+    const val = $("refLinkInput")?.value || '';
+    try {
+      await navigator.clipboard.writeText(val);
+      toast(t('copied'));
+    } catch {
+      $("refLinkInput")?.select();
+      document.execCommand('copy');
+      toast(t('copied'));
+    }
+  };
+
+  if ($("shareTelegramBtn")) $("shareTelegramBtn").onclick = () => {
+    const val = $("refLinkInput")?.value || '';
+    const text = encodeURIComponent("Присоединяйся к моей империи в геостратегии Pixel Dominion на реальной карте мира! ⚔️🌍");
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(val)}&text=${text}`;
+    window.open(shareUrl, "_blank");
+  };
+
+  if ($("claimReserveBtn")) $("claimReserveBtn").onclick = async () => {
+    $("claimReserveBtn").disabled = true;
+    try {
+      const res = await action("/api/referrals/claim", {}, t('ref_claimed_msg'));
+      if (res?.player) acceptModel({ ...model, player: res.player });
+      updateReferralsUI();
+      beep(600);
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      if ($("claimReserveBtn")) $("claimReserveBtn").disabled = (model?.player?.reserveEnergy || 0) <= 0;
+    }
+  };
+
+  if ($("openRefFromProfile")) $("openRefFromProfile").onclick = () => {
+    closeAccount();
+    updateReferralsUI();
+    $("referralDialog")?.showModal();
+  };
+
+  if ($("openAchFromProfile")) $("openAchFromProfile").onclick = () => {
+    closeAccount();
+    renderAchievementsDialog();
+    $("achievementsDialog")?.showModal();
+  };
+
+  if ($("achievementsBtn")) $("achievementsBtn").onclick = () => {
+    renderAchievementsDialog();
+    $("achievementsDialog")?.showModal();
+  };
+
+  if ($("referralsBtn")) $("referralsBtn").onclick = () => {
+    updateReferralsUI();
+    $("referralDialog")?.showModal();
+  };
+}
+
+// ==========================================
+// PROFILE CUSTOMIZATION (COLOR & SOCIAL LINK)
+// ==========================================
+const PALETTE_COLORS = [
+  "#00d4ff", "#ff3366", "#00ff88", "#ffd700", "#a855f7",
+  "#ff7849", "#06b6d4", "#ec4899", "#84cc16", "#eab308"
+];
+let selectedCustomColor = localStorage.getItem('pd_custom_color') || '#00d4ff';
+
+function initCustomization() {
+  const p = model?.player;
+  if (p?.color) selectedCustomColor = p.color;
+
+  const palette = $("colorPalette");
+  if (palette) {
+    palette.innerHTML = PALETTE_COLORS.map(c => `
+      <button type="button" class="color-swatch ${c.toLowerCase() === selectedCustomColor.toLowerCase() ? 'selected' : ''}" data-color="${c}" style="background-color: ${c}" aria-label="Color ${c}"></button>
+    `).join('');
+
+    palette.onclick = (e) => {
+      const swatch = e.target.closest('[data-color]');
+      if (!swatch) return;
+      selectedCustomColor = swatch.dataset.color;
+      if ($("customColorPicker")) $("customColorPicker").value = selectedCustomColor;
+      palette.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('selected', s === swatch));
+      try { localStorage.setItem('pd_custom_color', selectedCustomColor); } catch {}
+    };
+  }
+
+  if ($("customColorPicker")) {
+    $("customColorPicker").value = selectedCustomColor;
+    $("customColorPicker").oninput = (e) => {
+      selectedCustomColor = e.target.value;
+      if (palette) palette.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('selected', s.dataset.color.toLowerCase() === selectedCustomColor.toLowerCase()));
+      try { localStorage.setItem('pd_custom_color', selectedCustomColor); } catch {}
+    };
+  }
+
+  if ($("customLinkInput") && p?.customLink) $("customLinkInput").value = p.customLink;
+  if ($("customLinkTitleInput") && p?.customLinkTitle) $("customLinkTitleInput").value = p.customLinkTitle;
+
+  if ($("saveCustomizationBtn")) $("saveCustomizationBtn").onclick = async () => {
+    const color = selectedCustomColor;
+    const customLink = $("customLinkInput")?.value.trim() || '';
+    const customLinkTitle = $("customLinkTitleInput")?.value.trim() || '';
+
+    try {
+      $("saveCustomizationBtn").disabled = true;
+      const res = await action("/api/player/customization", {
+        color,
+        customLink,
+        customLinkTitle,
+      }, t('saved_ok'));
+      if (res?.player) acceptModel({ ...model, player: res.player });
+      invalidate();
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      if ($("saveCustomizationBtn")) $("saveCustomizationBtn").disabled = false;
+    }
+  };
+}
+
+// ==========================================
+// THEME & LANGUAGE
+// ==========================================
+function initTheme() {
+  let theme = 'dark';
+  try {
+    theme = localStorage.getItem('pixel-theme') || 'dark';
+  } catch {}
+  document.documentElement.setAttribute('data-theme', theme);
+  updateThemeButton(theme);
+
+  if ($("themeToggleBtn")) {
+    $("themeToggleBtn").onclick = () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('pixel-theme', next); } catch {}
+      updateThemeButton(next);
+      invalidate();
+    };
+  }
+}
+
+function updateThemeButton(theme) {
+  if (!$("themeToggleBtn")) return;
+  const isLight = theme === 'light';
+  $("themeToggleBtn").setAttribute('aria-label', isLight ? t('theme_dark') : t('theme_light'));
+  $("themeToggleBtn").innerHTML = isLight 
+    ? '<svg><use href="#i-moon"/></svg>' 
+    : '<svg><use href="#i-sun"/></svg>';
+}
+
+function initLang() {
+  const current = getLang();
+  setText("langCode", current.toUpperCase());
+  const curObj = LANGUAGES.find(l => l.code === current);
+  if (curObj) setText("langFlag", curObj.flag);
+
+  if ($("langDropdown")) {
+    $("langDropdown").innerHTML = LANGUAGES.map(l => `
+      <button class="lang-opt ${l.code === current ? 'active' : ''}" data-lang="${l.code}">
+        <span>${l.flag}</span>
+        <span>${l.label}</span>
+      </button>
+    `).join('');
+
+    $("langDropdown").onclick = (e) => {
+      const opt = e.target.closest('[data-lang]');
+      if (!opt) return;
+      const langCode = opt.dataset.lang;
+      setLang(langCode);
+      setText("langCode", langCode.toUpperCase());
+      const selectedObj = LANGUAGES.find(l => l.code === langCode);
+      if (selectedObj) setText("langFlag", selectedObj.flag);
+      $("langDropdown").querySelectorAll('.lang-opt').forEach(b => b.classList.toggle('active', b === opt));
+      $("langDropdown").hidden = true;
+      renderAchievementsDialog();
+      updateUI();
+    };
+  }
+
+  if ($("langBtn")) {
+    $("langBtn").onclick = (e) => {
+      e.stopPropagation();
+      if ($("langDropdown")) $("langDropdown").hidden = !$("langDropdown").hidden;
+    };
+  }
+
+  document.addEventListener('pointerdown', (e) => {
+    if ($("langDropdown") && !$("langDropdown").hidden && !$("langDropdown").contains(e.target) && $("langBtn") && !$("langBtn").contains(e.target)) {
+      $("langDropdown").hidden = true;
+    }
+  });
+}
+
+// ==========================================
+// INTERACTIVE TUTORIAL
+// ==========================================
+let tutorialController = null;
+
+function setupTutorial() {
+  tutorialController = initTutorial({
+    onStepChange: ({ index, total, step, title, desc, isFirst, isLast }) => {
+      if ($("tutorialOverlay")) $("tutorialOverlay").hidden = false;
+      setText("tutStepBadge", `${index + 1} / ${total}`);
+      setText("tutTitle", title);
+      setText("tutDesc", desc);
+      setText("tutIcon", step.icon);
+
+      if ($("tutPrevBtn")) $("tutPrevBtn").hidden = isFirst;
+      setText("tutNextBtn", isLast ? t('tut_finish') : t('tut_next'));
+
+      document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
+      if (step.target) {
+        const el = document.querySelector(step.target);
+        if (el && !el.hidden) {
+          el.classList.add('tutorial-highlight');
+        }
+      }
+    },
+    onComplete: () => {
+      if ($("tutorialOverlay")) $("tutorialOverlay").hidden = true;
+      document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
+    }
+  });
+
+  if ($("tutNextBtn")) $("tutNextBtn").onclick = () => tutorialController.next();
+  if ($("tutPrevBtn")) $("tutPrevBtn").onclick = () => tutorialController.prev();
+  if ($("tutSkipBtn")) $("tutSkipBtn").onclick = () => tutorialController.skip();
+
+  if ($("tutorialBtn")) $("tutorialBtn").onclick = () => {
+    tutorialController.start();
+  };
+
+  if ($("helpBtn")) $("helpBtn").onclick = () => {
+    closeAccount();
+    tutorialController.start();
+  };
+}
+
 function setupTelegram() {
   const webApp = window.Telegram?.WebApp;
   if (!webApp || !telegramLaunchData) return;
@@ -1352,6 +1762,12 @@ function frame(now) {
   if (dirty || effects.length || abilityBursts.length) requestFrame();
 }
 async function init() {
+  captureReferralParam();
+  initTheme();
+  initLang();
+  setupTutorial();
+  initCustomization();
+  setupReferralDialogButtons();
   renderFactions();
   renderAbilities();
   fit();

@@ -474,7 +474,24 @@ export class GameService {
         shieldUntil: now + this.config.shieldHours * HOUR, fingerprintHash, seasonId: this.config.seasonId,
         levelTimeline: [{ at: now, level: 1 }], energyPixels: 1, borderCells: [cell], frontierBirths: { [cell]: now },
         upgradeInvestment: 0, upgradeStartedAt: null, upgradeCompletesAt: null, upgradeTargetLevel: null,
-        abilities: {}, abilityReceipts: [] };
+        abilities: {}, abilityReceipts: [],
+        color: (typeof input.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(input.color.trim())) ? input.color.trim() : null,
+        customLink: null, customLinkTitle: null,
+        referralsCount: 0, reserveEnergy: 0, claimedReserveEnergy: 0,
+        battlesWon: 0, achievements: [] };
+      if (input.referrer && typeof input.referrer === 'string' && input.referrer !== accountId) {
+        const referrer = await tx.get(`player:${input.referrer}`);
+        if (referrer) {
+          const refKey = `referral:${input.referrer}:${accountId}`;
+          if (!await tx.get(refKey)) {
+            referrer.referralsCount = (referrer.referralsCount ?? 0) + 1;
+            referrer.reserveEnergy = (referrer.reserveEnergy ?? 0) + 200;
+            await tx.put(`player:${input.referrer}`, referrer);
+            await tx.put(refKey, { at: now, referred: accountId });
+            player.referredBy = input.referrer;
+          }
+        }
+      }
       await this.writeOwner(tx, cell, accountId, now);
       await tx.put(`player:${accountId}`, player);
       await indexPlayer(tx, player);
@@ -618,6 +635,50 @@ export class GameService {
     });
   }
 
+  async updateCustomization(accountId, { color, customLink, customLinkTitle } = {}) {
+    return this.action(accountId, (p, tx, now) => {
+      if (typeof color === 'string') {
+        const trimmed = color.trim();
+        fail(/^#[0-9a-fA-F]{6}$/.test(trimmed), 'Некорректный цвет (формат #RRGGBB).');
+        p.color = trimmed;
+      }
+      if (customLink !== undefined) {
+        if (customLink === null || customLink === '') {
+          p.customLink = null;
+          p.customLinkTitle = null;
+        } else {
+          fail(typeof customLink === 'string', 'Некорректная ссылка.');
+          const trimmed = customLink.trim();
+          fail(trimmed.length <= 256, 'Ссылка слишком длинная (до 256 символов).');
+          try {
+            const parsed = new URL(trimmed);
+            fail(['http:', 'https:'].includes(parsed.protocol), 'Ссылка должна начинаться с https:// или http://');
+            p.customLink = trimmed;
+            if (typeof customLinkTitle === 'string') {
+              p.customLinkTitle = customLinkTitle.trim().slice(0, 64) || null;
+            }
+          } catch (e) {
+            fail(false, 'Некорректный URL адрес ссылки.');
+          }
+        }
+      }
+    });
+  }
+
+  async claimReferralEnergy(accountId) {
+    return this.action(accountId, (p, tx, now) => {
+      const available = p.reserveEnergy ?? 0;
+      fail(available > 0, 'У вас нет накопленной запасной энергии от приглашённых друзей.');
+      const storage = storageCapacity(p.level, p.terrainAverage ?? 1, p.faction);
+      const room = Math.max(0, storage * 3 - p.energy);
+      fail(room > 0, 'Хранилище энергии заполнено. Вложите энергию в улучшение базы.');
+      const claimAmount = Math.min(available, room);
+      p.reserveEnergy -= claimAmount;
+      p.claimedReserveEnergy = (p.claimedReserveEnergy ?? 0) + claimAmount;
+      p.energy += claimAmount;
+    });
+  }
+
   async tiles({ parents = [], versions = {} } = {}, accountId = null) {
     fail(Array.isArray(parents) && parents.length <= 48 && parents.every(p => typeof p === 'string' && isValidCell(p) && getResolution(p) === 5), 'Запросите до 48 H3-тайлов resolution 5.');
     return this.transaction(async (tx, now) => {
@@ -643,16 +704,41 @@ export class GameService {
       }
       const ownerIds = new Set(tiles.flatMap(tile => [...Object.keys(tile.owners ?? {}), ...(tile.changes ?? []).flatMap(change => [change.owner, change.previous]).filter(Boolean)]));
       const profiles = [];
-      for (const id of ownerIds) { const player = await tx.get(`player:${id}`); if (player) profiles.push({ id: player.id, name: player.name, faction: player.faction, level: player.level, pixels: player.pixels, baseCell: player.baseCell }); }
+      for (const id of ownerIds) {
+        const player = await tx.get(`player:${id}`);
+        if (player) profiles.push({
+          id: player.id,
+          name: player.name,
+          faction: player.faction,
+          level: player.level,
+          pixels: player.pixels,
+          baseCell: player.baseCell,
+          color: player.color ?? null,
+          customLink: player.customLink ?? null,
+          customLinkTitle: player.customLinkTitle ?? null,
+        });
+      }
       return { serverTime: now, seasonId: this.config.seasonId, tiles, conflicts, players: profiles };
     });
   }
 
   async leaderboard() {
     const now = this.clock(), rows = await this.store.list('player:');
-    return { serverTime: now, seasonId: this.config.seasonId,
-      players: rows.map(({ value: p }) => ({ id: p.id, name: p.name, faction: p.faction, level: p.level, pixels: Math.floor(p.pixels), baseCell: p.baseCell }))
-        .sort((a, b) => b.level - a.level || b.pixels - a.pixels || a.id.localeCompare(b.id)).slice(0, 100) };
+    return {
+      serverTime: now,
+      seasonId: this.config.seasonId,
+      players: rows.map(({ value: p }) => ({
+        id: p.id,
+        name: p.name,
+        faction: p.faction,
+        level: p.level,
+        pixels: Math.floor(p.pixels),
+        baseCell: p.baseCell,
+        color: p.color ?? null,
+        customLink: p.customLink ?? null,
+        customLinkTitle: p.customLinkTitle ?? null,
+      })).sort((a, b) => b.level - a.level || b.pixels - a.pixels || a.id.localeCompare(b.id)).slice(0, 100),
+    };
   }
 
   shop() { return { items: CATALOG, energyDailyCapHours: PAID_ENERGY_HOURS_PER_DAY, transfers: false, secondBaseEnabled: false }; }
