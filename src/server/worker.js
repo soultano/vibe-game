@@ -9,7 +9,7 @@ async function serveAsset(request) {
  if(asset.redirect)return new Response(null,{status:302,headers:{Location:asset.redirect,'Cache-Control':'public, max-age=300'}});
  if(request.headers.get('if-none-match')===asset.etag)return new Response(null,{status:304,headers:{ETag:asset.etag}});
  let bytes=decoded.get(path);if(!bytes){bytes=Uint8Array.from(atob(asset.body),c=>c.charCodeAt(0));decoded.set(path,bytes);}
- const headers={'Content-Type':asset.type,'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','ETag':asset.etag,'Cache-Control':/\.(png|webp)$/.test(path)?'public, max-age=86400':'no-cache'};
+ const headers={'Content-Type':asset.type,'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','ETag':asset.etag,'Cache-Control':/\.(png|webp|glb)$/.test(path)?'public, max-age=86400':'no-cache'};
  return new Response(request.method==='HEAD'?null:bytes,{headers});
 }
 export default {

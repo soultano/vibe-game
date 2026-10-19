@@ -351,3 +351,37 @@ dialog .secondary-button { margin-top: 16px; justify-content: center; }
 #telegramWidget:empty { display: none; }
 #telegramWidget iframe { max-width: 100%; }
 @media (max-height: 560px) and (max-width: 700px) { body:has(.game-panel:not([hidden])) .map-dock, body:has(.game-panel:not([hidden])) .ability-bar { visibility: hidden; } }
+
+/* One shared WebGL renderer supplies these views and cached map stamps. */
+.headquarters-preview .model-canvas { position: relative; z-index: 1; width: 148px; height: 148px; }
+.model-canvas { display: block; aspect-ratio: 1; touch-action: pan-y; cursor: grab; }
+.model-canvas:active { cursor: grabbing; }
+.headquarters-preview img, .welcome-art img { image-rendering: auto; }
+.model-inspect-button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 38px; width: 100%; margin-top: 9px; padding: 9px 10px; border: 1px solid #466176; border-radius: 7px; background: #203649; color: #d5eaf5; font-size: 10px; font-weight: 600; position: relative; z-index: 1; }
+.model-inspect-button:hover { background: #2b4b5b; border-color: var(--accent); }
+.base-model-button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 72px; margin: -6px 0 18px; padding: 5px 12px 5px 5px; border: 1px solid var(--line); border-radius: 8px; background: #0d1826; text-align: left; }
+.base-model-button:hover { border-color: var(--accent); background: #182c3c; }
+.base-model-button img { width: 60px; height: 60px; object-fit: contain; }
+.base-model-button > span { font-size: 12px; }
+.base-model-button > span:last-child { margin-left: auto; color: var(--accent); }
+.base-model-button small { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; }
+.headquarters-dialog { width: min(540px, calc(100vw - 28px)); }
+.headquarters-dialog h2 { font-size: 25px; margin-bottom: 18px; }
+.model-stage { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 1; border: 1px solid #30495e; border-radius: 12px; overflow: hidden; background: radial-gradient(ellipse at 50% 64%, #25465488, transparent 65%), repeating-linear-gradient(0deg, #9bd5f308 0 1px, transparent 1px 32px), repeating-linear-gradient(90deg, #9bd5f308 0 1px, transparent 1px 32px), #0a1421; }
+.model-stage > img, .model-stage > canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+.model-stage > canvas { position: absolute; inset: 0; }
+.model-status { color: #a4becf; font-size: 11px; line-height: 1.7; margin: 12px 0; min-height: 18px; }
+.model-controls { display: flex; align-items: center; gap: 8px; }
+.model-controls .secondary-button { justify-content: center; width: 48px; min-height: 44px; margin: 0; padding: 10px; }
+.model-controls .secondary-button:nth-child(2) { flex: 1; width: auto; font-size: 11px; }
+.model-faction-picker { margin-top: 20px; }
+.faction-sheet .model-inspect-button { font-size: 9px; margin-top: 17px; }
+@media (max-width: 760px) {
+  .headquarters-preview .model-canvas { width: 120px; height: 120px; }
+  .headquarters-dialog { padding: 24px; }
+  .headquarters-dialog h2 { font-size: 22px; }
+  .model-stage { width: min(100%, 42vh); margin: 0 auto; }
+  .model-status { font-size: 10px; }
+}
+@media (max-height: 740px) { .headquarters-preview .model-canvas { width: 100px; height: 100px; } }
+@media (max-height: 560px) { .model-stage { width: min(100%, 40vh); margin: 0 auto; } }

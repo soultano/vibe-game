@@ -83,6 +83,24 @@ async function checkWorker() {
       assert.equal((await call(path, { headers: { 'if-none-match': response.headers.get('etag') } })).status, 304);
     }
     assert.ok(artworkBytes < 400000, `artwork must fit the 400 KB download budget, got ${artworkBytes}`);
+    let modelBytes = 0;
+    for (const id of factionIds) for (const [suffix, type] of [['.glb', 'model/gltf-binary'], ['-poster.webp', 'image/webp']]) {
+      const path = `/assets/models/${id}${suffix}`, response = await call(path);
+      assert.equal(response.status, 200, path);
+      assert.equal(response.headers.get('content-type'), type);
+      assert.match(response.headers.get('cache-control'), /max-age=86400/);
+      const bytes = Buffer.from(await response.arrayBuffer()); modelBytes += bytes.length;
+      assert.deepEqual(bytes, await readFile(join(project, 'dist/client', path)));
+      assert.equal((await call(path, { headers: { 'if-none-match': response.headers.get('etag') } })).status, 304);
+    }
+    assert.ok(modelBytes < 4000000, `five models and posters must fit 4 MB, got ${modelBytes}`);
+    const main = await (await call('/main.js')).text();
+    const lazyModule = main.match(/import\("(\.\/chunks\/headquarters-3d-[^"]+\.js)"\)/)?.[1];
+    assert.ok(lazyModule, 'Three.js must load on demand in a separate chunk');
+    // Includes the existing H3 geographic engine; Three.js stays in the chunk.
+    assert.ok(Buffer.byteLength(main) < 600000, 'initial client must stay under 600 KB');
+    const chunk = await call(lazyModule.slice(1));
+    assert.equal(chunk.status, 200); assert.match(chunk.headers.get('content-type'), /javascript/);
     const config = await (await call('/api/config')).json();
     assert.equal(config.cellResolution, 8); assert.equal(config.tileResolution, 5);
     assert.deepEqual(config.factions.map(faction => faction.id), factionIds);
@@ -109,7 +127,7 @@ async function checkWorker() {
     assert.ok(DB.counts.statements > 0 && DB.counts.bound > 0 && DB.counts.batches > 0, 'the emitted Worker must exercise actual prepared SQL and transaction bindings');
     assert.equal(db.prepare('SELECT count(*) AS count FROM records WHERE key LIKE ?').get('login:%').count, 1);
     assert.equal(db.prepare('SELECT count(*) AS count FROM _atomic_guard').get().count, 0);
-    console.log(`Worker OK: HTML, ten optimized WebP assets, 400 KB artwork budget, H3 config, SQL storage, host cookies, disabled dev auth, tile ETag/304, 404 (${DB.counts.statements} real SQL statements).`);
+    console.log(`Worker OK: HTML, ten WebP sprites, five GLBs and posters, lazy 3D chunk, download budgets, H3 config, SQL storage, host cookies, disabled dev auth, tile ETag/304, 404 (${DB.counts.statements} real SQL statements).`);
   } finally { db.close(); }
 }
 

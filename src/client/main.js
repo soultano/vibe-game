@@ -16,6 +16,7 @@ let lastRender = 0, lastDetails = 0, dirty = true, toastTimer, sound = false, au
 const profiles = /* @__PURE__ */ new Map(), tileCache = /* @__PURE__ */ new Map(), cellCache = /* @__PURE__ */ new Map(), boundaryCache = /* @__PURE__ */ new Map(), effects = [], events = [], seenEvents = /* @__PURE__ */ new Set(), emblems = /* @__PURE__ */ new Map();
 const headquartersImages = /* @__PURE__ */ new Map(), abilityBursts = [], pointers = /* @__PURE__ */ new Map();
 let abilityBusy = null, pendingAbilityReset = null, pinch = null, gestureMoved = false;
+let headquarters3D = null, headquarters3DPromise = null, modelsUnavailable = false, inspectedFaction = "protocol", inlineModelFaction = null;
 const telegramLaunchData = readTelegramInitData(location, window.Telegram?.WebApp);
 let sessionToken = '', loginToken = '', authBusy = false, launchExpired = false, lastLeaderboard = 0;
 let frameHandle = null, tileTimer, pollTimer, neutralKey = '', drawingGeometry = null, ownership = new Map(), ownershipDirty = true;
@@ -43,6 +44,72 @@ for (const f of FACTIONS) {
   image.src = f.logo;
   image.onload = invalidate;
   emblems.set(f.id, image);
+}
+function readySprite(sprite) {
+  return !!sprite && !!(sprite.hq3dReady || sprite.complete && sprite.naturalWidth);
+}
+function headquartersDisplaySprite(faction) {
+  return headquarters3D?.getStamp(faction) || headquartersSprite(faction);
+}
+async function ensureHeadquarters3D() {
+  if (modelsUnavailable || typeof window.WebGL2RenderingContext === "undefined") return null;
+  if (!headquarters3DPromise) headquarters3DPromise = import("./headquarters-3d.js").then(module => {
+    headquarters3D = module.createHeadquarters3D({
+      onReady: invalidate,
+      onUnavailable(id) {
+        if (!id) modelsUnavailable = true;
+        if (!id || id === selectedFaction) { $("spawnModelCanvas").hidden = true; $("headquartersPreview").hidden = false; }
+        invalidate();
+      },
+    });
+    return headquarters3D;
+  }).catch(() => { modelsUnavailable = true; return null; });
+  return headquarters3DPromise;
+}
+function syncHeadquartersPreview() {
+  if (!account || modelsUnavailable || $("spawnCard").hidden || inlineModelFaction === selectedFaction) return;
+  const faction = selectedFaction;
+  inlineModelFaction = faction;
+  $("spawnModelCanvas").hidden = true;
+  $("headquartersPreview").hidden = false;
+  ensureHeadquarters3D().then(engine => {
+    if (!engine || selectedFaction !== faction || $("spawnCard").hidden) return;
+    engine.show($("spawnModelCanvas"), faction, {
+      ready() { if (selectedFaction !== faction) return; $("spawnModelCanvas").hidden = false; $("headquartersPreview").hidden = true; },
+      fallback() { if (selectedFaction !== faction) return; $("spawnModelCanvas").hidden = true; $("headquartersPreview").hidden = false; },
+    });
+  });
+}
+async function inspectHeadquarters(faction) {
+  const hq = headquartersFor(faction);
+  inspectedFaction = hq.id;
+  setText("modelTitle", hq.name);
+  $("modelPoster").src = hq.poster;
+  $("modelPoster").alt = hq.name;
+  $("modelPoster").hidden = false;
+  $("modelCanvas").hidden = true;
+  $("modelControls").hidden = true;
+  $("modelHelp").hidden = false;
+  setText("modelStatus", "Загружаем модель…");
+  $("modelFactionPicker").innerHTML = FACTIONS.map(f => `<button data-model-faction="${f.id}" style="--faction:${f.color}" aria-pressed="${f.id === hq.id}" class="${f.id === hq.id ? "selected" : ""}" aria-label="Осмотреть ${escape(headquartersFor(f.id).name)}"><img src="${f.logo}" alt=""><b>${f.name}</b></button>`).join("");
+  if (!$("headquartersDialog").open) $("headquartersDialog").showModal();
+  const fallback = () => {
+    if (inspectedFaction !== hq.id) return;
+    $("modelPoster").hidden = false; $("modelCanvas").hidden = true; $("modelControls").hidden = true;
+    $("modelHelp").hidden = true;
+    setText("modelStatus", "Сейчас доступно изображение штаба. Попробуйте 3D-осмотр позже или на другом устройстве.");
+  };
+  const engine = await ensureHeadquarters3D();
+  if (inspectedFaction !== hq.id) return;
+  if (!engine) { fallback(); return; }
+  engine.show($("modelCanvas"), hq.id, {
+    ready() {
+      if (inspectedFaction !== hq.id) return;
+      $("modelPoster").hidden = true; $("modelCanvas").hidden = false; $("modelControls").hidden = false;
+      setText("modelStatus", "Модель готова к осмотру");
+    },
+    fallback,
+  });
 }
 function headquartersSprite(faction) {
   if(!headquartersImages.has(faction)){const image=new Image();image.src=headquartersFor(faction).sprite;image.onload=invalidate;headquartersImages.set(faction,image);}
@@ -198,13 +265,15 @@ async function fingerprint() {
 function renderFactions() {
   $("factionPreview").innerHTML = FACTIONS.map((f) => `<button aria-label="${escape(f.name)}" data-preview="${f.id}"><img src="${f.logo}" alt=""></button>`).join("");
   $("factionPicker").innerHTML = FACTIONS.map((f) => `<button data-faction="${f.id}" style="--faction:${f.color}" aria-pressed="${f.id === selectedFaction}" class="${f.id === selectedFaction ? "selected" : ""}"><img src="${f.logo}" alt=""><b>${f.name}</b></button>`).join("");
-  $("factionAtlas").innerHTML = FACTIONS.map((f) => `<article class="faction-sheet" style="--faction:${f.color}"><img src="${f.logo}" alt="${f.name}"><h3>${f.name}</h3><p>${escape(f.description)}</p><p class="faction-benefit">${escape(f.bonus)}</p></article>`).join("");
+  $("factionAtlas").innerHTML = FACTIONS.map((f) => `<article class="faction-sheet" style="--faction:${f.color}"><img src="${f.logo}" alt="${f.name}"><h3>${f.name}</h3><p>${escape(f.description)}</p><p class="faction-benefit">${escape(f.bonus)}</p><button class="model-inspect-button" data-model="${f.id}">Осмотреть базу <span aria-hidden="true">↗</span></button></article>`).join("");
   updateFaction();
 }
 function updateFaction() {
   const f = getFaction(selectedFaction), hq = headquartersFor(selectedFaction);
   $("headquartersPreview").src = hq.sprite;
   $("headquartersPreview").alt = hq.name;
+  $("spawnModelCanvas").hidden = true;
+  $("headquartersPreview").hidden = false;
   setText("headquartersName", hq.name);
   $("factionDescription").innerHTML = `<strong>${escape(f.name)}</strong>${escape(f.bonus)}`;
   document.querySelectorAll("[data-faction]").forEach((b) => {
@@ -212,12 +281,15 @@ function updateFaction() {
     b.classList.toggle("selected", selected);
     b.setAttribute("aria-pressed", String(selected));
   });
+  inlineModelFaction = null;
+  syncHeadquartersPreview();
 }
 function resetWorldState() {
   model = null;
   placing = false;
   selecting = false;
   autoCentered = false;
+  inlineModelFaction = null;
   welcomeDismissed = false;
   selectedCells.clear();
   tileCache.clear();
@@ -442,6 +514,9 @@ function updateUI() {
   $("abandonBtn").disabled = !p || !selectedCells.size;
   $("billingBtn").hidden = !p?.subscriptionActive;
   $("cancelSubscriptionBtn").hidden = !p?.subscriptionActive;
+  $("ownBasePoster").src = headquartersFor(p?.faction || selectedFaction).sprite;
+  syncHeadquartersPreview();
+  if (p && !headquarters3D) ensureHeadquarters3D().then(engine => { if (engine) { engine.getStamp(p.faction); invalidate(); } });
 }
 function geometry() {
   const size = Math.min(cw / 360, ch / 180) * zoom;
@@ -681,9 +756,9 @@ function drawMap(now) {
     if (!p.baseCell) continue;
     const [lat, lng] = cellToLatLng(p.baseCell), pos = project(lat, lng);
     if (pos.x < -45 || pos.x > cw + 45 || pos.y < -45 || pos.y > ch + 45) continue;
-    const own = p.id === account?.id, color = mapColor(p.faction), sprite = headquartersSprite(p.faction), size = own ? 78 : 60;
+    const own = p.id === account?.id, color = mapColor(p.faction), sprite = headquartersDisplaySprite(p.faction), size = own ? 78 : 60;
     let labelY = pos.y + 42;
-    if (zoom >= 64 && sprite?.complete && sprite.naturalWidth) {
+    if (zoom >= 64 && readySprite(sprite)) {
       ctx.fillStyle = "#02080c77";
       ctx.beginPath();
       ctx.ellipse(pos.x, pos.y + 18, size * 0.38, size * 0.13, 0, 0, Math.PI * 2);
@@ -722,8 +797,8 @@ function drawMap(now) {
     cellPath(cell);
     ctx.fillStyle = cellIsLand(cell) ? "#6c9c7477" : "#c8847155";
     ctx.fill();
-    const sprite = headquartersSprite(selectedFaction);
-    if (sprite?.complete && sprite.naturalWidth) {
+    const sprite = headquartersDisplaySprite(selectedFaction);
+    if (readySprite(sprite)) {
       const at = project(...cellToLatLng(cell));
       ctx.globalAlpha = 0.75;
       ctx.drawImage(sprite, at.x - 35, at.y - 54, 70, 70);
@@ -951,6 +1026,21 @@ $("factionPicker").onclick = (e) => {
 };
 $("factionPreview").onclick = () => $("factionsDialog").showModal();
 $("factionsBtn").onclick = () => $("factionsDialog").showModal();
+$("factionAtlas").onclick = event => {
+  const button = event.target.closest("[data-model]");
+  if (!button) return;
+  $("factionsDialog").close();
+  return inspectHeadquarters(button.dataset.model);
+};
+$("spawnModelBtn").onclick = () => inspectHeadquarters(selectedFaction);
+$("baseModelBtn").onclick = () => inspectHeadquarters(model?.player?.faction || selectedFaction);
+$("modelFactionPicker").onclick = event => {
+  const button = event.target.closest("[data-model-faction]");
+  if (button) return inspectHeadquarters(button.dataset.modelFaction);
+};
+$("modelRotateLeft").onclick = () => headquarters3D?.rotate($("modelCanvas"), -.35);
+$("modelRotateRight").onclick = () => headquarters3D?.rotate($("modelCanvas"), .35);
+$("modelReset").onclick = () => headquarters3D?.reset($("modelCanvas"));
 $("helpBtn").onclick = () => {
   closeAccount();
   $("helpDialog").showModal();

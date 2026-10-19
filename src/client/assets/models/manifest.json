@@ -1,0 +1,76 @@
+{
+  "generator": "Meshy",
+  "pipeline": "image-to-3d / smart-topology / textured / 2k",
+  "models": {
+    "protocol": {
+      "file": "/assets/models/protocol.glb",
+      "poster": "/assets/models/protocol-poster.webp",
+      "taskId": "01a154f9-2e57-739e-bfa8-0913c689dc1d",
+      "resource": "image-to-3d",
+      "consumedCredits": 15,
+      "triangles": 3651,
+      "repairedNormals": 6,
+      "tangents": "MikkTSpace",
+      "bytes": 784976,
+      "originalBytes": 8375636,
+      "textureMaxSize": 1024,
+      "sha256": "d0d6d40f9ddb544241700d55d8569b41b8c0778b258b7b5abcf882f396610156"
+    },
+    "vanguard": {
+      "file": "/assets/models/vanguard.glb",
+      "poster": "/assets/models/vanguard-poster.webp",
+      "taskId": "01a154f9-5552-773d-8220-048fed48398c",
+      "resource": "image-to-3d",
+      "consumedCredits": 15,
+      "triangles": 3502,
+      "repairedNormals": 54,
+      "tangents": "MikkTSpace",
+      "bytes": 611604,
+      "originalBytes": 7339452,
+      "textureMaxSize": 1024,
+      "sha256": "c73ebbcbfc0b193d3e25fd4b98f7d2aef8dea680967f917a0d122d3cd29e5174"
+    },
+    "bloom": {
+      "file": "/assets/models/bloom.glb",
+      "poster": "/assets/models/bloom-poster.webp",
+      "taskId": "01a154f9-7581-721d-9968-b205f4f21a4a",
+      "resource": "image-to-3d",
+      "consumedCredits": 15,
+      "triangles": 4103,
+      "repairedNormals": 16,
+      "tangents": "MikkTSpace",
+      "bytes": 741572,
+      "originalBytes": 8401844,
+      "textureMaxSize": 1024,
+      "sha256": "7d89985fe5d35ee39ea0559576b186666831fdf243efb5da47964b82bbd92cbc"
+    },
+    "swarm": {
+      "file": "/assets/models/swarm.glb",
+      "poster": "/assets/models/swarm-poster.webp",
+      "taskId": "01a154f9-caae-7575-8419-90f659a003a0",
+      "resource": "image-to-3d",
+      "consumedCredits": 15,
+      "triangles": 4160,
+      "repairedNormals": 28,
+      "tangents": "MikkTSpace",
+      "bytes": 642592,
+      "originalBytes": 7342860,
+      "textureMaxSize": 1024,
+      "sha256": "f7475c5ab36ef8d30bf7c5dd7096900da4763f2560bf861066b138f0dca15ebc"
+    },
+    "pack": {
+      "file": "/assets/models/pack.glb",
+      "poster": "/assets/models/pack-poster.webp",
+      "taskId": "01a154f9-f9ba-7254-90bf-c979f9ae618f",
+      "resource": "image-to-3d",
+      "consumedCredits": 15,
+      "triangles": 3249,
+      "repairedNormals": 365,
+      "tangents": "MikkTSpace",
+      "bytes": 559024,
+      "originalBytes": 7183948,
+      "textureMaxSize": 1024,
+      "sha256": "63029485d023f06607ba2f017561fd43c41a02a5a1225be1e6bc6724d6aea950"
+    }
+  }
+}
