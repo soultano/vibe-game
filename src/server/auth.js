@@ -56,12 +56,20 @@ export function isLocalDevelopment(req, env) {
   return (env.LOCAL_DEV === true || env.LOCAL_DEV === 'true') && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(req.url).hostname);
 }
 function appOrigin(req, env) {
-  if (isLocalDevelopment(req, env) && !env.APP_ORIGIN) return new URL(req.url).origin;
+  const reqUrl = new URL(req.url);
+  if (isLocalDevelopment(req, env) && !env.APP_ORIGIN) return reqUrl.origin;
   try {
-    const configured = new URL(env.APP_ORIGIN);
-    if (configured.protocol !== 'https:' && !isLocalDevelopment(req, env)) fail(503, 'Для авторизации нужен HTTPS');
-    if (configured.origin !== new URL(req.url).origin) fail(403, 'Неверный адрес приложения');
-    return configured.origin;
+    const configured = env.APP_ORIGIN ? new URL(env.APP_ORIGIN) : null;
+    if (configured && configured.origin === reqUrl.origin) return configured.origin;
+    if (reqUrl.protocol === 'https:' && (reqUrl.hostname.endsWith('.vercel.app') || (configured && reqUrl.hostname === configured.hostname))) {
+      return reqUrl.origin;
+    }
+    if (configured) {
+      if (configured.protocol !== 'https:' && !isLocalDevelopment(req, env)) fail(503, 'Для авторизации нужен HTTPS');
+      if (configured.origin !== reqUrl.origin) fail(403, 'Неверный адрес приложения');
+      return configured.origin;
+    }
+    fail(503, 'Авторизация ещё не настроена: нужен APP_ORIGIN');
   } catch (error) {
     if (error.status) throw error;
     fail(503, 'Авторизация ещё не настроена: нужен APP_ORIGIN');
@@ -75,7 +83,6 @@ function cookieName(req, env, name) { return isLocalDevelopment(req, env) && new
 function checkOrigin(req, env) {
   const origin = req.headers.get('origin');
   if (!origin || origin !== appOrigin(req, env)) fail(403, 'Запрос отклонён: неверный Origin');
-  if (req.headers.get('sec-fetch-site') === 'cross-site') fail(403, 'Межсайтовый запрос отклонён');
 }
 async function readBody(req) {
   const type = req.headers.get('content-type') || '';

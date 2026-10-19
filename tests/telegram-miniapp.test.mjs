@@ -116,6 +116,26 @@ test('Mini App accepts an in-memory challenge and bearer session when iframe coo
   assert.equal(await getAuthContext(authRequest, env, store), null);
 });
 
+test('Telegram Mini App inside Telegram Web iframe with sec-fetch-site: cross-site is accepted', async () => {
+  const store = new MemoryStore();
+  const anonymous = await handleAuth(req('/api/auth/me'), env, store);
+  const challenge = await anonymous.json();
+  const response = await handleAuth(new Request(origin + '/api/auth/telegram/miniapp', {
+    method: 'POST',
+    headers: {
+      origin,
+      'sec-fetch-site': 'cross-site',
+      'content-type': 'application/json',
+      'x-csrf-token': challenge.csrfToken,
+      'x-login-token': challenge.loginToken,
+    },
+    body: JSON.stringify({ initData: sign(), fingerprint: 'iframe-web-telegram-device' }),
+  }), env, store);
+  assert.equal(response.status, 200);
+  const signed = await response.json();
+  assert.equal(signed.account.provider, 'telegram');
+});
+
 test('header login challenge cannot bypass Origin or CSRF checks', async () => {
   const store = new MemoryStore();
   const challenge = await (await handleAuth(req('/api/auth/me'), env, store)).json();

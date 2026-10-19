@@ -2,6 +2,7 @@ import { CONFIG, FACTIONS } from '../shared/config.js';
 import { GameService } from './game-service.js';
 import { handleAuth, requireAuth, getAuthContext } from './auth.js';
 import { paymentStatus, createCheckout, verifyWebhook, createPortal, cancelSubscription } from './payments.js';
+import { handleTelegramWebhook } from './telegram-webhook.js';
 import { HttpError, json, readJSON } from './http.js';
 
 export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
@@ -65,6 +66,9 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
         if(path==='/api/webhooks/stripe'&&request.method==='POST') {
           const receipt=await verifyWebhook(request,env,store);
           return json(receipt?await service.applyPurchase(receipt):{received:true,ignored:true});
+        }
+        if(path==='/api/telegram/webhook') {
+          return await handleTelegramWebhook(request,env);
         }
         if(mutationRoutes.has(path)) {
           if(request.method!=='POST')throw new HttpError(405,'Изменение мира требует POST.');
