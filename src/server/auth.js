@@ -114,7 +114,12 @@ async function fingerprintHash(value) {
   return digest(value);
 }
 async function sessionRecord(req, env, store) {
-  const token = cookies(req)[cookieName(req, env, 'pd_session')];
+  // Telegram Web embeds Mini Apps in an iframe. Browsers may block cookies in
+  // that context, so the same opaque session can also travel in a header.
+  const authorization = req.headers.get('authorization');
+  const token = authorization?.startsWith('Bearer ')
+    ? authorization.slice(7)
+    : cookies(req)[cookieName(req, env, 'pd_session')];
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
   const key = `session:${await digest(token)}`;
   const record = await store.get(key);
@@ -145,15 +150,17 @@ async function preloginCsrf(req, env, store) {
   checkOrigin(req, env);
   const current = await getAuthContext(req, env, store);
   if (current && equal(req.headers.get('x-csrf-token'), current.csrfToken)) return;
-  const token = cookies(req)[cookieName(req, env, 'pd_login')];
+  const token = req.headers.get('x-login-token') || cookies(req)[cookieName(req, env, 'pd_login')];
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) fail(403, 'Откройте страницу входа заново');
   const challenge = await store.get(`login:${await digest(token)}`);
   if (!challenge || challenge.value.expiresAt <= Date.now() || !equal(req.headers.get('x-csrf-token'), challenge.value.csrfToken)) fail(403, 'Неверный CSRF-токен входа');
 }
 
 async function throttle(req, env, store) {
-  // CF supplies this header on Workers; a direct local request shares the loopback bucket.
-  const ip = isLocalDevelopment(req, env) ? 'loopback' : (req.headers.get('cf-connecting-ip') || 'unknown');
+  // Trust the current platform's header. A client-supplied CF header on Vercel
+  // must not override Vercel's sanitized address or bypass the login limit.
+  const forwarded = env.VERCEL ? req.headers.get('x-vercel-forwarded-for') : req.headers.get('cf-connecting-ip');
+  const ip = isLocalDevelopment(req, env) ? 'loopback' : (forwarded?.split(',')[0]?.trim() || 'unknown');
   const bucket = Math.floor(Date.now() / 60000);
   const key = `auth-rate:${bucket}:${await digest(ip)}`;
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -183,23 +190,33 @@ async function accountFor(store, provider, subject, name, fingerprint, additiona
   fail(409, 'Повторите вход');
 }
 
-async function signIn(req, env, store, account, redirect = false) {
+async function signIn(req, env, store, account, redirect = false, replayKey = null) {
   const token = randomToken();
   const csrfToken = randomToken();
   const key = `session:${await digest(token)}`;
   const now = Date.now();
-  if (!await store.atomic({ checks: [{ key, version: null }], puts: [{ key, value: { accountId: account.id, csrfToken, createdAt: now, expiresAt: now + SESSION_MS } }] })) fail(503, 'Повторите вход');
+  const checks = [{ key, version: null }];
+  const puts = [{ key, value: { accountId: account.id, csrfToken, createdAt: now, expiresAt: now + SESSION_MS } }];
+  if (replayKey) {
+    checks.push({ key: replayKey, version: null });
+    puts.push({ key: replayKey, value: { expiresAt: now + 360000 } });
+  }
+  if (!await store.atomic({ checks, puts })) {
+    if (replayKey && await store.get(replayKey)) fail(401, 'Этот Telegram-вход уже использован. Откройте игру заново через бота');
+    fail(503, 'Повторите вход');
+  }
   const headers = new Headers({ 'cache-control': 'no-store' });
   headers.append('set-cookie', cookie(req, env, 'pd_session', token, SESSION_MS / 1000));
   headers.append('set-cookie', cookie(req, env, 'pd_login', '', 0));
   headers.append('set-cookie', cookie(req, env, 'pd_oauth', '', 0));
   if (redirect) { headers.set('location', '/'); return new Response(null, { status: 303, headers }); }
   headers.set('content-type', 'application/json; charset=utf-8');
-  return new Response(JSON.stringify({ account: publicAccount(account), csrfToken }), { headers });
+  return new Response(JSON.stringify({ account: publicAccount(account), csrfToken, sessionToken: token }), { headers });
 }
 
 function googleEnabled(env) { return env.GOOGLE_AUTH_ENABLED !== false && env.GOOGLE_AUTH_ENABLED !== 'false' && env.GOOGLE_AUTH_ENABLED !== '0' && !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REDIRECT_URI && env.APP_ORIGIN); }
-function telegramEnabled(env) { return !!(env.TELEGRAM_BOT_TOKEN && /^[A-Za-z0-9_]{5,32}$/.test(env.TELEGRAM_BOT_USERNAME || '') && env.APP_ORIGIN); }
+function telegramUsername(env) { return String(env.TELEGRAM_BOT_USERNAME || '').trim().replace(/^@/, ''); }
+function telegramEnabled(env) { return !!(env.TELEGRAM_BOT_TOKEN?.trim() && /^[A-Za-z0-9_]{5,32}$/.test(telegramUsername(env)) && env.APP_ORIGIN?.trim()); }
 
 async function googleStart(req, env, store) {
   if (!googleEnabled(env)) fail(503, 'Вход через Google пока не настроен');
@@ -294,16 +311,16 @@ async function telegramLogin(req, env, store, body) {
   const age = Date.now() / 1000 - Number(data.auth_date);
   if (age < 0 || age > 300) fail(401, 'Telegram-вход устарел');
   const check = Object.keys(data).sort().map(key => `${key}=${data[key]}`).join('\n');
-  const secret = await crypto.subtle.digest('SHA-256', encoder.encode(env.TELEGRAM_BOT_TOKEN));
+  const secret = await crypto.subtle.digest('SHA-256', encoder.encode(env.TELEGRAM_BOT_TOKEN.trim()));
   const hmac = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const signature = new Uint8Array(await crypto.subtle.sign('HMAC', hmac, encoder.encode(check)));
   const expected = [...signature].map(byte => byte.toString(16).padStart(2, '0')).join('');
   if (!equal(expected, raw.hash.toLowerCase())) fail(401, 'Подпись Telegram не прошла проверку');
   const replayKey = `telegram-used:${await digest(raw.hash.toLowerCase())}`;
   const fingerprint = await fingerprintHash(body.fingerprint);
-  if (!await store.atomic({ checks: [{ key: replayKey, version: null }], puts: [{ key: replayKey, value: { expiresAt: Date.now() + 360000 } }] })) fail(401, 'Этот Telegram-вход уже использован');
+  if (await store.get(replayKey)) fail(401, 'Этот Telegram-вход уже использован');
   const account = await accountFor(store, 'telegram', data.id, [data.first_name, data.last_name].filter(Boolean).join(' ') || data.username, fingerprint);
-  return signIn(req, env, store, account);
+  return signIn(req, env, store, account, false, replayKey);
 }
 
 // Bot-token verification from https://core.telegram.org/bots/webapps.
@@ -341,27 +358,27 @@ export async function verifyTelegramMiniAppData(initData, botToken, now = Date.n
 
 async function telegramMiniAppLogin(req, env, store, body) {
   if (!telegramEnabled(env)) fail(503, 'Вход через Telegram пока не настроен');
-  const verified = await verifyTelegramMiniAppData(body.initData, env.TELEGRAM_BOT_TOKEN);
+  const verified = await verifyTelegramMiniAppData(body.initData, env.TELEGRAM_BOT_TOKEN.trim());
   const fingerprint = await fingerprintHash(body.fingerprint);
   const replayKey = `telegram-miniapp-used:${await digest(verified.hash)}`;
-  if (!await store.atomic({ checks: [{ key: replayKey, version: null }], puts: [{ key: replayKey, value: { expiresAt: Date.now() + 360000 } }] })) fail(401, 'Этот Telegram-вход уже использован. Откройте игру заново через бота');
+  if (await store.get(replayKey)) fail(401, 'Этот Telegram-вход уже использован. Откройте игру заново через бота');
   const user = verified.user;
   const account = await accountFor(store, 'telegram', String(user.id), [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'Игрок Telegram', fingerprint);
-  return signIn(req, env, store, account);
+  return signIn(req, env, store, account, false, replayKey);
 }
 
 export async function handleAuth(req, env, store) {
   const path = new URL(req.url).pathname;
   if (!path.startsWith('/api/auth/')) return null;
   try {
-    if (req.method === 'GET' && path === '/api/auth/providers') return json({ google: { enabled: googleEnabled(env), url: '/api/auth/google/start' }, telegram: { enabled: telegramEnabled(env), botUsername: telegramEnabled(env) ? env.TELEGRAM_BOT_USERNAME : null }, development: isLocalDevelopment(req, env) });
+    if (req.method === 'GET' && path === '/api/auth/providers') return json({ google: { enabled: googleEnabled(env), url: '/api/auth/google/start' }, telegram: { enabled: telegramEnabled(env), botUsername: telegramEnabled(env) ? telegramUsername(env) : null }, development: isLocalDevelopment(req, env) });
     if (req.method === 'GET' && path === '/api/auth/me') {
       const current = await getAuthContext(req, env, store);
       if (current) return json({ account: publicAccount(current.account), csrfToken: current.csrfToken });
       const token = randomToken();
       const csrfToken = randomToken();
       await store.atomic({ puts: [{ key: `login:${await digest(token)}`, value: { csrfToken, expiresAt: Date.now() + CHALLENGE_MS } }] });
-      return json({ account: null, csrfToken }, 200, { 'set-cookie': cookie(req, env, 'pd_login', token, CHALLENGE_MS / 1000) });
+      return json({ account: null, csrfToken, loginToken: token }, 200, { 'set-cookie': cookie(req, env, 'pd_login', token, CHALLENGE_MS / 1000) });
     }
     if (req.method === 'GET' && path === '/api/auth/google/start') return await googleStart(req, env, store);
     if (req.method === 'GET' && path === '/api/auth/google/callback') return await googleCallback(req, env, store);

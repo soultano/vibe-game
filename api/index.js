@@ -4,16 +4,17 @@ import { createApp } from '../src/server/router.js';
 import { createLocalStore } from '../src/server/local-store.js';
 import { createNeonStore } from '../src/server/neon-store.js';
 
-let appInstance = null;
+let appPromise = null;
 
 async function getApp() {
-  if (!appInstance) {
+  if (!appPromise) appPromise = (async () => {
     const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+    if (!dbUrl && process.env.VERCEL) throw Object.assign(new Error('Persistent database required'), { code: 'STORAGE_UNAVAILABLE', status: 503 });
     const store = dbUrl
       ? await createNeonStore(dbUrl)
       : await createLocalStore(process.env.DATABASE_PATH || join(tmpdir(), 'vibe-game-world.sqlite'));
 
-    appInstance = createApp({
+    return createApp({
       store,
       env: {
         ...process.env,
@@ -22,18 +23,14 @@ async function getApp() {
       },
       serveAsset: async () => new Response('Not found', { status: 404 }),
     });
-  }
-  return appInstance;
+  })().catch(error => { appPromise = null; throw error; });
+  return appPromise;
 }
 
 export default async function handler(req, res) {
-  if (typeof req.arrayBuffer === 'function' || (typeof Request !== 'undefined' && req instanceof Request)) {
-    const app = await getApp();
-    return app.fetch(req);
-  }
-
   try {
     const app = await getApp();
+    if (typeof req.arrayBuffer === 'function' || req instanceof Request) return app.fetch(req);
     const host = req.headers['x-forwarded-host'] || req.headers.host || '127.0.0.1';
     const proto = req.headers['x-forwarded-proto'] || 'https';
     const chunks = [];
@@ -60,8 +57,12 @@ export default async function handler(req, res) {
     res.writeHead(response.status, headers);
     res.end(body);
   } catch (err) {
-    console.error('Serverless error:', err);
-    if (!res.headersSent) res.writeHead(500);
-    res.end(JSON.stringify({ error: 'Server error' }));
+    // Database/provider errors may contain connection strings. Log codes only.
+    console.error('serverless_error', err.code || err.name || 'Error');
+    const status = err.status === 503 ? 503 : 500;
+    const body = { error: status === 503 ? 'Хранилище мира не подключено. Попробуйте позже.' : 'Сервер временно недоступен. Попробуйте ещё раз.', code: err.code === 'STORAGE_UNAVAILABLE' ? err.code : 'SERVER_UNAVAILABLE' };
+    if (!res) return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+    if (!res.headersSent) res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(JSON.stringify(body));
   }
 }

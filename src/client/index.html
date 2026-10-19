@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#eef3e9">
-  <meta name="description" content="Pixel Dominion — выберите фракцию, создайте базу и найдите своё место на карте мира.">
-  <title>Pixel Dominion — ваш мир начинается здесь</title>
+  <meta name="theme-color" content="#080f19">
+  <meta name="description" content="Pixel Dominion — тактическая стратегия в общем мире. Выберите фракцию, разверните штаб и захватите свою территорию.">
+  <title>Pixel Dominion — командуй своим миром</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23436d50' d='M4 4h24v24H4zM36 4h24v24H36zM4 36h24v24H4zM36 36h24v24H36z'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/styles.css">
-  <script src="https://telegram.org/js/telegram-web-app.js?64" defer></script>
+  <script src="https://telegram.org/js/telegram-web-app.js?64" async></script>
 </head>
 <body>
 <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -38,7 +38,7 @@
   </section>
 
   <header class="map-header">
-    <a class="brand surface" href="/" aria-label="Pixel Dominion"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>Pixel <b>Dominion</b></span></a>
+    <a class="brand surface" href="/" aria-label="Pixel Dominion"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>PIXEL <b>DOMINION</b><small>ТАКТИЧЕСКАЯ СТРАТЕГИЯ</small></span></a>
     <div class="resource-bar surface" id="resourceBar" aria-label="Ваши ресурсы" hidden>
       <button class="resource-pill energy-pill" data-open="base" aria-label="Энергия и улучшения"><svg><use href="#i-energy"/></svg><span><strong id="energy">0</strong><small id="income">+0 / ч</small></span></button>
       <button class="resource-pill territory-pill" data-open="sector" aria-label="Ваша территория"><svg><use href="#i-cell"/></svg><span><strong id="territory">0</strong><small>ячеек</small></span></button>
@@ -50,34 +50,48 @@
     </div>
   </header>
 
+  <div class="operation-label"><span class="status-light" aria-hidden="true"></span><span>ОПЕРАЦИЯ «ЗЕМЛЯ»<small>ОБЩИЙ МИР / ЦЕНТРАЛЬНАЯ АЗИЯ</small></span></div>
+  <aside class="world-intel surface" id="worldIntel" aria-label="Задача командира">
+    <div class="intel-heading"><span class="eyebrow">БРИФИНГ</span><span class="intel-code">PD / 01</span></div>
+    <h2 id="missionTitle">Ваша история<br>начнётся здесь</h2>
+    <p id="missionCopy">Пять фракций. Одна планета. Выберите сторону и превратите первую ячейку в империю.</p>
+    <div class="mission-steps" id="missionSteps"><span class="current"><b>01</b> Войти в игру</span><span><b>02</b> Выбрать фракцию</span><span><b>03</b> Развернуть базу</span></div>
+    <button id="missionBtn" class="secondary-button" hidden>Развитие базы <span>↗</span></button>
+    <div class="intel-footer"><svg><use href="#i-globe"/></svg><span>Мир развивается, даже когда вы офлайн</span></div>
+  </aside>
+
   <div id="connectionNotice" class="connection-notice surface" hidden><span>Нет связи</span><button id="syncBtn" aria-label="Попробовать подключиться снова">Повторить</button></div>
 
   <section class="floating-card welcome-card" id="authCard" aria-labelledby="welcomeTitle">
     <button class="close-button" data-dismiss="authCard" aria-label="Свернуть вход"><svg><use href="#i-close"/></svg></button>
+    <span class="eyebrow"><span class="status-light" aria-hidden="true"></span> КОМАНДИР, ВЫ НА СВЯЗИ?</span>
+    <div class="welcome-art" aria-hidden="true"><span class="art-orbit"></span><img src="/assets/headquarters/protocol.webp" alt="" width="176" height="176" fetchpriority="high"><span class="art-caption">ШТАБ / ГОТОВ К РАЗВЁРТЫВАНИЮ</span></div>
+    <h1 id="welcomeTitle">МАЛЕНЬКАЯ БАЗА.<br><em>БОЛЬШАЯ ИМПЕРИЯ.</em></h1>
+    <p class="card-description">Захватывайте землю. Усиливайте штаб.<br>Оставьте свой след на карте мира.</p>
     <div class="welcome-emblems" id="factionPreview" aria-label="Посмотреть фракции"></div>
-    <h1 id="welcomeTitle">Своя точка<br>на карте мира.</h1>
-    <p class="card-description">Основывайте базу, расширяйте территорию и развивайте свою фракцию.</p>
-    <button id="telegramLogin" class="primary-button auth-button" hidden><svg><use href="#i-telegram"/></svg>Продолжить с Telegram</button>
-    <button id="googleLogin" class="secondary-button auth-button" disabled>Google <span class="soon-label">скоро</span></button>
+    <button id="telegramLogin" class="primary-button auth-button" hidden><svg><use href="#i-telegram"/></svg><span>Войти через Telegram</span><span aria-hidden="true">↗</span></button>
+    <button id="browserTelegramLogin" class="text-button" hidden>Войти в этом окне</button>
+    <button id="googleLogin" class="secondary-button auth-button" disabled hidden>Google <span class="soon-label">скоро</span></button>
     <div id="telegramWidget"></div>
     <div id="devAuth" class="local-login" hidden><input id="devName" maxlength="24" value="Командир" aria-label="Имя командира" autocomplete="off"><button class="secondary-button" id="devLogin">Начать</button></div>
-    <p id="authNotice" class="auth-notice"></p>
+    <p id="authNotice" class="auth-notice" role="status" aria-live="polite"></p>
+    <a id="telegramBotLink" class="bot-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть чат бота → нажать «Играть»</a>
   </section>
 
   <section class="floating-card welcome-card" id="spawnCard" aria-labelledby="spawnTitle" hidden>
-    <span class="eyebrow">Первый шаг</span>
-    <h2 id="spawnTitle">Ваша главная база</h2>
-    <p class="card-description onboarding-copy">Выберите фракцию и место на карте.</p>
-    <div class="headquarters-preview"><img id="headquartersPreview" src="/assets/headquarters/protocol.png" alt="Геоузел Протокола"><h3 id="headquartersName">Геоузел Протокола</h3></div>
+    <span class="eyebrow">РАЗВЁРТЫВАНИЕ / ШАГ 02</span>
+    <h2 id="spawnTitle">Выберите свою сторону</h2>
+    <p class="card-description onboarding-copy">У каждой фракции свой путь к превосходству.</p>
+    <div class="headquarters-preview"><img id="headquartersPreview" src="/assets/headquarters/protocol.webp" alt="Геоузел Протокола"><h3 id="headquartersName">Геоузел Протокола</h3></div>
     <div class="faction-picker" id="factionPicker"></div>
     <div class="faction-description" id="factionDescription"></div>
     <input id="startAzimuth" type="hidden" value="0">
-    <button id="startBtn" class="primary-button">Разместить базу <span>↗</span></button>
+    <button id="startBtn" class="primary-button">К месту высадки <span>↗</span></button>
   </section>
 
   <section class="floating-card game-panel" data-panel="base" id="basePanel" aria-labelledby="baseTitle" hidden>
     <div class="panel-heading"><h2 id="baseTitle">Моя база</h2><button class="close-button" data-panel-close aria-label="Свернуть панель"><svg><use href="#i-close"/></svg></button></div>
-    <div class="commander"><span class="faction-avatar"><img id="factionAvatar" src="/assets/factions/protocol.png" alt="Протокол"></span><div><h3 id="commanderName">Командир</h3><span id="factionName">Протокол</span></div><span class="level-badge" id="levelBadge">1 ур.</span></div>
+    <div class="commander"><span class="faction-avatar"><img id="factionAvatar" src="/assets/factions/protocol.webp" alt="Протокол"></span><div><h3 id="commanderName">Командир</h3><span id="factionName">Протокол</span></div><span class="level-badge" id="levelBadge">1 ур.</span></div>
     <div class="upgrade-block"><div class="section-heading"><h3>Развитие базы</h3><span id="nextLevel">2 уровень</span></div><p class="card-description">Больше территория. Быстрее захват.</p><div class="project-meter"><i id="projectBar"></i></div><p class="project-info" id="projectInfo"></p><div id="fundingControls"><button id="fundBtn" class="primary-button" disabled>Вложить энергию <span>↗</span></button><details class="simple-details amount-details"><summary>Выбрать сумму</summary><input id="fundAmount" type="number" min="1" step="1" placeholder="Вся доступная энергия" aria-label="Сколько энергии вложить"></details></div><button id="skipBtn" class="secondary-button" disabled hidden><span>Завершить сейчас</span><span id="skipCost">— ◇</span></button></div>
     <details class="simple-details"><summary>Доход и запас</summary><dl class="stat-list"><div><dt>Добыча в час</dt><dd id="grossIncome">—</dd></div><div><dt>Содержание в час</dt><dd id="upkeep">—</dd></div><div><dt>Вместимость склада</dt><dd id="storageInfo">—</dd></div></dl></details>
     <details class="simple-details"><summary>Последние события</summary><div id="eventLog" class="event-log"><p class="empty-state">Здесь появятся события вашей базы.</p></div></details>
@@ -105,10 +119,10 @@
 
   <section class="floating-card account-panel" id="accountPanel" aria-label="Аккаунт" hidden><h3 id="accountName">Командир</h3><button class="menu-item" id="helpBtn">Как играть <span>?</span></button><button class="menu-item" id="soundBtn" aria-pressed="false">Звуки <span id="soundState">Выключены</span></button><button id="logoutBtn" class="menu-item" hidden>Выйти <span>↗</span></button></section>
 
-  <div class="placement-hint surface" id="placementHint" hidden><span>Нажмите на свободную ячейку</span><button id="cancelPlacement" aria-label="Отменить выбор места"><svg><use href="#i-close"/></svg></button></div>
+  <div class="placement-hint surface" id="placementHint" hidden><svg><use href="#i-target"/></svg><span><strong>РАЗВЕРНИТЕ ШТАБ</strong>Нажмите на свободную сушу вокруг Ташкента</span><button id="cancelPlacement" aria-label="Отменить выбор места"><svg><use href="#i-close"/></svg></button></div>
   <div class="selection-bar surface" id="selectionBar" hidden><span>Выбрано <b id="selectedCount">0</b></span><button id="abandonBtn" class="primary-button" disabled>Освободить</button><button id="cancelSelection" class="close-button" aria-label="Отменить выделение"><svg><use href="#i-close"/></svg></button></div>
 
-  <div id="abilityBar" class="ability-bar surface" aria-label="Ускорить захват" hidden></div>
+  <div id="abilityBar" class="ability-bar surface" aria-label="Боевые способности. Клавиши от 1 до 4" hidden></div>
   <nav class="map-dock surface" id="gameNav" aria-label="Управление игрой" hidden>
     <button data-open="base" aria-controls="basePanel" aria-expanded="false"><svg><use href="#i-base"/></svg><span>База</span><i id="buildDot" class="notification-dot" hidden></i></button>
     <button data-open="sector" id="sectorNav" aria-controls="sectorPanel" aria-expanded="false" disabled><svg><use href="#i-sector"/></svg><span>Сектор</span></button>
@@ -117,6 +131,8 @@
     <button id="shopBtn"><svg><use href="#i-shop"/></svg><span>Магазин</span></button>
   </nav>
   <div class="map-tools"><button class="surface home-button" id="homeBtn" aria-label="К моей базе" title="К моей базе"><svg><use href="#i-target"/></svg></button><div class="zoom-controls surface"><button id="zoomIn" aria-label="Приблизить карту">+</button><button id="zoomOut" aria-label="Отдалить карту">−</button></div><button class="surface globe-button" id="zoomReset" aria-label="Показать весь мир" title="Весь мир"><svg><use href="#i-globe"/></svg></button></div>
+  <div class="map-readout" aria-hidden="true"><span class="crosshair-mark">⌖</span><span id="mapCoordinates">41.31° N · 69.28° E</span><i></i><span id="mapScale">ОБЗОР МИРА</span></div>
+  <div class="map-legend" aria-label="Легенда карты"><span><i class="legend-own"></i>Территория фракции</span><span><i class="legend-free"></i>Свободная суша</span></div>
 </main>
 
 <dialog id="abilityDialog"><button class="close-button" data-close="abilityDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button><span class="eyebrow">Ускорение захвата</span><h2 id="abilityDialogTitle">Запустить снова?</h2><p class="card-description" id="abilityDialogEffect"></p><p class="card-description" id="abilityDialogNote"></p><button id="confirmAbilityReset" class="primary-button">Запустить</button><button id="abilityShopBtn" class="secondary-button" hidden>Получить кристаллы</button></dialog>

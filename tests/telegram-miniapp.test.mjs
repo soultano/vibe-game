@@ -95,3 +95,84 @@ test('Google explicit disabled flag hides the provider and blocks OAuth routes e
   assert.equal((await handleAuth(req('/api/auth/google/callback?code=x&state=x'), settings, store)).status, 503);
   assert.equal((await store.list('oauth:')).length, 0);
 });
+
+test('Mini App accepts an in-memory challenge and bearer session when iframe cookies are blocked', async () => {
+  const store = new MemoryStore();
+  const anonymous = await handleAuth(req('/api/auth/me'), env, store);
+  const challenge = await anonymous.json();
+  const response = await handleAuth(new Request(origin + '/api/auth/telegram/miniapp', {
+    method: 'POST', headers: { origin, 'content-type': 'application/json', 'x-csrf-token': challenge.csrfToken, 'x-login-token': challenge.loginToken },
+    body: JSON.stringify({ initData: sign(), fingerprint: 'cookie-blocked-device' }),
+  }), env, store);
+  assert.equal(response.status, 200, await response.clone().text());
+  const signed = await response.json();
+  assert.match(signed.sessionToken, /^[A-Za-z0-9_-]{43}$/);
+  const authRequest = new Request(origin + '/api/auth/me', { headers: { authorization: 'Bearer ' + signed.sessionToken } });
+  const context = await getAuthContext(authRequest, env, store);
+  assert.equal(context.account.id, signed.account.id);
+  assert.equal(context.csrfToken, signed.csrfToken);
+  const logout = await handleAuth(new Request(origin + '/api/auth/logout', { method: 'POST', headers: { origin, authorization: 'Bearer ' + signed.sessionToken, 'x-csrf-token': signed.csrfToken } }), env, store);
+  assert.equal(logout.status, 200);
+  assert.equal(await getAuthContext(authRequest, env, store), null);
+});
+
+test('header login challenge cannot bypass Origin or CSRF checks', async () => {
+  const store = new MemoryStore();
+  const challenge = await (await handleAuth(req('/api/auth/me'), env, store)).json();
+  for (const headers of [
+    { origin: 'https://attacker.example', 'x-csrf-token': challenge.csrfToken, 'x-login-token': challenge.loginToken },
+    { origin, 'x-login-token': challenge.loginToken },
+    { origin, 'x-csrf-token': challenge.csrfToken, 'x-login-token': 'forged' },
+  ]) {
+    const result = await handleAuth(new Request(origin + '/api/auth/telegram/miniapp', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ initData: sign(), fingerprint: 'header-guarded-device' }) }), env, store);
+    assert.equal(result.status, 403);
+  }
+  assert.equal((await store.list('session:')).length, 0);
+});
+
+test('Telegram configuration trims copied whitespace and a leading @ in bot username', async () => {
+  const configured = { ...env, TELEGRAM_BOT_TOKEN: ' ' + token + '\n', TELEGRAM_BOT_USERNAME: ' @DominionTestBot\n' };
+  const providers = await (await handleAuth(req('/api/auth/providers'), configured, new MemoryStore())).json();
+  assert.equal(providers.telegram.enabled, true);
+  assert.equal(providers.telegram.botUsername, 'DominionTestBot');
+});
+
+test('failed session persistence does not consume the Telegram proof before a successful retry', async () => {
+  class FaultStore extends MemoryStore {
+    failNextSession = true;
+    async atomic(input) {
+      if (this.failNextSession && input.puts?.some(row => row.key.startsWith('session:'))) {
+        this.failNextSession = false;
+        throw new Error('synthetic temporary database error');
+      }
+      return super.atomic(input);
+    }
+  }
+  const store = new FaultStore(), proof = sign();
+  assert.equal((await attempt(store, proof)).status, 500);
+  assert.equal((await store.list('telegram-miniapp-used:')).length, 0);
+  assert.equal((await attempt(store, proof)).status, 200);
+  assert.equal((await store.list('telegram-miniapp-used:')).length, 1);
+});
+
+test('concurrent use of one Mini App proof creates exactly one session', async () => {
+  const store = new MemoryStore(), proof = sign();
+  const responses = await Promise.all([attempt(store, proof), attempt(store, proof)]);
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 401]);
+  assert.equal((await store.list('session:')).length, 1);
+  assert.equal((await store.list('account:')).length, 1);
+});
+
+test('Vercel login throttles separate clients independently and ignores spoofed CF headers', async () => {
+  const store = new MemoryStore(), settings = { ...env, VERCEL: '1' };
+  const challenge = await (await handleAuth(req('/api/auth/me'), settings, store)).json();
+  async function login(ip, spoofed = '203.0.113.8') {
+    return handleAuth(new Request(origin + '/api/auth/telegram/miniapp', { method: 'POST', headers: {
+      origin, 'content-type': 'application/json', 'x-csrf-token': challenge.csrfToken,
+      'x-login-token': challenge.loginToken, 'x-vercel-forwarded-for': ip, 'cf-connecting-ip': spoofed,
+    }, body: JSON.stringify({ initData: 'intentionally-invalid-proof', fingerprint: 'rate-limit-test-device' }) }), settings, store);
+  }
+  for (let i = 0; i < 20; i++) assert.equal((await login('192.0.2.1')).status, 401);
+  assert.equal((await login('192.0.2.1', 'forged-new-address')).status, 429);
+  assert.equal((await login('192.0.2.2')).status, 401, 'a different client must not share the exhausted bucket');
+});

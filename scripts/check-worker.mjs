@@ -70,13 +70,19 @@ async function checkWorker() {
     const home = await call('/');
     assert.equal(home.status, 200); assert.match(home.headers.get('content-type'), /^text\/html/);
     assert.equal(await home.text(), await readFile(join(project, 'src/client/index.html'), 'utf8'));
-    for (const id of factionIds) {
-      const path = `/assets/factions/${id}.png`;
+    let artworkBytes = 0;
+    for (const group of ['factions', 'headquarters']) for (const id of factionIds) {
+      const path = `/assets/${group}/${id}.webp`;
       const response = await call(path);
-      assert.equal(response.status, 200, path); assert.equal(response.headers.get('content-type'), 'image/png');
-      assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(join(project, 'src/client', path)), `embedded ${id}.png must exactly match the source`);
+      assert.equal(response.status, 200, path);
+      assert.equal(response.headers.get('content-type'), 'image/webp');
+      assert.match(response.headers.get('cache-control'), /max-age=86400/);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      artworkBytes += bytes.length;
+      assert.deepEqual(bytes, await readFile(join(project, 'dist/client', path)), `embedded ${path} must match the optimized artifact`);
+      assert.equal((await call(path, { headers: { 'if-none-match': response.headers.get('etag') } })).status, 304);
     }
-    for (const id of factionIds) { const response=await call(`/assets/headquarters/${id}.png`);assert.equal(response.status,302);assert.equal(response.headers.get('location'),`https://raw.githubusercontent.com/soultano/vibe-game/main/src/client/assets/headquarters/${id}.png`); }
+    assert.ok(artworkBytes < 400000, `artwork must fit the 400 KB download budget, got ${artworkBytes}`);
     const config = await (await call('/api/config')).json();
     assert.equal(config.cellResolution, 8); assert.equal(config.tileResolution, 5);
     assert.deepEqual(config.factions.map(faction => faction.id), factionIds);
@@ -103,7 +109,7 @@ async function checkWorker() {
     assert.ok(DB.counts.statements > 0 && DB.counts.bound > 0 && DB.counts.batches > 0, 'the emitted Worker must exercise actual prepared SQL and transaction bindings');
     assert.equal(db.prepare('SELECT count(*) AS count FROM records WHERE key LIKE ?').get('login:%').count, 1);
     assert.equal(db.prepare('SELECT count(*) AS count FROM _atomic_guard').get().count, 0);
-    console.log(`Worker OK: HTML, five exact PNGs, H3 config, SQL storage, host cookies, disabled dev auth, tile ETag/304, 404 (${DB.counts.statements} real SQL statements).`);
+    console.log(`Worker OK: HTML, ten optimized WebP assets, 400 KB artwork budget, H3 config, SQL storage, host cookies, disabled dev auth, tile ETag/304, 404 (${DB.counts.statements} real SQL statements).`);
   } finally { db.close(); }
 }
 

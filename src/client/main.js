@@ -5,7 +5,10 @@ import worldMask from "../../data/world-mask.json";
 import { skipCost } from "../shared/economy.js";
 import { ABILITIES, factionAbilityName } from "../shared/abilities.js";
 import { headquartersFor } from "../shared/headquarters.js";
-const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), ctx = canvas.getContext("2d", { alpha: false });
+import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./telegram.js";
+const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), displayCtx = canvas.getContext("2d", { alpha: false });
+let ctx = displayCtx;
+const mapLayer = document.createElement("canvas"), mapCtx = mapLayer.getContext("2d", { alpha: false });
 const nf = new Intl.NumberFormat("ru-RU"), fmt = (n) => nf.format(Math.floor(Number(n) || 0)), escape = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 let account = null, csrfToken = "", providers = {}, model = null, leaderboard = [], selectedFaction = "protocol", placing = false, selecting = false, selectedCells = /* @__PURE__ */ new Set();
 let cw = 0, ch = 0, dpr = 1, zoom = 1, panX = 0, panY = 0, drag = null, moved = false, mouse = null, serverOffset = 0, tilesBusy = false, pollBusy = false, connectionErrors = 0;
@@ -13,27 +16,40 @@ let lastRender = 0, lastDetails = 0, dirty = true, toastTimer, sound = false, au
 const profiles = /* @__PURE__ */ new Map(), tileCache = /* @__PURE__ */ new Map(), cellCache = /* @__PURE__ */ new Map(), boundaryCache = /* @__PURE__ */ new Map(), effects = [], events = [], seenEvents = /* @__PURE__ */ new Set(), emblems = /* @__PURE__ */ new Map();
 const headquartersImages = /* @__PURE__ */ new Map(), abilityBursts = [], pointers = /* @__PURE__ */ new Map();
 let abilityBusy = null, pendingAbilityReset = null, pinch = null, gestureMoved = false;
+const telegramLaunchData = readTelegramInitData(location, window.Telegram?.WebApp);
+let sessionToken = '', loginToken = '', authBusy = false, launchExpired = false, lastLeaderboard = 0;
+let frameHandle = null, tileTimer, pollTimer, neutralKey = '', drawingGeometry = null, ownership = new Map(), ownershipDirty = true;
+const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
+function invalidate() { dirty = true; requestFrame(); }
+function requestFrame() { if (frameHandle === null && !document.hidden) frameHandle = requestAnimationFrame(frame); }
+function scheduleTiles() { clearTimeout(tileTimer); tileTimer = setTimeout(refreshTiles, 160); }
+function setText(id, value) { const node = $(id), text = String(value); if (node.textContent !== text) node.textContent = text; }
+try { sessionToken = sessionStorage.getItem('pd-session') || ''; } catch {}
+function saveSession(token = '') {
+  sessionToken = token;
+  try { token ? sessionStorage.setItem('pd-session', token) : sessionStorage.removeItem('pd-session'); } catch {}
+}
 const terrain = document.createElement("canvas");
 terrain.width = 360;
 terrain.height = 180;
 const tctx = terrain.getContext("2d");
 for (let i = 0; i < worldMask.land.length; i++) if (worldMask.land[i]) {
   const x = i % 360, y = Math.floor(i / 360);
-  tctx.fillStyle = "#d9e5cd";
+  tctx.fillStyle = "#172b37";
   tctx.fillRect(x, y, 1, 1);
 }
 for (const f of FACTIONS) {
   const image = new Image();
   image.src = f.logo;
-  image.onload = () => dirty = true;
+  image.onload = invalidate;
   emblems.set(f.id, image);
 }
 function headquartersSprite(faction) {
-  if(!headquartersImages.has(faction)){const image=new Image();image.src=headquartersFor(faction).sprite;image.onload=()=>dirty=true;headquartersImages.set(faction,image);}
+  if(!headquartersImages.has(faction)){const image=new Image();image.src=headquartersFor(faction).sprite;image.onload=invalidate;headquartersImages.set(faction,image);}
   return headquartersImages.get(faction);
 }
 function mapColor(faction) {
-  return { protocol: "#649eac", vanguard: "#d4a16e", bloom: "#aa8dbc", swarm: "#95b66f", pack: "#85a7be" }[faction] || "#a2ad9d";
+  return getFaction(faction)?.color || "#7796ad";
 }
 function closeAccount() {
   $("accountPanel").hidden = true;
@@ -43,7 +59,7 @@ function closePanels() {
   activePanel = null;
   document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = true);
   document.querySelectorAll("[data-open]").forEach((b) => b.setAttribute("aria-expanded", "false"));
-  dirty = true;
+  invalidate();
 }
 function openPanel(name) {
   const wasOpen = activePanel === name;
@@ -76,11 +92,11 @@ function openPanel(name) {
   activePanel = name;
   document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = p.dataset.panel !== name);
   document.querySelectorAll("[data-open]").forEach((b) => b.setAttribute("aria-expanded", String(b.dataset.open === name)));
-  dirty = true;
+  invalidate();
 }
 function toast(message, error = false) {
   clearTimeout(toastTimer);
-  $("toast").textContent = message;
+  setText("toast", message);
   $("toast").classList.toggle("error", error);
   $("toast").hidden = false;
   toastTimer = setTimeout(() => $("toast").hidden = true, 4300);
@@ -117,12 +133,23 @@ function duration(ms) {
 function appendEvent(text, key = text) {
   if (seenEvents.has(key)) return;
   seenEvents.add(key);
+  if (seenEvents.size > 256) seenEvents.delete(seenEvents.values().next().value);
   events.unshift({ text, at: serverNow() });
   events.length = Math.min(events.length, 30);
   $("eventLog").innerHTML = events.slice(0, 5).map((e) => `<div class="event-row"><time>${new Date(e.at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</time><span>${escape(e.text)}</span></div>`).join("");
 }
 async function api(path, body) {
-  const response = await fetch(path, { method: body === void 0 ? "GET" : "POST", credentials: "same-origin", headers: body === void 0 ? {} : { "Content-Type": "application/json", "X-CSRF-Token": csrfToken }, ...body === void 0 ? {} : { body: JSON.stringify(body) } });
+  const headers = { ...(sessionToken ? { Authorization: 'Bearer ' + sessionToken } : {}) };
+  if (body !== undefined) {
+    Object.assign(headers, { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken });
+    if (loginToken && path.startsWith('/api/auth/')) headers['X-Login-Token'] = loginToken;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let response;
+  try {
+    response = await fetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  } finally { clearTimeout(timeout); }
   let result;
   try {
     result = await response.json();
@@ -133,6 +160,7 @@ async function api(path, body) {
     const error = Object.assign(new Error(result.error || "Действие отклонено."), { status: response.status });
     throw error;
   }
+  if (result.sessionToken) { saveSession(result.sessionToken); loginToken = ''; }
   return result;
 }
 async function action(path, body, message) {
@@ -143,7 +171,7 @@ async function action(path, body, message) {
     if (result.player !== void 0) acceptModel(result);
     if (message) toast(message);
     beep();
-    await refreshTiles();
+    if (result.player !== undefined) await refreshTiles();
     return result;
   } catch (e) {
     if (generation !== authGeneration) return null;
@@ -169,15 +197,15 @@ async function fingerprint() {
 }
 function renderFactions() {
   $("factionPreview").innerHTML = FACTIONS.map((f) => `<button aria-label="${escape(f.name)}" data-preview="${f.id}"><img src="${f.logo}" alt=""></button>`).join("");
-  $("factionPicker").innerHTML = FACTIONS.map((f) => `<button data-faction="${f.id}" aria-pressed="${f.id === selectedFaction}" class="${f.id === selectedFaction ? "selected" : ""}"><img src="${f.logo}" alt=""><b>${f.name}</b></button>`).join("");
-  $("factionAtlas").innerHTML = FACTIONS.map((f) => `<article class="faction-sheet"><img src="${f.logo}" alt="${f.name}"><h3>${f.name}</h3><p>${escape(f.description)}</p><p class="faction-benefit">${escape(f.bonus)}</p></article>`).join("");
+  $("factionPicker").innerHTML = FACTIONS.map((f) => `<button data-faction="${f.id}" style="--faction:${f.color}" aria-pressed="${f.id === selectedFaction}" class="${f.id === selectedFaction ? "selected" : ""}"><img src="${f.logo}" alt=""><b>${f.name}</b></button>`).join("");
+  $("factionAtlas").innerHTML = FACTIONS.map((f) => `<article class="faction-sheet" style="--faction:${f.color}"><img src="${f.logo}" alt="${f.name}"><h3>${f.name}</h3><p>${escape(f.description)}</p><p class="faction-benefit">${escape(f.bonus)}</p></article>`).join("");
   updateFaction();
 }
 function updateFaction() {
   const f = getFaction(selectedFaction), hq = headquartersFor(selectedFaction);
   $("headquartersPreview").src = hq.sprite;
   $("headquartersPreview").alt = hq.name;
-  $("headquartersName").textContent = hq.name;
+  setText("headquartersName", hq.name);
   $("factionDescription").innerHTML = `<strong>${escape(f.name)}</strong>${escape(f.bonus)}`;
   document.querySelectorAll("[data-faction]").forEach((b) => {
     const selected = b.dataset.faction === selectedFaction;
@@ -193,7 +221,9 @@ function resetWorldState() {
   welcomeDismissed = false;
   selectedCells.clear();
   tileCache.clear();
+  ownershipDirty = true;
   cellCache.clear();
+  neutralKey = "";
   profiles.clear();
   effects.length = 0;
   abilityBursts.length = 0;
@@ -213,12 +243,14 @@ function resetWorldState() {
   closeAccount();
   pollBusy = false;
   tilesBusy = false;
-  dirty = true;
+  invalidate();
 }
 function signedOut() {
   authGeneration++;
   account = null;
   csrfToken = "";
+  loginToken = '';
+  saveSession();
   resetWorldState();
   $("logoutBtn").hidden = true;
   $("authCard").hidden = false;
@@ -230,7 +262,9 @@ async function refreshAuth() {
   const me = await api("/api/auth/me");
   if (generation !== authGeneration) return;
   account = me.account;
+  if (!account) saveSession();
   csrfToken = me.csrfToken || "";
+  loginToken = me.loginToken || '';
   if (previousId !== account?.id) resetWorldState();
   $("logoutBtn").hidden = !account;
   $("authCard").hidden = !!account;
@@ -241,43 +275,44 @@ async function refreshAuth() {
     updateUI();
   }
 }
-function miniAppInitData() {
-  let fragmentData = "";
-  try {
-    const fragment = new URLSearchParams(location.hash.slice(1));
-    fragmentData = fragment.get("tgWebAppData") || "";
-    if (fragment.has("tgWebAppData")) {
-      fragment.delete("tgWebAppData");
-      const rest = fragment.toString();
-      history.replaceState(history.state, "", location.pathname + location.search + (rest ? "#" + rest : ""));
-    }
-  } catch {
-  }
-  const sdk = window.Telegram?.WebApp?.initData;
-  return typeof sdk === "string" && sdk ? sdk : fragmentData;
-}
 async function autoMiniAppLogin() {
-  const initData = miniAppInitData();
-  if (account || !providers.telegram?.enabled || !initData) return;
+  const initData = telegramLaunchData || readTelegramInitData(location, window.Telegram?.WebApp);
+  if (account || authBusy || !providers.telegram?.enabled || !initData) return;
+  authBusy = true;
+  $('telegramLogin').disabled = true;
+  $('telegramLogin').setAttribute('aria-busy', 'true');
+  $('authNotice').textContent = 'Подключаем ваш командный центр…';
   try {
+    // A previous challenge may have expired while the app was suspended.
+    await refreshAuth();
+    if (account) return;
     await api("/api/auth/telegram/miniapp", { initData, fingerprint: await fingerprint() });
     await refreshAuth();
-    window.Telegram?.WebApp?.ready();
-    window.Telegram?.WebApp?.expand();
+    if (!account) throw new Error('Не удалось сохранить вход. Попробуйте ещё раз.');
+    removeTelegramInitData(location, history);
   } catch (e) {
-    $("authNotice").textContent = e.message + " Откройте игру заново через меню бота.";
-    toast(e.message, true);
+    const message = ['TimeoutError', 'AbortError', 'TypeError'].includes(e.name) ? 'Нет связи с сервером. Нажмите «Войти», чтобы повторить.' : e.message;
+    $('authNotice').textContent = message;
+    toast(message, true);
+    if (e.status === 401) { launchExpired = true; $("telegramLogin").innerHTML = "Открыть игру заново ↗"; }
+  } finally {
+    authBusy = false;
+    $('telegramLogin').disabled = false;
+    $('telegramLogin').setAttribute('aria-busy', 'false');
   }
 }
 async function initAuth() {
   providers = await api("/api/auth/providers");
   await refreshAuth();
-  $("googleLogin").hidden = false;
+  $("googleLogin").hidden = !providers.google?.enabled;
   $("googleLogin").disabled = !providers.google?.enabled;
   $("googleLogin").innerHTML = providers.google?.enabled ? "Продолжить с Google" : 'Google <span class="soon-label">скоро</span>';
   $("telegramLogin").hidden = !providers.telegram?.enabled;
   $("devAuth").hidden = !providers.development;
-  $("authNotice").textContent = providers.telegram?.enabled ? "В боте нажмите «Играть»." : providers.development ? "" : "Вход скоро откроется.";
+  $('browserTelegramLogin').hidden = !providers.telegram?.enabled || !!telegramLaunchData;
+  $('telegramBotLink').hidden = !providers.telegram?.enabled;
+  $('telegramBotLink').href = telegramLink(providers.telegram?.botUsername, false) || '#';
+  setText("authNotice", providers.telegram?.enabled ? telegramLaunchData ? 'Входим через Telegram…' : 'Откройте игру в Telegram или войдите прямо здесь.' : providers.development ? "" : "Вход через Telegram временно недоступен. Попробуйте позже.");
   await autoMiniAppLogin();
 }
 function acceptModel(next) {
@@ -300,10 +335,10 @@ function acceptModel(next) {
     home();
   }
   updateUI();
-  dirty = true;
+  invalidate();
 }
 async function refreshState(force = false) {
-  if (!account || pollBusy && !force || stopped) return;
+  if (!account || pollBusy || stopped || document.hidden && !force) return;
   const generation = authGeneration, id = account.id;
   pollBusy = true;
   try {
@@ -312,7 +347,7 @@ async function refreshState(force = false) {
     acceptModel(next);
     connectionErrors = 0;
     $("connectionNotice").hidden = true;
-    await refreshLeaderboard();
+    if (Date.now() - lastLeaderboard > 30000) await refreshLeaderboard().catch(() => {});
     if (generation === authGeneration && account?.id === id) await refreshTiles();
   } catch (e) {
     if (generation !== authGeneration) return;
@@ -328,13 +363,14 @@ async function refreshState(force = false) {
 }
 async function refreshLeaderboard() {
   const result = await api("/api/leaderboard");
+  lastLeaderboard = Date.now();
   leaderboard = result.players || [];
   for (const p of leaderboard) profiles.set(p.id, p);
   $("rankings").innerHTML = leaderboard.slice(0, 10).map((p, i) => {
     const f = getFaction(p.faction);
     return `<div class="ranking ${p.id === account?.id ? "you" : ""}"><span class="ranking-position">${i + 1}</span><span class="ranking-symbol"><img src="${f.logo}" alt="${f.name}"></span><span class="ranking-name">${escape(p.name)}<small>${p.id === account?.id ? "Вы · " : ""}${p.level} уровень</small></span><span class="ranking-score">${fmt(p.pixels)}<small>ячеек</small></span></div>`;
   }).join("") || '<p class="empty-state">Станьте первым командиром.</p>';
-  dirty = true;
+  invalidate();
 }
 function updateUI() {
   const p = model?.player, now = serverNow(), f = getFaction(p?.faction || selectedFaction);
@@ -343,58 +379,66 @@ function updateUI() {
   $("abilityBar").hidden = !p;
   $("gameRoot").classList.toggle("has-base", !!p);
   updateAbilities();
-  $("profileName").textContent = account?.name?.split(" ")[0] || "Войти";
-  $("accountName").textContent = account?.name || "Командир";
-  $("commanderName").textContent = p?.name || account?.name || "Командир";
-  $("factionName").textContent = f.name.toLocaleLowerCase("ru-RU");
+  setText("profileName", account?.name?.split(" ")[0] || "Войти");
+  setText("accountName", account?.name || "Командир");
+  setText("commanderName", p?.name || account?.name || "Командир");
+  setText("factionName", f.name.toLocaleLowerCase("ru-RU"));
   $("factionAvatar").src = f.logo;
   $("factionAvatar").alt = f.name;
-  $("levelBadge").textContent = `${p?.level || 1} ур.`;
-  $("energy").textContent = fmt(p?.energy);
-  $("income").textContent = p ? `${p.netPerHour >= 0 ? "+" : ""}${Number(p.netPerHour).toFixed(1)} / ч` : "+0 / ч";
+  $("gameRoot").style.setProperty("--faction", f.color);
+  setText("missionTitle", p ? `Штаб: уровень ${p.level}` : account ? "Время выбрать сторону" : "Ваша история начнётся здесь");
+  setText("missionCopy", p ? `${fmt(p.pixels)} ячеек под вашим командованием. ${p.expansionBlocked ? "Смените направление, чтобы продолжить экспансию." : "Усильте базу, чтобы расширить пределы своей территории."}` : account ? "Изучите бонусы фракций. Затем выберите свободную сушу и разверните свой первый штаб." : "Пять фракций. Одна планета. Выберите сторону и превратите первую ячейку в империю.");
+  $("missionSteps").hidden = !!p;
+  $("missionBtn").hidden = !p;
+  $("missionSteps").children[0]?.classList.toggle("current", !account);
+  $("missionSteps").children[1]?.classList.toggle("current", !!account && !placing);
+  $("missionSteps").children[2]?.classList.toggle("current", placing);
+  setText("levelBadge", `${p?.level || 1} ур.`);
+  setText("energy", fmt(p?.energy));
+  setText("income", p ? `${p.netPerHour >= 0 ? "+" : ""}${Number(p.netPerHour).toFixed(1)} / ч` : "+0 / ч");
   $("income").classList.toggle("negative", p?.netPerHour < 0);
-  $("storageInfo").textContent = p ? fmt(p.storage) : "—";
-  $("territory").textContent = fmt(p?.pixels);
-  $("capInfo").textContent = p ? fmt(p.cap) : "—";
-  $("crystals").textContent = fmt(p?.crystals);
-  $("sectorAngle").textContent = `${Math.round(p?.sectorAngle || 36)}°`;
-  $("azimuthValue").textContent = `${$("azimuth").value}°`;
-  $("grossIncome").textContent = p ? `+${Number(p.grossPerHour).toFixed(1)}` : "—";
-  $("upkeep").textContent = p ? `−${Number(p.upkeepPerHour).toFixed(1)}` : "—";
+  setText("storageInfo", p ? fmt(p.storage) : "—");
+  setText("territory", fmt(p?.pixels));
+  setText("capInfo", p ? fmt(p.cap) : "—");
+  setText("crystals", fmt(p?.crystals));
+  setText("sectorAngle", `${Math.round(p?.sectorAngle || 36)}°`);
+  setText("azimuthValue", `${$("azimuth").value}°`);
+  setText("grossIncome", p ? `+${Number(p.grossPerHour).toFixed(1)}` : "—");
+  setText("upkeep", p ? `−${Number(p.upkeepPerHour).toFixed(1)}` : "—");
   const conflicts = model?.conflicts || [];
-  $("frontStatus").textContent = conflicts.some((c) => c.status === "active") ? "Идёт борьба" : "Спокойно";
-  $("growthInfo").textContent = p ? `${Number(p.capturePerHour).toFixed(0)} ячеек / ч` : "—";
+  setText("frontStatus", conflicts.some((c) => c.status === "active") ? "Идёт борьба" : "Спокойно");
+  setText("growthInfo", p ? `${Number(p.capturePerHour).toFixed(0)} ячеек / ч` : "—");
   $("shieldRow").hidden = !p || p.shieldUntil <= now;
-  $("shieldInfo").textContent = p ? duration(p.shieldUntil - now) : "—";
+  setText("shieldInfo", p ? duration(p.shieldUntil - now) : "—");
   const project2 = p?.project, building = project2?.status === "building", queue = p?.queuedProject;
   const canQueue = building && p?.queueSlots > 1 && p.level < 29 && !(queue && queue.invested >= queue.cost);
-  $("nextLevel").textContent = p?.level >= 30 ? "Максимальный уровень" : `${(p?.level || 1) + 1} уровень`;
+  setText("nextLevel", p?.level >= 30 ? "Максимальный уровень" : `${(p?.level || 1) + 1} уровень`);
   let progress = project2 ? project2.invested / project2.cost * 100 : 0;
   if (building) progress = 100 * (1 - (project2.completesAt - now) / project2.durationMs);
   $("projectBar").style.width = `${Math.max(0, Math.min(100, progress))}%`;
-  $("projectInfo").textContent = project2 ? building ? project2.completesAt > now ? `Готово через ${duration(project2.completesAt - now)}` : "Улучшение завершается…" : `${fmt(project2.invested)} из ${fmt(project2.cost)} энергии` : "База достигла максимального уровня.";
+  setText("projectInfo", project2 ? building ? project2.completesAt > now ? `Готово через ${duration(project2.completesAt - now)}` : "Улучшение завершается…" : `${fmt(project2.invested)} из ${fmt(project2.cost)} энергии` : "База достигла максимального уровня.");
   if (queue) $("projectInfo").textContent += ` · В очереди: ${queue.targetLevel} ур., ${fmt(queue.invested)} из ${fmt(queue.cost)}`;
   $("fundingControls").hidden = !p || p.level >= 30 || building && !canQueue;
   $("fundBtn").disabled = !p || building && !canQueue || p.energy <= 0 || p.level >= 30;
-  $("fundBtn").textContent = canQueue ? "Вложить в следующий уровень" : "Вложить энергию ↗";
+  setText("fundBtn", canQueue ? "Вложить в следующий уровень" : "Вложить энергию ↗");
   $("skipBtn").hidden = !building;
   const cost = building ? skipCost(Math.max(0, (project2.completesAt - now) / 36e5)) : 0;
   $("skipBtn").disabled = !building || (p?.crystals || 0) < cost;
-  $("skipCost").textContent = `${cost} ◇`;
+  setText("skipCost", `${cost} ◇`);
   $("buildDot").hidden = !building;
-  $("rotationCost").textContent = `${CONFIG.ROTATE_CRYSTAL_COST} ◇`;
+  setText("rotationCost", `${CONFIG.ROTATE_CRYSTAL_COST} ◇`);
   $("rotateBtn").disabled = !p || p.crystals < CONFIG.ROTATE_CRYSTAL_COST || !!(p.lastRotatedAt && now - p.lastRotatedAt < CONFIG.ROTATE_COOLDOWN_HOURS * 36e5);
   const daily = p?.daily, available = !!p && !!daily && !daily.claimed && daily.availableAt <= now;
   $("dailyBtn").disabled = !available;
   $("rewardDot").hidden = !available;
-  $("dailyInfo").textContent = !p ? "Награды откроются после основания базы." : daily?.claimed ? "Вы уже получили награду. Новая — завтра." : daily?.availableAt > now ? `Первая награда через ${duration(daily.availableAt - now)}.` : "Ваша ежедневная награда готова.";
+  setText("dailyInfo", !p ? "Награды откроются после основания базы." : daily?.claimed ? "Вы уже получили награду. Новая — завтра." : daily?.availableAt > now ? `Первая награда через ${duration(daily.availableAt - now)}.` : "Ваша ежедневная награда готова.");
   $("energyBtn").disabled = !p || p.crystals < 10 || (p.paidEnergy?.hoursUsed || 0) >= 16;
-  $("energyCapInfo").textContent = p ? `Сегодня доступно ещё ${Math.max(0, 16 - (p.paidEnergy?.hoursUsed || 0)).toFixed(0)} ч из 16` : "До 16 часов в день";
+  setText("energyCapInfo", p ? `Сегодня доступно ещё ${Math.max(0, 16 - (p.paidEnergy?.hoursUsed || 0)).toFixed(0)} ч из 16` : "До 16 часов в день");
   $("sectorNav").disabled = !p;
   $("rewardsNav").disabled = !p;
   $("selectCellsBtn").disabled = !p;
   $("selectionBar").hidden = !selecting;
-  $("selectedCount").textContent = selectedCells.size;
+  setText("selectedCount", selectedCells.size);
   $("abandonBtn").disabled = !p || !selectedCells.size;
   $("billingBtn").hidden = !p?.subscriptionActive;
   $("cancelSubscriptionBtn").hidden = !p?.subscriptionActive;
@@ -404,7 +448,7 @@ function geometry() {
   return { size, ox: (cw - 360 * size) / 2 + panX, oy: (ch - 180 * size) / 2 + panY };
 }
 function project(lat, lng) {
-  const g = geometry();
+  const g = drawingGeometry || geometry();
   return { x: g.ox + (lng + 180) * g.size, y: g.oy + (90 - lat) * g.size };
 }
 function atPoint(px, py) {
@@ -424,9 +468,9 @@ function changeZoom(next, px = cw / 2, py = ch / 2) {
   panX += px - after.x;
   panY += py - after.y;
   clampPan();
-  dirty = true;
+  invalidate();
   lastDetails = 0;
-  refreshTiles();
+  scheduleTiles();
 }
 function focusAt(lat, lng, nextZoom = 384) {
   zoom = nextZoom;
@@ -435,9 +479,9 @@ function focusAt(lat, lng, nextZoom = 384) {
   panX = cw / 2 - point.x;
   panY = ch / 2 - point.y;
   clampPan();
-  dirty = true;
+  invalidate();
   lastDetails = 0;
-  refreshTiles();
+  scheduleTiles();
 }
 function home() {
   const center = model?.player?.baseCell ? cellToLatLng(model.player.baseCell) : [CONFIG.REGION.center.lat, CONFIG.REGION.center.lng];
@@ -450,10 +494,15 @@ function fit() {
   dpr = Math.min(devicePixelRatio || 1, 2);
   canvas.width = Math.round(cw * dpr);
   canvas.height = Math.round(ch * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.imageSmoothingEnabled = false;
+  mapLayer.width = canvas.width;
+  mapLayer.height = canvas.height;
+  for (const context of [displayCtx, mapCtx]) {
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.imageSmoothingEnabled = false;
+  }
+  scheduleTiles();
   clampPan();
-  dirty = true;
+  invalidate();
   lastDetails = 0;
 }
 function pointFor(event) {
@@ -479,29 +528,41 @@ function cellPath(cell) {
 function neutralDetail(now) {
   if (zoom < 256) {
     cellCache.clear();
+    neutralKey = "";
     return;
   }
-  if (now - lastDetails < 750 && cellCache.size) return;
   lastDetails = now;
   const center = atPoint(cw / 2, ch / 2), cell = latLngToCell(center.lat, center.lng, 8);
+  const radius = Math.min(24, Math.max(5, Math.ceil(400 / zoom * 30)));
+  const key = `${cell}:${radius}`;
+  if (key === neutralKey) return;
+  neutralKey = key;
   cellCache.clear();
-  const radius = Math.min(38, Math.max(5, Math.ceil(400 / zoom * 30)));
   for (const index of gridDisk(cell, radius)) {
     if (cellIsLand(index)) cellCache.set(index, null);
   }
 }
 function ownerCells() {
-  const cells = /* @__PURE__ */ new Map();
-  for (const tile of tileCache.values()) for (const [cell, id] of tile.cells) cells.set(cell, id);
-  return cells;
+  if (ownershipDirty) {
+    ownership = new Map();
+    for (const tile of tileCache.values()) for (const [cell, id] of tile.cells) ownership.set(cell, id);
+    ownershipDirty = false;
+  }
+  return ownership;
 }
+function cellVisible(cell) {
+  const point = project(...cellToLatLng(cell));
+  const margin = geometry().size * .012 + 3;
+  return point.x >= -margin && point.x <= cw + margin && point.y >= -margin && point.y <= ch + margin;
+}
+
 function playerById(id) {
   return id === model?.player?.id ? model.player : profiles.get(id) || leaderboard.find((p) => p.id === id);
 }
 function drawCellMark(cell, factionId) {
   if (zoom < 1600) return;
   const [lat, lng] = cellToLatLng(cell), p = project(lat, lng), s = geometry().size * 3e-3;
-  ctx.strokeStyle = "#536c5966";
+  ctx.strokeStyle = "#ddf8ff77";
   ctx.lineWidth = 1;
   if (factionId === "protocol" || factionId === "vanguard") ctx.strokeRect(p.x - s / 2, p.y - s / 2, s, s);
   else if (factionId === "bloom") {
@@ -535,29 +596,49 @@ function drawSector(p) {
   ctx.stroke();
   ctx.setLineDash([]);
 }
-function draw(now) {
-  ctx.fillStyle = "#e7eff0";
+function drawMap(now) {
+  ctx.fillStyle = "#0b1724";
   ctx.fillRect(0, 0, cw, ch);
   const g = geometry();
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(terrain, g.ox, g.oy, 360 * g.size, 180 * g.size);
+  // Tactical latitude/longitude grid stays on the cached map layer.
+  if (zoom < 12) {
+    ctx.strokeStyle = "#51748a18";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let lng = -180; lng <= 180; lng += 30) {
+      const a = project(85, lng), b = project(-85, lng);
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    }
+    for (let lat = -60; lat <= 60; lat += 30) {
+      const a = project(lat, -180), b = project(lat, 180);
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+  }
+  const center = atPoint(cw / 2, ch / 2);
+  setText("mapCoordinates", `${Math.abs(center.lat).toFixed(2)}° ${center.lat >= 0 ? 'N' : 'S'} · ${Math.abs(center.lng).toFixed(2)}° ${center.lng >= 0 ? 'E' : 'W'}`);
+  setText("mapScale", zoom < 12 ? "ОБЗОР МИРА" : zoom < 256 ? "ОПЕРАТИВНАЯ КАРТА" : "ТАКТИЧЕСКИЙ РЕЖИМ");
   neutralDetail(now);
   if (zoom >= 256) {
-    ctx.strokeStyle = "#b5c6a94d";
+    ctx.strokeStyle = "#52768e45";
     ctx.lineWidth = 0.5;
     for (const cell of cellCache.keys()) {
+      if (!cellVisible(cell)) continue;
       cellPath(cell);
       ctx.stroke();
     }
   }
   if (activePanel === "sector") drawSector(model?.player);
   for (const [cell, id] of ownerCells()) {
+    if (!cellVisible(cell)) continue;
     const owner = playerById(id), color = mapColor(owner?.faction);
     cellPath(cell);
     ctx.fillStyle = color + "ad";
     ctx.fill();
     if (zoom >= 256) {
-      ctx.strokeStyle = "#fffefa85";
+      ctx.strokeStyle = color + "9a";
       ctx.lineWidth = 0.6;
       ctx.stroke();
       drawCellMark(cell, owner?.faction);
@@ -573,7 +654,7 @@ function draw(now) {
   }
   if (zoom <= 3) {
     ctx.font = "500 12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
-    ctx.fillStyle = "#87a5a6";
+    ctx.fillStyle = "#66869c";
     ctx.textAlign = "center";
     for (const [lat, lng, label] of [[32, -150, "Тихий океан"], [15, -35, "Атлантический океан"], [-25, 78, "Индийский океан"]]) {
       const p = project(lat, lng);
@@ -584,12 +665,12 @@ function draw(now) {
   if (zoom > 3 && zoom < 256) for (const city of worldMask.cities || []) {
     const p = project(90 - city.y, city.x - 180);
     if (p.x > 0 && p.x < cw && p.y > 0 && p.y < ch) {
-      ctx.fillStyle = "#8c9f7b";
+      ctx.fillStyle = "#69eed0";
       ctx.beginPath();
       ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
       ctx.fill();
       ctx.font = "11px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
-      ctx.fillStyle = "#7c906c";
+      ctx.fillStyle = "#a5c3d6";
       ctx.fillText(city.name, p.x + 7, p.y + 4);
     }
   }
@@ -603,7 +684,7 @@ function draw(now) {
     const own = p.id === account?.id, color = mapColor(p.faction), sprite = headquartersSprite(p.faction), size = own ? 78 : 60;
     let labelY = pos.y + 42;
     if (zoom >= 64 && sprite?.complete && sprite.naturalWidth) {
-      ctx.fillStyle = "#536c591a";
+      ctx.fillStyle = "#02080c77";
       ctx.beginPath();
       ctx.ellipse(pos.x, pos.y + 18, size * 0.38, size * 0.13, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -613,7 +694,7 @@ function draw(now) {
       const r = own ? 18 : 14;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = "#fffefa";
+      ctx.fillStyle = "#132737";
       ctx.fill();
       ctx.strokeStyle = color;
       ctx.lineWidth = own ? 2 : 1;
@@ -626,16 +707,37 @@ function draw(now) {
       const label = `${p.name} · ${p.level} ур.`;
       ctx.font = "500 11px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
       const width = ctx.measureText(label).width + 18;
-      ctx.fillStyle = "#fffefaed";
+      ctx.fillStyle = "#101e2df5";
       ctx.beginPath();
       ctx.roundRect(pos.x - width / 2, labelY - 16, width, 24, 8);
       ctx.fill();
       ctx.textAlign = "center";
-      ctx.fillStyle = "#59724f";
+      ctx.fillStyle = "#bcf4e2";
       ctx.fillText(label, pos.x, labelY);
       ctx.textAlign = "left";
     }
   }
+  if (mouse && placing && zoom >= 256) {
+    const p = atPoint(mouse.x, mouse.y), cell = latLngToCell(p.lat, p.lng, 8);
+    cellPath(cell);
+    ctx.fillStyle = cellIsLand(cell) ? "#6c9c7477" : "#c8847155";
+    ctx.fill();
+    const sprite = headquartersSprite(selectedFaction);
+    if (sprite?.complete && sprite.naturalWidth) {
+      const at = project(...cellToLatLng(cell));
+      ctx.globalAlpha = 0.75;
+      ctx.drawImage(sprite, at.x - 35, at.y - 54, 70, 70);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+function draw(now) {
+  if (dirty) {
+    ctx = mapCtx;
+    drawingGeometry = geometry();
+    try { drawMap(now); } finally { ctx = displayCtx; drawingGeometry = null; }
+  }
+  ctx.drawImage(mapLayer, 0, 0, cw, ch);
   for (let i = effects.length - 1; i >= 0; i--) {
     const e = effects[i], age = (now - e.at) / 1500;
     if (age > 1) {
@@ -653,20 +755,8 @@ function draw(now) {
     ctx.globalAlpha = 1;
   }
   drawAbilityBursts(now);
-  if (mouse && placing && zoom >= 256) {
-    const p = atPoint(mouse.x, mouse.y), cell = latLngToCell(p.lat, p.lng, 8);
-    cellPath(cell);
-    ctx.fillStyle = cellIsLand(cell) ? "#6c9c7477" : "#c8847155";
-    ctx.fill();
-    const sprite = headquartersSprite(selectedFaction);
-    if (sprite?.complete && sprite.naturalWidth) {
-      const at = project(...cellToLatLng(cell));
-      ctx.globalAlpha = 0.75;
-      ctx.drawImage(sprite, at.x - 35, at.y - 54, 70, 70);
-      ctx.globalAlpha = 1;
-    }
-  }
 }
+
 async function refreshTiles() {
   if (!account || tilesBusy || zoom < 256 || stopped) return;
   const generation = authGeneration, id = account.id;
@@ -685,6 +775,7 @@ async function refreshTiles() {
       if (generation !== authGeneration || account?.id !== id) return;
       for (const p of result.players || []) profiles.set(p.id, p);
       for (const t of result.tiles || []) {
+        if (!t.unchanged) ownershipDirty = true;
         if (t.unchanged) continue;
         const old = tileCache.get(t.parent), cells = t.full ? /* @__PURE__ */ new Map() : new Map(old?.cells || []);
         if (t.full) {
@@ -692,7 +783,7 @@ async function refreshTiles() {
         } else for (const change of t.changes || []) {
           if (change.owner) {
             cells.set(change.cell, change.owner);
-            if (effects.length < 100) effects.push({ cell: change.cell, owner: change.owner, at: performance.now() });
+            if (!reducedMotion && effects.length < 100) effects.push({ cell: change.cell, owner: change.owner, at: performance.now() });
           } else cells.delete(change.cell);
         }
         tileCache.set(t.parent, { version: t.version, cells });
@@ -701,8 +792,9 @@ async function refreshTiles() {
     if (tileCache.size > 300) {
       const keep = visible;
       for (const key of tileCache.keys()) if (!keep.has(key) && tileCache.size > 100) tileCache.delete(key);
+      ownershipDirty = true;
     }
-    dirty = true;
+    invalidate();
   } catch (e) {
     if (generation === authGeneration && e.status === 401) {
       signedOut();
@@ -720,6 +812,7 @@ function beginPlacement() {
   $("spawnCard").hidden = true;
   $("placementHint").hidden = false;
   canvas.classList.add("placement");
+  updateUI();
   home();
 }
 canvas.addEventListener("pointerdown", (e) => {
@@ -748,7 +841,7 @@ canvas.addEventListener("pointermove", (e) => {
     panX += x - anchor.x;
     panY += y - anchor.y;
     clampPan();
-    dirty = true;
+    invalidate();
     lastDetails = 0;
     $("mapTooltip").hidden = true;
     return;
@@ -760,7 +853,7 @@ canvas.addEventListener("pointermove", (e) => {
       panX = drag.panX + dx;
       panY = drag.panY + dy;
       clampPan();
-      dirty = true;
+      invalidate();
       lastDetails = 0;
       $("mapTooltip").hidden = true;
       return;
@@ -770,12 +863,12 @@ canvas.addEventListener("pointermove", (e) => {
   const p = atPoint(mouse.x, mouse.y);
   if (zoom >= 256 && !placing) {
     const cell = latLngToCell(p.lat, p.lng, 8), owner = ownerCells().get(cell), known = playerById(owner);
-    $("mapTooltip").textContent = known ? `${known.name} · ${getFaction(known.faction).name}` : owner ? "Занятая ячейка" : cellIsLand(cell) ? "Свободная ячейка" : "Вода";
+    setText("mapTooltip", known ? `${known.name} · ${getFaction(known.faction).name}` : owner ? "Занятая ячейка" : cellIsLand(cell) ? "Свободная ячейка" : "Вода");
     $("mapTooltip").style.left = `${Math.max(8, Math.min(cw - 225, mouse.x + 12))}px`;
     $("mapTooltip").style.top = `${Math.max(35, mouse.y - 38)}px`;
     $("mapTooltip").hidden = false;
   }
-  dirty = true;
+  if (placing) invalidate();
 });
 canvas.addEventListener("pointerup", async (e) => {
   const didMove = moved || gestureMoved;
@@ -812,7 +905,7 @@ canvas.addEventListener("pointerup", async (e) => {
     if (ownerCells().get(cell) === account.id && cell !== model.player.baseCell) {
       selectedCells.has(cell) ? selectedCells.delete(cell) : selectedCells.add(cell);
       updateUI();
-      dirty = true;
+      invalidate();
     } else toast("Можно выделить только свою территорию, кроме базы.", true);
   } else if (zoom < 256) {
     focusAt(p.lat, p.lng, 384);
@@ -820,6 +913,7 @@ canvas.addEventListener("pointerup", async (e) => {
 });
 canvas.addEventListener("pointerleave", () => {
   mouse = null;
+  if (placing) invalidate();
   $("mapTooltip").hidden = true;
 });
 canvas.addEventListener("pointercancel", () => {
@@ -844,11 +938,13 @@ $("cancelPlacement").onclick = () => {
   $("placementHint").hidden = true;
   $("spawnCard").hidden = false;
   canvas.classList.remove("placement");
+  updateUI();
 };
 $("factionPicker").onclick = (e) => {
   const b = e.target.closest("[data-faction]");
   if (b) {
     selectedFaction = b.dataset.faction;
+    $("gameRoot").style.setProperty("--faction", getFaction(selectedFaction).color);
     updateFaction();
     beep(400);
   }
@@ -862,7 +958,7 @@ $("helpBtn").onclick = () => {
 $("syncBtn").onclick = () => refreshState(true);
 $("soundBtn").onclick = () => {
   sound = !sound;
-  $("soundState").textContent = sound ? "Включены" : "Выключены";
+  setText("soundState", sound ? "Включены" : "Выключены");
   $("soundBtn").setAttribute("aria-pressed", String(sound));
   $("soundBtn").setAttribute("aria-label", sound ? "Выключить звук" : "Включить звук");
   beep();
@@ -888,18 +984,27 @@ window.openTelegramWidget = () => {
   script.setAttribute("data-telegram-login", providers.telegram.botUsername);
   script.setAttribute("data-size", "large");
   script.setAttribute("data-onauth", "onTelegramAuth(user)");
+  script.onerror = () => {
+    $('telegramWidget').innerHTML = '';
+    setText('authNotice', 'Не удалось загрузить окно входа. Откройте чат бота и нажмите «Играть».');
+  };
   $("telegramWidget").appendChild(script);
 };
+$("browserTelegramLogin").onclick = () => window.openTelegramWidget();
 $("telegramLogin").onclick = () => {
-  const username = providers.telegram?.botUsername;
-  if (!/^[A-Za-z0-9_]{5,32}$/.test(username || "")) return;
-  const url = "https://t.me/" + username;
-  if (window.Telegram?.WebApp?.openTelegramLink) window.Telegram.WebApp.openTelegramLink(url);
+  if (telegramLaunchData && !launchExpired) return autoMiniAppLogin();
+  const url = telegramLink(providers.telegram?.botUsername);
+  if (!url) return;
+  const webApp = window.Telegram?.WebApp;
+  if (webApp?.initData && webApp.openTelegramLink) webApp.openTelegramLink(url);
   else location.assign(url);
 };
 $("logoutBtn").onclick = async () => {
-  await action("/api/auth/logout", {});
+  const result = await action("/api/auth/logout", {});
+  if (!result) return;
+  saveSession();
   tileCache.clear();
+  ownershipDirty = true;
   await refreshAuth();
 };
 $("fundBtn").onclick = async () => {
@@ -908,7 +1013,7 @@ $("fundBtn").onclick = async () => {
 };
 $("skipBtn").onclick = () => action("/api/crystals/spend", { kind: "skip" }, "Строительство завершено.");
 $("azimuth").oninput = () => {
-  $("azimuthValue").textContent = `${$("azimuth").value}°`;
+  setText("azimuthValue", `${$("azimuth").value}°`);
 };
 $("rotateBtn").onclick = () => action("/api/azimuth", { azimuth: Number($("azimuth").value) }, "Сектор повёрнут.");
 $("dailyBtn").onclick = () => action("/api/daily/claim", {}, "Получено 40 кристаллов.");
@@ -919,13 +1024,13 @@ $("selectCellsBtn").onclick = () => {
   closePanels();
   closeAccount();
   updateUI();
-  dirty = true;
+  invalidate();
 };
 $("cancelSelection").onclick = () => {
   selecting = false;
   selectedCells.clear();
   updateUI();
-  dirty = true;
+  invalidate();
 };
 $("abandonBtn").onclick = () => $("abandonDialog").showModal();
 $("confirmAbandon").onclick = async () => {
@@ -940,7 +1045,7 @@ $("confirmAbandon").onclick = async () => {
 async function openShop() {
   closeAccount();
   const shop = await api("/api/shop");
-  $("shopNotice").textContent = shop.payments.enabled ? "Выберите кристаллы или VIP для своей базы." : "Покупки скоро откроются. Кристаллы уже можно получать в наградах.";
+  setText("shopNotice", shop.payments.enabled ? "Выберите кристаллы или VIP для своей базы." : "Покупки скоро откроются. Кристаллы уже можно получать в наградах.");
   $("shopItems").innerHTML = shop.items.filter((item) => item.available !== false).map((item) => `<div class="shop-item"><b>${item.crystals ? fmt(item.crystals) + " кристаллов" : "VIP"}</b><span>${(item.priceCents / 100).toLocaleString("en-US", { style: "currency", currency: item.currency })}${item.vipDays ? " / месяц" : ""}</span><button class="primary-button" data-sku="${item.id}" ${!shop.payments.enabled || !model?.player ? "disabled" : ""}>${shop.payments.enabled ? "Купить" : "Скоро"}</button>${item.vipDays ? "<small>Две очереди улучшений</small>" : ""}</div>`).join("");
   $("shopDialog").showModal();
   updateUI();
@@ -977,7 +1082,7 @@ function abilityState(id) {
 }
 function renderAbilities() {
   const labels = { infantry: "Пехота", field: "Поле", heavy: "Техника", ultimate: "Ульта" };
-  $("abilityBar").innerHTML = ABILITIES.map((a) => `<button id="ability-${a.id}" class="ability-button" data-ability="${a.id}"><span class="ability-icon"><svg><use href="#i-${a.id === "infantry" ? "infantry" : a.id}"/></svg></span><span class="ability-label">${labels[a.id]}</span><span class="ability-state" id="ability-state-${a.id}">Готово</span></button>`).join("");
+  $("abilityBar").innerHTML = ABILITIES.map((a, index) => `<button id="ability-${a.id}" class="ability-button" data-ability="${a.id}"><span class="ability-key" aria-hidden="true">${index + 1}</span><span class="ability-icon"><svg><use href="#i-${a.id === "infantry" ? "infantry" : a.id}"/></svg></span><span class="ability-label">${labels[a.id]}</span><span class="ability-state" id="ability-state-${a.id}">Готово</span></button>`).join("");
 }
 function updateAbilities() {
   const p = model?.player, now = serverNow();
@@ -989,6 +1094,8 @@ function updateAbilities() {
     button.classList.toggle("active", active);
     button.classList.toggle("cooling", cooling && !active);
     button.classList.toggle("ready", !cooling);
+    const elapsed = cooling ? Math.max(0, Math.min(1, 1 - (state.readyAt - now) / definition.cooldownMs)) : 1;
+    button.style.setProperty("--cooldown-progress", `${Math.round(elapsed * 100)}%`);
     label.textContent = abilityBusy === definition.id ? "…" : active ? `+${definition.bonus * 100}% · ${abilityTime(state.activeUntil - now)}` : cooling ? abilityTime(state.readyAt - now) : `+${definition.bonus * 100}%`;
     const name = factionAbilityName(p?.faction || selectedFaction, definition.id);
     button.title = `${name} · +${definition.bonus * 100}% к захвату на ${effectTime(definition.durationMs)}`;
@@ -997,7 +1104,7 @@ function updateAbilities() {
   if (pendingAbilityReset && $("abilityDialog").open) {
     const state = abilityState(pendingAbilityReset), definition = ABILITIES.find((a) => a.id === pendingAbilityReset), price = (state?.readyAt || 0) > now ? definition.resetCrystalCost : 0;
     $("confirmAbilityReset").disabled = !!abilityBusy || !p || p.crystals < price;
-    $("confirmAbilityReset").textContent = price ? `Запустить за ${price} ◇` : "Запустить бесплатно";
+    setText("confirmAbilityReset", price ? `Запустить за ${price} ◇` : "Запустить бесплатно");
     $("abilityShopBtn").hidden = !p || p.crystals >= price;
   }
 }
@@ -1007,9 +1114,9 @@ async function useAbility(id, resetCooldown = false) {
   if (!definition) return;
   if ((state?.readyAt || 0) > serverNow() && !resetCooldown) {
     pendingAbilityReset = id;
-    $("abilityDialogTitle").textContent = factionAbilityName(model.player.faction, id);
-    $("abilityDialogEffect").textContent = `+${definition.bonus * 100}% к скорости захвата на ${effectTime(definition.durationMs)}.`;
-    $("abilityDialogNote").textContent = (state.activeUntil || 0) > serverNow() ? "Повтор обновит длительность текущего эффекта. Его сила не складывается с предыдущим запуском." : "Сбросьте ожидание и запустите способность снова.";
+    setText("abilityDialogTitle", factionAbilityName(model.player.faction, id));
+    setText("abilityDialogEffect", `+${definition.bonus * 100}% к скорости захвата на ${effectTime(definition.durationMs)}.`);
+    setText("abilityDialogNote", (state.activeUntil || 0) > serverNow() ? "Повтор обновит длительность текущего эффекта. Его сила не складывается с предыдущим запуском." : "Сбросьте ожидание и запустите способность снова.");
     $("abilityDialog").showModal();
     updateAbilities();
     return;
@@ -1019,8 +1126,8 @@ async function useAbility(id, resetCooldown = false) {
   try {
     const result = await action("/api/abilities/use", { abilityId: id, resetCooldown, requestId: crypto.randomUUID() }, `${factionAbilityName(model.player.faction, id)}: захват +${definition.bonus * 100}%.`);
     if (result) {
-      if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) abilityBursts.push({ id, at: performance.now(), cell: result.player.baseCell, faction: result.player.faction, azimuth: result.player.azimuth });
-      dirty = true;
+      if (!reducedMotion) abilityBursts.push({ id, at: performance.now(), cell: result.player.baseCell, faction: result.player.faction, azimuth: result.player.azimuth });
+      invalidate();
       pendingAbilityReset = null;
       $("abilityDialog").close();
     }
@@ -1096,7 +1203,8 @@ for (const dialog of document.querySelectorAll("dialog")) dialog.onclick = (e) =
   }
 };
 window.addEventListener("keydown", (e) => {
-  if (e.target.matches("input,textarea") || document.querySelector("dialog[open]")) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input,textarea,select") || document.querySelector("dialog[open]")) return;
+  if (/^[1-4]$/.test(e.key) && !e.repeat && model?.player) useAbility(ABILITIES[Number(e.key) - 1].id);
   if (e.key === "+" || e.key === "=") changeZoom(zoom * 2);
   if (e.key === "-") changeZoom(zoom / 2);
   if (e.key === "Escape") {
@@ -1112,37 +1220,61 @@ window.addEventListener("keydown", (e) => {
     selecting = false;
     selectedCells.clear();
     updateUI();
-    dirty = true;
+    invalidate();
   }
 });
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refreshState();
+  clearTimeout(pollTimer);
+  if (document.hidden) {
+    if (frameHandle !== null) cancelAnimationFrame(frameHandle);
+    frameHandle = null;
+    return;
+  }
+  invalidate();
+  pollWorld();
 });
+window.addEventListener("online", () => { clearTimeout(pollTimer); pollWorld(); });
+$("missionBtn").onclick = () => openPanel("base");
+function setupTelegram() {
+  const webApp = window.Telegram?.WebApp;
+  if (!webApp || !telegramLaunchData) return;
+  webApp.ready?.();
+  webApp.expand?.();
+  try { webApp.setHeaderColor?.('#080f19'); webApp.setBackgroundColor?.('#080f19'); } catch {}
+}
+// SDK loading is optional for authentication and never blocks the game.
+window.addEventListener("load", setupTelegram);
+async function pollWorld() {
+  clearTimeout(pollTimer);
+  if (document.hidden || stopped) return;
+  await refreshState();
+  pollTimer = setTimeout(pollWorld, Math.min(30000, 5000 * 2 ** Math.min(connectionErrors, 3)));
+}
 new ResizeObserver(fit).observe($("mapViewport"));
 function frame(now) {
+  frameHandle = null;
+  if (document.hidden) return;
   if (now - lastRender > 32 && (dirty || effects.length || abilityBursts.length)) {
     draw(now);
     lastRender = now;
     dirty = false;
   }
-  requestAnimationFrame(frame);
+  if (dirty || effects.length || abilityBursts.length) requestFrame();
 }
 async function init() {
   renderFactions();
   renderAbilities();
   fit();
   updateUI();
-  requestAnimationFrame(frame);
+  requestFrame();
+  setupTelegram();
   try {
-    await api("/api/config");
     await initAuth();
-    await refreshLeaderboard();
+    await refreshLeaderboard().catch(() => {});
     $("mapLoading").hidden = true;
     if (account && !model?.player && !welcomeDismissed) $("spawnCard").hidden = false;
-    setInterval(() => {
-      if (!document.hidden) refreshState();
-    }, 5e3);
-    setInterval(updateUI, 1e3);
+    pollTimer = setTimeout(pollWorld, 5000);
+    setInterval(() => { if (!document.hidden && model?.player) updateUI(); }, 1000);
   } catch (e) {
     $("mapLoading").innerHTML = '<span>Не удалось открыть мир.</span><button id="retryConnect" class="secondary-button">Повторить</button>';
     document.getElementById("retryConnect").onclick = () => location.reload();

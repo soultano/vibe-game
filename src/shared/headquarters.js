@@ -8,5 +8,5 @@ const names = Object.freeze({
 
 export function headquartersFor(faction) {
   const id = Object.hasOwn(names, faction) ? faction : 'protocol';
-  return { id, name: names[id], sprite: `/assets/headquarters/${id}.png` };
+  return { id, name: names[id], sprite: `/assets/headquarters/${id}.webp` };
 }

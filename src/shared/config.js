@@ -66,7 +66,7 @@ export const ENERGY_DAILY_CAP_HOURS = 16;
 
 const faction = (id, name, englishName, color, description, territory, bonus, values) => Object.freeze({
   id, name, englishName, color, description, territory, bonus,
-  logo: `/assets/factions/${id}.png`,
+  logo: `/assets/factions/${id}.webp`,
   income: 1, upkeep: 1, capture: 1, captureCost: 1,
   defense: 1, electronicDefense: 1, projection: 1, melee: 1, adjacentAura: 0,
   ...values,
