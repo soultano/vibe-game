@@ -143,7 +143,7 @@ async function checkWorker() {
     assert.equal(config.cellResolution, 8); assert.equal(config.tileResolution, 5);
     assert.deepEqual(config.factions.map(faction => faction.id), factionIds);
     const health = await (await call('/api/health')).json();
-    assert.equal(health.ok, true); assert.equal(health.storage, 'persistent'); assert.equal(health.timeAuthority, 'server');
+    assert.equal(health.ok, true); assert.equal(health.storage, 'persistent'); assert.equal(health.timeAuthority, 'server'); assert.equal(health.groupOrders,'v1');
     const anonymous = await call('/api/auth/me');
     assert.equal(anonymous.status, 200); const me = await anonymous.json();
     assert.equal(me.account, null); assert.ok(me.csrfToken);
@@ -168,8 +168,10 @@ async function checkWorker() {
     const guest=await call('/api/auth/guest',{method:'POST',headers:{'content-type':'application/json',origin,'x-login-token':me.loginToken,'x-csrf-token':me.csrfToken},body:JSON.stringify({name:'Web player',fingerprint:'worker-guest-device'})});
     assert.equal(guest.status,200);const identity=await guest.json();assert.equal(identity.account.provider,'guest');
     const writeHeaders={'content-type':'application/json',origin,authorization:'Bearer '+identity.sessionToken,'x-csrf-token':identity.csrfToken};
-    const base=await call('/api/base',{method:'POST',headers:writeHeaders,body:JSON.stringify({cell:baseCell,faction:'protocol'})});assert.equal(base.status,200);assert.equal((await base.json()).player.army.units.length,3);
+    const base=await call('/api/base',{method:'POST',headers:writeHeaders,body:JSON.stringify({cell:baseCell,faction:'protocol'})});assert.equal(base.status,200);const baseState=await base.json();assert.equal(baseState.player.army.units.length,3);
     const order=await call('/api/army/order',{method:'POST',headers:writeHeaders,body:JSON.stringify({mode:'defend'})});assert.equal(order.status,200);assert.equal((await order.json()).player.army.order.mode,'defend');
+    const groupIds=baseState.player.army.units.filter(u=>!u.neutral).slice(0,2).map(u=>u.id);
+    const group=await call('/api/army/unit-orders',{method:'POST',headers:writeHeaders,body:JSON.stringify({unitIds:groupIds,mode:'hold'})});assert.equal(group.status,200);assert.ok((await group.json()).player.army.units.filter(u=>groupIds.includes(u.id)).every(u=>u.order.mode==='hold'));
     assert.equal(db.prepare('SELECT count(*) AS count FROM _atomic_guard').get().count, 0);
     console.log(`Worker OK: HTML, ten WebP sprites, five GLBs and posters, lazy 3D chunk, download budgets, H3 config, SQL storage, host cookies, disabled dev auth, fresh NPC tile snapshots, 404 (${DB.counts.statements} real SQL statements).`);
   } finally { db.close(); }

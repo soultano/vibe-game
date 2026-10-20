@@ -28,7 +28,7 @@ async function clientSource() {
   return bundledSource;
 }
 
-export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1:4173', cookieBlocked = false, storageBlocked = false, launchData = '', webApp, session = new Map(), store = new MemoryStore(), network = { offline: false, failures: new Map() } } = {}) {
+export async function createClientHarness({ env = {}, clock = () => Date.now(), origin = 'http://127.0.0.1:4173', cookieBlocked = false, storageBlocked = false, launchData = '', webApp, session = new Map(), store = new MemoryStore(), network = { offline: false, failures: new Map() } } = {}) {
   const nodes = new Set(), byId = new Map(), contexts = [];
   function context2d() {
     const calls = new Map();
@@ -92,7 +92,7 @@ export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1
   parse(await readFile(resolve(root, 'src/client/index.html'), 'utf8'));
   const documentEvents = new Map(), windowEvents = new Map();
   const document = { hidden: false, getElementById: id => byId.get(id) || null, createElement: tag => new Element(tag), querySelectorAll: selector => [...nodes].filter(node => matches(node, selector)), querySelector: selector => [...nodes].find(node => matches(node, selector)) || null, addEventListener: (name, handler) => documentEvents.set(name, handler), documentElement: [...nodes].find(node => node.tagName === 'html') };
-  const app = createApp({ store, env: { LOCAL_DEV: true, APP_ORIGIN: origin, GOOGLE_AUTH_ENABLED: 'false', ...env } });
+  const app = createApp({ store, clock, env: { LOCAL_DEV: true, APP_ORIGIN: origin, GOOGLE_AUTH_ENABLED: 'false', ...env } });
   const cookies = new Map(), storage = new Map(), requests = [], details = [];
   async function fetchApi(path, options = {}) {
     if (network.offline) throw new TypeError('offline');

@@ -70,7 +70,8 @@
 
   <section id="unitPanel" class="unit-panel surface" hidden aria-labelledby="unitName">
     <header class="unit-heading"><img id="unitPortrait" alt="" width="64" height="64" hidden><div><small id="unitRole">Ваши войска</small><h2 id="unitName">Ваши отряды</h2><div id="unitDetail" hidden><span id="unitHp"></span><div id="unitHealth" class="unit-health" role="progressbar" aria-label="Здоровье отряда" aria-valuemin="0"><i></i></div></div></div><button id="unitClose" class="close-button" aria-label="Снять выбор отряда">×</button></header>
-    <div id="unitRoster" class="unit-roster" role="group" aria-label="Выбор своего отряда"></div>
+    <div id="unitRoster" class="unit-roster" role="group" aria-label="Выбор одного или нескольких отрядов" aria-describedby="unitSelectionHint"></div>
+    <p id="unitSelectionHint" class="unit-selection-hint"><span class="selection-help-desktop">Shift-клик или Shift-рамка — выбрать несколько</span><span class="selection-help-touch">Удержите бойца, затем касайтесь остальных</span></p>
     <div id="unitCommandGrid" class="unit-command-grid" role="group" aria-label="Команды выбранному отряду" hidden>
       <button id="unit-move" aria-pressed="false" aria-keyshortcuts="M"><b>↗</b><span>Идти</span><kbd>M</kbd></button>
       <button id="unit-attack" aria-pressed="false" aria-keyshortcuts="A"><b>⚔</b><span>Атаковать</span><kbd>A</kbd></button>

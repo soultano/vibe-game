@@ -2,6 +2,7 @@ import {cellToParent,gridDisk,gridDistance} from 'h3-js';
 import {traversable} from '../shared/landscape.js';
 import {deriveLevel} from '../shared/economy.js';
 import {isClanHallCell} from '../shared/clan-hall.js';
+import {groupOrderMode} from '../shared/unit-orders.js';
 const distance=(a,b)=>{try{return gridDistance(a,b);}catch{return Infinity;}};
 // Advisory snapshot check only. The server rechecks ownership, shields and the
 // actual traversable route atomically when accepting each order.
@@ -28,18 +29,30 @@ export function unitTarget(unit,mode,cell,data){
  const enemy=owner&&owner!==player.id;
  return{ok:true,kind:enemy?'enemy':'free',message:mode==='capture'?'Захватить этот гекс':mode==='attack'?enemy?'Атаковать территорию противника':'Идти с атакой: вступать в бой по пути':'Идти в этот гекс'};
 }
+export function groupTarget(units,mode,cell,data){
+ if(!units.length)return{ok:false,kind:'blocked',message:'Выберите отряд.'};
+ if(mode==='capture'&&units.every(unit=>unit.type==='air'))return{ok:false,kind:'blocked',message:'Авиация не захватывает землю.'};
+ let target;
+ for(const unit of units){
+  const result=unitTarget(unit,units.length>1?groupOrderMode(mode,unit):mode,cell,data);
+  if(!result.ok)return{...result,message:units.length>1?`${unit.name||'Отряд'}: ${result.message}`:result.message};
+  target=result;
+ }
+ return{...target,message:mode==='capture'&&units.some(unit=>unit.type==='air')?'Наземные бойцы захватят гекс; авиация прикроет цель.':target.message};
+}
 export function createTargetGuide(){
  let key='',shapes=[];
- return{draw(ctx,unit,mode,view){
+ return{draw(ctx,value,mode,view){
+  const units=Array.isArray(value)?value:[value];
   if(!mode||!view.targetData||!view.detailed)return;
-  const data=view.targetData,next=[unit.key,unit.cell,mode,view.revision,Math.floor(data.now/1500),unit.type].join(':');
+  const data=view.targetData,next=[units.map(u=>u.key+u.cell+u.type).join('|'),mode,view.revision,Math.floor(data.now/1500)].join(':');
   if(next!==key){
    key=next;shapes=[];
    // Screen-bounded candidates; no path search or whole-world scans per frame.
    const radius=Math.min(12,Math.ceil(Math.max(view.width,view.height)/Math.max(20,view.footprintCell(view.centerCell).width))+2);
    for(const cell of gridDisk(view.centerCell,radius)){
     const p=view.projectCell(cell);if(!p||p.x<-50||p.y<-50||p.x>view.width+50||p.y>view.height+50)continue;
-    const result=unitTarget(unit,mode,cell,data);shapes.push({cell,result,polygon:view.shapeCell(cell)});if(shapes.length>=192)break;
+    const result=groupTarget(units,mode,cell,data);shapes.push({cell,result,polygon:view.shapeCell(cell)});if(shapes.length>=192)break;
    }
   }
   ctx.save();ctx.lineWidth=1.5;

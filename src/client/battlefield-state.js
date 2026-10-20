@@ -4,7 +4,7 @@ const modes={idle:'idle',move:'walk',retreat:'run',attack:'attack',capture:'capt
 // This adapter only interpolates persisted server NPC positions. It neither
 // invents patrols nor predicts damage, victories, or ownership changes.
 export function createBattlefieldState({maxUnits=36}={}){
- let actors=[],syncedAt=0,ownId=null,selected=null;
+ let actors=[],syncedAt=0,ownId=null,selected=new Set();
  return{
   sync(snapshot,now){
    ownId=snapshot.player?.id||null;
@@ -22,7 +22,7 @@ export function createBattlefieldState({maxUnits=36}={}){
   capture(){return false;},
   units(now,isVisible=()=>true){
    const byId=new Map(actors.map(u=>[u.id,u]));
-   return [...actors].sort((a,b)=>(b.id===selected)-(a.id===selected)).filter(u=>isVisible(u.move?.to||u.cell)||u.move?.from&&isVisible(u.move.from)).slice(0,maxUnits).map(u=>{
+   return [...actors].sort((a,b)=>selected.has(b.id)-selected.has(a.id)).filter(u=>isVisible(u.move?.to||u.cell)||u.move?.from&&isVisible(u.move.from)).slice(0,maxUnits).map(u=>{
     const fresh=now-syncedAt<10000&&now-u.at<10000;
     const spec=troopFor(u.faction,u.type),move=u.move;
     const progress=move?Math.max(0,Math.min(1,((fresh?now:syncedAt)-move.startedAt)/(move.endsAt-move.startedAt))):1;
@@ -37,7 +37,7 @@ export function createBattlefieldState({maxUnits=36}={}){
     };
    });
   },
-  select(id){selected=id;},
-  clear(){actors=[];syncedAt=0;ownId=null;selected=null;},
+  select(ids){selected=new Set(Array.isArray(ids)?ids:ids?[ids]:[]);},
+  clear(){actors=[];syncedAt=0;ownId=null;selected=new Set();},
  };
 }

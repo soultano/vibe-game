@@ -782,3 +782,11 @@ html,body,.game,.map-viewport{overscroll-behavior:none}
 
 .display-settings>button{width:100%;height:auto;min-height:48px;justify-content:flex-start}
 .display-settings .factions-button span{display:inline}
+/* Multi-selection uses the existing squad panel and gestures, without a toolbar. */
+.unit-selection-hint{font-size:10px;line-height:1.45;color:#b1c0a5;margin:0 0 8px}.selection-help-touch{display:none}
+.unit-roster{touch-action:pan-x;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.unit-roster button[aria-pressed=true]::after{content:'✓';position:absolute;top:1px;left:2px;color:#e5ffb0;background:#16321ce6;border-radius:3px;font-size:11px;line-height:14px;padding:0 2px}
+.unit-panel.group-selecting{border-color:#b7f587}.unit-panel.group-selecting .unit-roster button{border-style:dashed}.unit-panel.group-selecting .unit-roster button[aria-pressed=true]{border-style:solid}
+.unit-panel.targeting .unit-selection-hint{display:none}
+#worldCanvas{-webkit-touch-callout:none}
+@media(pointer:coarse){.selection-help-desktop{display:none}.selection-help-touch{display:inline}}

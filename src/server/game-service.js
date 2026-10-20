@@ -13,6 +13,7 @@ import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.j
 export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
 import { isClanHallCell } from '../shared/clan-hall.js';
+import { UNIT_GROUP_LIMIT, groupOrderMode } from '../shared/unit-orders.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -367,34 +368,64 @@ export class GameService {
     fail(typeof input.unitId==='string'&&input.unitId.length<=160,'Укажите отряд.');
     return this.action(accountId,async(p,tx,now)=>{
       fail(this.config.npcEnabled,'Войска пока недоступны.');
-      const unit=p.army?.units.find(u=>u.id===input.unitId&&!u.neutral&&u.owner===accountId);
-      fail(unit,'Можно управлять только своим отрядом.',403);fail(unit.hp>0,'Отряд погиб. Дождитесь возрождения.');
-      const from=unit.move?.to||unit.cell;
-      let goal=input.mode==='hold'?from:input.cell,path=[];
-      if(['move','attack','capture'].includes(input.mode)){
-        fail(validCell(goal)&&traversable(goal,unit.type,p.baseCell),'Выберите проходимый гекс в игровом регионе.');
-        fail(distance(from,goal)<=64,'Цель слишком далеко: не более 64 гексов от отряда.');
-        fail(distance(p.baseCell,goal)<=Math.max(12,projectedRadius(p)+8),'Цель за пределами радиуса действий базы.');
-        fail(!((await this.tile(tx,tileForCell(goal))).locks[goal]>now),'Этот гекс временно заблокирован.');
-        const previous=await this.owner(tx,goal),defender=previous&&previous!==p.id?await tx.get('player:'+previous):null;
-        if(['attack','capture'].includes(input.mode))fail(!defender||((defender.shieldUntil||0)<=now&&(p.shieldUntil||0)<=now),'Территорию защищает щит.');
-        if(input.mode==='capture'){
-          fail(!isClanHallCell(goal), 'Великий Кланхолл защищён. Ивент откроется в следующем сезоне.', 403, 'EVENT_LOCKED');
-          fail(unit.type!=='air','Авиация сражается, но не захватывает землю.');
-          fail(goal!==p.baseCell&&goal!==defender?.baseCell,'Захват штаба запрещён.');
-          fail(previous!==p.id,'Этот гекс уже принадлежит вам.');
-          fail(p.pixels<deriveLevel(p.level,p.faction).cap,'Достигнут лимит территории. Улучшите штаб.');
-          fail((await Promise.all(adjacentCells(goal).map(c=>this.owner(tx,c)))).includes(p.id),'Захватывать можно только гекс рядом со своей территорией.');
-        }
-        path=await findRoute(from,goal,{type:unit.type,baseCell:p.baseCell,allowPartial:true,canEnter:async c=>!((await this.tile(tx,tileForCell(c))).locks[c]>now)});
-        fail(path!==null,'Путь к этому гексу не найден. Выберите другую цель.');
-      }
-      unit.path=path;unit.targetId=null;unit.targetCell=input.mode==='auto'?null:goal;unit.waitUntil=0;unit.blockedGoals={};
-      if(input.mode==='auto'){delete unit.order;unit.activity='advance';}
-      else{unit.order={mode:input.mode,cell:goal,status:unit.move||path.length?'moving':'queued',issuedAt:now,reason:null};unit.activity='command';}
-      // A new command replaces only the remaining path. The in-flight adjacent
-      // step finishes at its original timestamp, avoiding mid-cell teleports.
+      const unit=this.commandableUnit(p,input.unitId);
+      const plan=await this.planUnitOrder(p,unit,input.mode,input.cell,tx,now);
+      this.applyUnitOrder(unit,plan,now);
     });
+  }
+
+  async commandUnits(accountId,input={}){
+    fail(['move','attack','capture','hold','auto'].includes(input.mode),'Неизвестный приказ группе.');
+    const ids=input.unitIds;
+    fail(Array.isArray(ids)&&ids.length>0&&ids.length<=UNIT_GROUP_LIMIT&&ids.every(id=>typeof id==='string'&&id.length>0&&id.length<=160)&&new Set(ids).size===ids.length,'Выберите от 1 до 36 разных отрядов.');
+    return this.action(accountId,async(p,tx,now)=>{
+      fail(this.config.npcEnabled,'Войска пока недоступны.');
+      const units=ids.map(id=>this.commandableUnit(p,id)),routes=new Map(),plans=[];
+      if(input.mode==='capture')fail(units.some(unit=>unit.type!=='air'),'Авиация сражается, но не захватывает землю.');
+      // Prepare every route before changing any order. A failure rejects the
+      // entire group transaction; shared routes are planned only once.
+      for(const unit of units)plans.push(await this.planUnitOrder(p,unit,groupOrderMode(input.mode,unit),input.cell,tx,now,routes));
+      units.forEach((unit,index)=>this.applyUnitOrder(unit,plans[index],now));
+    });
+  }
+
+  commandableUnit(player,id){
+    const unit=player.army?.units.find(u=>u.id===id&&!u.neutral&&u.owner===player.id);
+    fail(unit,'Можно управлять только своим отрядом.',403);fail(unit.hp>0,'Отряд погиб. Дождитесь возрождения.');
+    return unit;
+  }
+
+  async planUnitOrder(p,unit,mode,cell,tx,now,routes=new Map()){
+    const from=unit.move?.to||unit.cell;
+    let goal=mode==='hold'?from:cell,path=[];
+    if(['move','attack','capture'].includes(mode)){
+      fail(validCell(goal)&&traversable(goal,unit.type,p.baseCell),'Выберите проходимый гекс в игровом регионе.');
+      fail(distance(from,goal)<=64,'Цель слишком далеко: не более 64 гексов от отряда.');
+      fail(distance(p.baseCell,goal)<=Math.max(12,projectedRadius(p)+8),'Цель за пределами радиуса действий базы.');
+      fail(!((await this.tile(tx,tileForCell(goal))).locks[goal]>now),'Этот гекс временно заблокирован.');
+      const previous=await this.owner(tx,goal),defender=previous&&previous!==p.id?await tx.get('player:'+previous):null;
+      if(['attack','capture'].includes(mode))fail(!defender||((defender.shieldUntil||0)<=now&&(p.shieldUntil||0)<=now),'Территорию защищает щит.');
+      if(mode==='capture'){
+        fail(!isClanHallCell(goal), 'Великий Кланхолл защищён. Ивент откроется в следующем сезоне.', 403, 'EVENT_LOCKED');
+        fail(unit.type!=='air','Авиация сражается, но не захватывает землю.');
+        fail(goal!==p.baseCell&&goal!==defender?.baseCell,'Захват штаба запрещён.');
+        fail(previous!==p.id,'Этот гекс уже принадлежит вам.');
+        fail(p.pixels<deriveLevel(p.level,p.faction).cap,'Достигнут лимит территории. Улучшите штаб.');
+        fail((await Promise.all(adjacentCells(goal).map(c=>this.owner(tx,c)))).includes(p.id),'Захватывать можно только гекс рядом со своей территорией.');
+      }
+      const key=[from,goal,unit.type==='air'?'air':'ground'].join(':');
+      if(!routes.has(key))routes.set(key,await findRoute(from,goal,{type:unit.type,baseCell:p.baseCell,allowPartial:true,canEnter:async c=>!((await this.tile(tx,tileForCell(c))).locks[c]>now)}));
+      path=routes.get(key);
+      fail(path!==null,'Путь к этому гексу не найден. Выберите другую цель.');
+    }
+    return {mode,goal,path};
+  }
+
+  applyUnitOrder(unit,{mode,goal,path},now){
+    unit.path=[...path];unit.targetId=null;unit.targetCell=mode==='auto'?null:goal;unit.waitUntil=0;unit.blockedGoals={};
+    if(mode==='auto'){delete unit.order;unit.activity='advance';}
+    else{unit.order={mode,cell:goal,status:unit.move||path.length?'moving':'queued',issuedAt:now,reason:null};unit.activity='command';}
+    // The current adjacent step finishes without teleporting, even on retarget.
   }
 
   async refreshFrontier(tx, players, changedCells) {
