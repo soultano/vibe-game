@@ -28,9 +28,9 @@ test('many soldiers share one downloaded model; hidden and offscreen armies stop
 test('load concurrency is bounded; clearing during a download cannot resurrect ghost models',async()=>{
  const h=setup(),ids=['protocol-infantry','vanguard-infantry','bloom-infantry','swarm-infantry'];
  h.engine.render(0,h.view(ids.map(id=>h.unit(id,id))));await h.tick();assert.equal(h.requests.size,3);
- h.engine.clear();h.load(ids[0]);await h.tick();assert.equal(h.requests.size,4);
+ h.engine.clear();h.load(ids[0]);await h.tick();assert.equal(h.requests.size,3,'queued offscreen models must never start downloading');
  h.engine.render(100,h.view([]));assert.equal(h.paints.at(-1).length,0);h.engine.dispose();
- for(const id of ids.slice(1))h.load(id);await h.tick();
+ for(const id of ids.slice(1,3))h.load(id);await h.tick();
 });
 test('arsenal renders and switches real clips; context loss calls its fallback',async()=>{
  const h=setup(),target=h.canvas();let ready=0,fallback=0;
@@ -41,4 +41,8 @@ test('arsenal renders and switches real clips; context loss calls its fallback',
 });
 test('reduced motion draws a static pose and never schedules continuous animation',async()=>{
  const h=setup({reducedMotion:true});h.engine.render(0,h.view([h.unit('a')]));await h.tick();h.load('protocol-infantry');await h.tick();h.engine.render(100,h.view([h.unit('a')]));assert.equal(h.engine.needsFrame(),false);h.engine.dispose();
+});
+
+test('large screens cannot allocate an unbounded army render surface',async()=>{
+ const h=setup();h.engine.render(0,{...h.view([]),width:5120,height:2880});const[w,height]=h.sizes.at(-1);assert.ok(w*height<=1605000,`army surface ${w}×${height} exceeds its pixel budget`);h.engine.dispose();
 });

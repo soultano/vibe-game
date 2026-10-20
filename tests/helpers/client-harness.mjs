@@ -16,7 +16,8 @@ async function clientSource() {
     const source = await readFile(resolve(root, 'src/client/main.js'), 'utf8');
     const augmented = source.replace(/\ninit\(\);\s*$/, '') + `
       globalThis.clientCheck = {
-        ready: init(), refreshState, refreshAuth, draw, frame, openPanel, ownerCells,
+        ready: init(), refreshState, refreshAuth, draw, frame, openPanel, ownerCells, changeZoom, focusAt, refreshTiles,
+        mapSnapshot: () => ({zoom,mapKind,overview:mapOverview,tiles:tileCache.size,profiles:profiles.size,revision:viewRevision}),
         autoMiniAppLogin, pollWorld, setupTelegram,
         state: () => ({ account, model, placing, selecting, activePanel, authBusy, connectionErrors })
       };
@@ -31,7 +32,7 @@ export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1
   const nodes = new Set(), byId = new Map(), contexts = [];
   function context2d() {
     const calls = new Map();
-    const context = new Proxy({ calls, measureText: text => ({ width: text.length * 6 }), createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }) }, {
+    const context = new Proxy({ calls, measureText: text => ({ width: text.length * 6 }), createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}), createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }) }, {
       get(target, key) { return key in target ? target[key] : (...args) => calls.set(key, (calls.get(key) || 0) + 1); },
       set(target, key, value) { target[key] = value; return true; },
     });
@@ -96,6 +97,7 @@ export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1
     const failures = network.failures?.get(path) || 0;
     if (failures) { network.failures.set(path, failures - 1); throw new TypeError('network failure'); }
     requests.push(path);
+    if(network.beforeRequest)await network.beforeRequest(path,options);
     const headers = new Headers(options.headers || {});
     if (!cookieBlocked) headers.set('cookie', [...cookies].map(([key, value]) => key + '=' + value).join('; '));
     if (options.method === 'POST') headers.set('origin', origin);

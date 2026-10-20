@@ -1,4 +1,4 @@
-import { cellToLatLng, cellToBoundary, latLngToCell, cellToParent, gridDisk, polygonToCells, getHexagonEdgeLengthAvg } from "h3-js";
+import { cellToLatLng, cellToBoundary, latLngToCell, gridDisk, getHexagonEdgeLengthAvg } from "h3-js";
 import { CONFIG, FACTIONS, getFaction } from "../shared/config.js";
 import { decodeTile, cellIsLand } from "../shared/geography.js";
 import worldMask from "../../data/world-mask.json";
@@ -8,6 +8,9 @@ import { troopForAbility, troopFor, TROOP_CLASSES, TROOP_ANIMATIONS } from '../s
 import { createBattlefieldState } from './battlefield-state.js';
 import { createLandscapeRenderer, terrainLift } from './landscape-renderer.js';
 import { landscape } from '../shared/landscape.js';
+import { DETAIL_ZOOM, MAP_LIMITS, mapDetail } from '../shared/map-view.js';
+import { mapRequest } from './map-requests.js';
+import { drawMapOverview, hitMapOverview } from './map-overview.js';
 import { headquartersFor } from "../shared/headquarters.js";
 import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./telegram.js";
 import { getLang, setLang, t, LANGUAGES } from "./i18n.js";
@@ -26,6 +29,10 @@ let abilityBusy = null, pendingAbilityReset = null, pinch = null, gestureMoved =
 let headquarters3D = null, headquarters3DPromise = null, modelsUnavailable = false, inspectedFaction = "protocol", inlineModelFaction = null;
 const telegramLaunchData = readTelegramInitData(location, window.Telegram?.WebApp);
 let armyTargeting = false;
+let viewRevision=0,mapRequestController=null,mapKind='tiles',lastMapRequest=null,mapOverview=null,troopsMapSuspended=false;
+const overviewCache=new Map();
+function cameraChanged(){$('mapTooltip').hidden=true;viewRevision++;mapRequestController?.abort();mapKind=mapDetail(zoom).detailed?'tiles':'overview';lastMapRequest=null;}
+function detailedMap(){return zoom>=DETAIL_ZOOM&&mapKind==='tiles';}
 const landscapeView = createLandscapeRenderer({ onReady: invalidate });
 let sessionToken = '', loginToken = '', authBusy = false, launchExpired = false, lastLeaderboard = 0;
 let frameHandle = null, tileTimer, pollTimer, neutralKey = '', drawingGeometry = null, ownership = new Map(), ownershipDirty = true;
@@ -43,11 +50,10 @@ const terrain = document.createElement("canvas");
 terrain.width = 360;
 terrain.height = 180;
 const tctx = terrain.getContext("2d");
-for (let i = 0; i < worldMask.land.length; i++) if (worldMask.land[i]) {
-  const x = i % 360, y = Math.floor(i / 360);
-  tctx.fillStyle = "#172b37";
-  tctx.fillRect(x, y, 1, 1);
-}
+const terrainPixels=tctx.createImageData(360,180);
+for(let i=0;i<worldMask.land.length;i++)if(worldMask.land[i]){const at=i*4;terrainPixels.data[at]=23;terrainPixels.data[at+1]=43;terrainPixels.data[at+2]=55;terrainPixels.data[at+3]=255;}
+tctx.putImageData(terrainPixels,0,0);
+
 for (const f of FACTIONS) {
   const image = new Image();
   image.src = f.logo;
@@ -78,10 +84,11 @@ function drawTroopFallback(units) {
   for(const u of units){const to=project(...cellToLatLng(u.cell)),from=u.fromCell?project(...cellToLatLng(u.fromCell)):to,p=u.progress??1,x=from.x+(to.x-from.x)*p,y=from.y+(to.y-from.y)*p-terrainLift(u.cell,zoom);let img=troopPosters.get(u.id);if(!img){img=new Image();img.src=u.poster;img.onload=invalidate;troopPosters.set(u.id,img);}if(img.complete&&img.naturalWidth)c.drawImage(img,x-18,y-32,36,36);c.fillStyle='#07120e';c.fillRect(x-15,y-37,30,4);c.fillStyle=u.color;c.fillRect(x-14,y-36,28*Math.max(0,u.hp/u.maxHp),2);}
 }
 const troopPosters=new Map();
-function troopsNeedFrame() { return !!troops3D && ($('troopsDialog').open || troopsEnabled && zoom >= 256) && troops3D.needsFrame(); }
+function troopsNeedFrame() { return !!troops3D && ($('troopsDialog').open || troopsEnabled && detailedMap()) && troops3D.needsFrame(); }
 function drawTroops(now) {
   const inspecting = $('troopsDialog').open;
-  if (!inspecting && (!troopsEnabled || zoom < 256)) { $('troopsCanvas').hidden = true; return; }
+  if (!inspecting && (!troopsEnabled || !detailedMap())) { $('troopsCanvas').hidden = true;if(!troopsMapSuspended){troops3D?.suspendMap();troopsMapSuspended=true;}return; }
+  troopsMapSuspended=false;
   const units = battlefield.units(serverNow(),cell=>{try{const p=project(...cellToLatLng(cell));return p.x>=-120&&p.x<=cw+120&&p.y>=-160&&p.y<=ch+120;}catch{return false;}});
   if (!troops3D || troopsUnavailable) { if (!troopsUnavailable && (units.length || inspecting)) ensureTroops3D().then(engine => { if (engine) invalidate(); }); if(!inspecting)drawTroopFallback(units); return; }
   $('troopsCanvas').hidden = inspecting ? $('troopsCanvas').hidden : !units.length;
@@ -110,7 +117,7 @@ function readySprite(sprite) {
   return !!sprite && !!(sprite.hq3dReady || sprite.complete && sprite.naturalWidth);
 }
 function headquartersDisplaySprite(faction) {
-  return headquarters3D?.getStamp(faction) || headquartersSprite(faction);
+  return headquarters3D?.getCachedStamp(faction) || headquartersSprite(faction);
 }
 async function ensureHeadquarters3D() {
   if (modelsUnavailable || typeof window.WebGL2RenderingContext === "undefined") return null;
@@ -273,24 +280,21 @@ function appendEvent(text, key = text) {
   events.length = Math.min(events.length, 30);
   $("eventLog").innerHTML = events.slice(0, 5).map((e) => `<div class="event-row"><time>${new Date(e.at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</time><span>${escape(e.text)}</span></div>`).join("");
 }
-async function api(path, body) {
-  const headers = { ...(sessionToken ? { Authorization: 'Bearer ' + sessionToken } : {}) };
+async function api(path, body, options = {}) {
+  const headers = { ...(!options.public && sessionToken ? { Authorization: 'Bearer ' + sessionToken } : {}) };
   if (body !== undefined) {
     Object.assign(headers, { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken });
     if (loginToken && path.startsWith('/api/auth/')) headers['X-Login-Token'] = loginToken;
   }
   const controller = new AbortController();
+  const forwardAbort=()=>controller.abort();
+  if(options.signal?.aborted)controller.abort();else options.signal?.addEventListener('abort',forwardAbort,{once:true});
   const timeout = setTimeout(() => controller.abort(), 15000);
-  let response;
+  let response,result;
   try {
-    response = await fetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  } finally { clearTimeout(timeout); }
-  let result;
-  try {
-    result = await response.json();
-  } catch {
-    throw new Error("Не удалось выполнить действие. Попробуйте ещё раз.");
-  }
+    response = await fetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: options.public?'omit':'same-origin', cache: options.cache || 'no-store', signal: controller.signal, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    try{result=await response.json();}catch(error){if(controller.signal.aborted)throw error;throw new Error('Не удалось выполнить действие. Попробуйте ещё раз.');}
+  }finally{clearTimeout(timeout);options.signal?.removeEventListener('abort',forwardAbort);}
   if (!response.ok) {
     const error = Object.assign(new Error(result.error || "Действие отклонено."), { status: response.status });
     throw error;
@@ -306,7 +310,7 @@ async function action(path, body, message) {
     if (result.player !== void 0) acceptModel(result);
     if (message) toast(message);
     beep();
-    if (result.player !== undefined) await refreshTiles();
+    if (result.player !== undefined) await refreshTiles(true);
     return result;
   } catch (e) {
     if (generation !== authGeneration) return null;
@@ -353,6 +357,7 @@ function updateFaction() {
   syncHeadquartersPreview();
 }
 function resetWorldState() {
+  mapRequestController?.abort();viewRevision++;lastMapRequest=null;mapOverview=null;overviewCache.clear();
   armyTargeting=false;
   model = null;
   placing = false;
@@ -497,7 +502,7 @@ async function refreshState(force = false) {
     acceptModel(next);
     connectionErrors = 0;
     $("connectionNotice").hidden = true;
-    if (Date.now() - lastLeaderboard > 30000) await refreshLeaderboard().catch(() => {});
+    if (!leaderboard.length || activePanel==='ranking' && Date.now()-lastLeaderboard>30000) await refreshLeaderboard().catch(()=>{});
     if (generation === authGeneration && account?.id === id) await refreshTiles();
   } catch (e) {
     if (generation !== authGeneration) return;
@@ -515,7 +520,6 @@ async function refreshLeaderboard() {
   const result = await api("/api/leaderboard");
   lastLeaderboard = Date.now();
   leaderboard = result.players || [];
-  for (const p of leaderboard) profiles.set(p.id, p);
   $("rankings").innerHTML = leaderboard.slice(0, 10).map((p, i) => {
     const f = getFaction(p.faction);
     return `<div class="ranking ${p.id === account?.id ? "you" : ""}"><span class="ranking-position">${i + 1}</span><span class="ranking-symbol"><img src="${f.logo}" alt="${f.name}"></span><span class="ranking-name">${escape(p.name)}<small>${p.id === account?.id ? "Вы · " : ""}${p.level} уровень</small></span><span class="ranking-score">${fmt(p.pixels)}<small>ячеек</small></span></div>`;
@@ -596,7 +600,7 @@ function updateUI() {
   $("cancelSubscriptionBtn").hidden = !p?.subscriptionActive;
   $("ownBasePoster").src = headquartersFor(p?.faction || selectedFaction).sprite;
   syncHeadquartersPreview();
-  if (p && !headquarters3D) ensureHeadquarters3D().then(engine => { if (engine) { engine.getStamp(p.faction); invalidate(); } });
+
 }
 function geometry() {
   const size = Math.min(cw / 360, ch / 180) * zoom;
@@ -623,6 +627,7 @@ function changeZoom(next, px = cw / 2, py = ch / 2) {
   panX += px - after.x;
   panY += py - after.y;
   clampPan();
+  cameraChanged();
   invalidate();
   lastDetails = 0;
   scheduleTiles();
@@ -634,6 +639,7 @@ function focusAt(lat, lng, nextZoom = 384) {
   panX = cw / 2 - point.x;
   panY = ch / 2 - point.y;
   clampPan();
+  cameraChanged();
   invalidate();
   lastDetails = 0;
   scheduleTiles();
@@ -646,7 +652,7 @@ function fit() {
   const rect = $("mapViewport").getBoundingClientRect();
   cw = rect.width;
   ch = rect.height;
-  dpr = Math.min(devicePixelRatio || 1, 2);
+  dpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAP_LIMITS.mapPixels/Math.max(1,cw*ch)));
   canvas.width = Math.round(cw * dpr);
   canvas.height = Math.round(ch * dpr);
   mapLayer.width = canvas.width;
@@ -657,6 +663,7 @@ function fit() {
   }
   scheduleTiles();
   clampPan();
+  cameraChanged();
   invalidate();
   lastDetails = 0;
 }
@@ -681,7 +688,7 @@ function cellPath(cell) {
   ctx.closePath();
 }
 function neutralDetail(now) {
-  if (zoom < 256) {
+  if (!detailedMap()) {
     cellCache.clear();
     neutralKey = "";
     return;
@@ -776,9 +783,9 @@ function drawMap(now) {
   }
   const center = atPoint(cw / 2, ch / 2);
   setText("mapCoordinates", `${Math.abs(center.lat).toFixed(2)}° ${center.lat >= 0 ? 'N' : 'S'} · ${Math.abs(center.lng).toFixed(2)}° ${center.lng >= 0 ? 'E' : 'W'}`);
-  setText("mapScale", zoom < 12 ? "ОБЗОР МИРА" : zoom < 256 ? "ОПЕРАТИВНАЯ КАРТА" : "ТАКТИЧЕСКИЙ РЕЖИМ");
+  setText("mapScale", zoom < 16 ? "ОБЗОР МИРА" : !detailedMap() ? "СТРАТЕГИЧЕСКИЙ ОБЗОР" : "ТАКТИЧЕСКИЙ РЕЖИМ");
   neutralDetail(now);
-  if (zoom >= 256) {
+  if (detailedMap()) {
     ctx.strokeStyle = "#b6c49c18";
     ctx.lineWidth = 0.5;
     for (const cell of cellCache.keys()) {
@@ -788,13 +795,13 @@ function drawMap(now) {
     }
   }
   if (activePanel === "sector") drawSector(model?.player);
-  for (const [cell, id] of ownerCells()) {
+  if(detailedMap())for (const [cell, id] of ownerCells()) {
     if (!cellVisible(cell)) continue;
     const owner = playerById(id), color = playerColor(owner, owner?.faction);
     cellPath(cell);
     ctx.fillStyle = color + "26";
     ctx.fill();
-    if (zoom >= 256) {
+    if (detailedMap()) {
       ctx.strokeStyle = color + "88";
       ctx.lineWidth = 0.6;
       ctx.stroke();
@@ -819,7 +826,7 @@ function drawMap(now) {
     }
     ctx.textAlign = "left";
   }
-  if (zoom > 3 && zoom < 256) for (const city of worldMask.cities || []) {
+  if (zoom > 3 && !detailedMap()) for (const city of worldMask.cities || []) {
     const p = project(90 - city.y, city.x - 180);
     if (p.x > 0 && p.x < cw && p.y > 0 && p.y < ch) {
       ctx.fillStyle = "#69eed0";
@@ -831,16 +838,17 @@ function drawMap(now) {
       ctx.fillText(city.name, p.x + 7, p.y + 4);
     }
   }
-  const visibleBases = new Map(profiles);
-  for (const p of leaderboard) visibleBases.set(p.id, p);
+  if(!detailedMap())drawMapOverview(ctx,{overview:mapOverview,project,width:cw,height:ch,zoom,showArmies:troopsEnabled});
+  const visibleBases = detailedMap()?new Map(profiles):new Map();
+  if(!detailedMap()&&!mapOverview)for(const p of leaderboard)visibleBases.set(p.id,p);
   if (model?.player) visibleBases.set(model.player.id, model.player);
   for (const p of visibleBases.values()) {
     if (!p.baseCell) continue;
     const [lat, lng] = cellToLatLng(p.baseCell), pos = project(lat, lng);
     if (pos.x < -45 || pos.x > cw + 45 || pos.y < -45 || pos.y > ch + 45) continue;
-    const own = p.id === account?.id, color = playerColor(p, p.faction), sprite = headquartersDisplaySprite(p.faction), size = own ? 78 : 60;
+    const own = p.id === account?.id, color = playerColor(p, p.faction), sprite = detailedMap()?headquartersDisplaySprite(p.faction):null, size = own ? 78 : 60;
     let labelY = pos.y + 42;
-    if (zoom >= 64 && readySprite(sprite)) {
+    if (detailedMap() && readySprite(sprite)) {
       ctx.fillStyle = "#02080c77";
       ctx.beginPath();
       ctx.ellipse(pos.x, pos.y + 18, size * 0.38, size * 0.13, 0, 0, Math.PI * 2);
@@ -874,7 +882,7 @@ function drawMap(now) {
       ctx.textAlign = "left";
     }
   }
-  if (mouse && placing && zoom >= 256) {
+  if (mouse && placing && detailedMap()) {
     const p = atPoint(mouse.x, mouse.y), cell = latLngToCell(p.lat, p.lng, 8);
     cellPath(cell);
     ctx.fillStyle = cellIsLand(cell) ? "#6c9c7477" : "#c8847155";
@@ -915,58 +923,52 @@ function draw(now) {
   drawTroops(now);
 }
 
-async function refreshTiles() {
-  if (tilesBusy || zoom < 256 || stopped) return;
-  const generation = authGeneration, id = account?.id;
-  tilesBusy = true;
-  try {
-    const nw = atPoint(0, 0), se = atPoint(cw, ch), middle = atPoint(cw / 2, ch / 2);
-    const polygon = [[nw.lat, nw.lng], [nw.lat, se.lng], [se.lat, se.lng], [se.lat, nw.lng], [nw.lat, nw.lng]];
-    const visible = new Set(polygonToCells(polygon, 5));
-    for (const c of [nw, se, { lat: nw.lat, lng: se.lng }, { lat: se.lat, lng: nw.lng }, middle]) for (const cell of gridDisk(cellToParent(latLngToCell(c.lat, c.lng, 8), 5), 1)) visible.add(cell);
-    const requested = [...visible];
-    if (requested.length > 256) throw new Error("Приблизьте карту для просмотра ячеек.");
-    for (let offset = 0; offset < requested.length; offset += 48) {
-      const parents = requested.slice(offset, offset + 48), versions = {};
-      for (const p of parents) if (tileCache.has(p)) versions[p] = tileCache.get(p).version;
-      const result = await api("/api/tiles?parents=" + encodeURIComponent(parents.join(",")) + "&versions=" + encodeURIComponent(JSON.stringify(versions)));
-      if (generation !== authGeneration || account?.id !== id) return;
+async function refreshTiles(force=false) {
+  if(tilesBusy||stopped||document.hidden||drag||pinch)return;
+  const request=mapRequest({zoom,nw:atPoint(0,0),se:atPoint(cw,ch)});if(!request)return;
+  const cadence=request.kind==='overview'?10000:1000;
+  if(!force&&lastMapRequest?.key===request.key&&Date.now()-lastMapRequest.at<cadence)return;
+  const generation=authGeneration,id=account?.id,revision=viewRevision,controller=new AbortController();
+  mapRequestController=controller;tilesBusy=true;mapKind=request.kind;
+  try{
+    if(request.kind==='overview'){
+      const cached=overviewCache.get(request.key);
+      const result=!force&&cached&&Date.now()-cached.at<10000?cached.value:await api(request.url,undefined,{signal:controller.signal,cache:'default',public:true});
+      if(generation!==authGeneration||revision!==viewRevision||controller.signal.aborted)return;
+      mapOverview=result;battlefield.clear();
+      while(tileCache.size>16){tileCache.delete(tileCache.keys().next().value);ownershipDirty=true;}
+      ownership.clear();ownershipDirty=true;
+      overviewCache.delete(request.key);overviewCache.set(request.key,{value:result,at:Date.now()});
+      while(overviewCache.size>6)overviewCache.delete(overviewCache.keys().next().value);
+      for(const [key,value]of profiles)if(key!==id&&value.army)profiles.set(key,{...value,army:null});
+    }else{
+      const versions={};for(const p of request.parents)if(tileCache.has(p))versions[p]=tileCache.get(p).version;
+      const result=await api('/api/tiles?parents='+encodeURIComponent(request.parents.join(','))+'&versions='+encodeURIComponent(JSON.stringify(versions)),undefined,{signal:controller.signal,public:true});
+      if(generation!==authGeneration||revision!==viewRevision||account?.id!==id||controller.signal.aborted)return;
       if(Number.isFinite(result.serverTime))serverOffset=result.serverTime-Date.now();
-      for (const p of result.players || []) profiles.set(p.id, p);
-      for (const conflict of result.conflicts || []) tileConflicts.set(conflict.id, conflict);
-      for (const t of result.tiles || []) {
-        if (!t.unchanged) ownershipDirty = true;
-        if (t.unchanged) continue;
-        const old = tileCache.get(t.parent), cells = t.full ? /* @__PURE__ */ new Map() : new Map(old?.cells || []);
-        if (t.full) {
-          for (const [owner, bits] of Object.entries(t.owners || {})) for (const cell of decodeTile(t.parent, bits)) cells.set(cell, owner);
-        } else for (const change of t.changes || []) {
-          if (change.owner) {
-            cells.set(change.cell, change.owner);
-            const fromCell = gridDisk(change.cell, 1).find(cell => cell !== change.cell && cells.get(cell) === change.owner);
-            battlefield.capture({ ...change, fromCell }, serverNow());
-            if (!reducedMotion && effects.length < 100) effects.push({ cell: change.cell, owner: change.owner, at: performance.now() });
-          } else cells.delete(change.cell);
-        }
-        tileCache.set(t.parent, { version: t.version, cells });
+      for(const p of result.players||[]){profiles.delete(p.id);profiles.set(p.id,p);}
+      for(const conflict of result.conflicts||[])tileConflicts.set(conflict.id,conflict);
+      for(const t of result.tiles||[]){
+        if(t.unchanged)continue;ownershipDirty=true;
+        const old=tileCache.get(t.parent),cells=t.full?new Map():new Map(old?.cells||[]);
+        if(t.full){for(const [owner,bits]of Object.entries(t.owners||{}))for(const cell of decodeTile(t.parent,bits))cells.set(cell,owner);}
+        else for(const change of t.changes||[]){if(change.owner){cells.set(change.cell,change.owner);if(!reducedMotion&&effects.length<40)effects.push({cell:change.cell,owner:change.owner,at:performance.now()});}else cells.delete(change.cell);}
+        tileCache.delete(t.parent);tileCache.set(t.parent,{version:t.version,cells});
       }
+      const keep=new Set(request.parents);
+      for(const key of tileCache.keys())if(tileCache.size>MAP_LIMITS.cachedTiles&&!keep.has(key)){tileCache.delete(key);ownershipDirty=true;}
+      while(profiles.size>MAP_LIMITS.profiles){const key=profiles.keys().next().value;if(key===id){const value=profiles.get(key);profiles.delete(key);profiles.set(key,value);}else profiles.delete(key);}
+      syncBattlefield();
     }
-    syncBattlefield();
-    if (tileCache.size > 300) {
-      const keep = visible;
-      for (const key of tileCache.keys()) if (!keep.has(key) && tileCache.size > 100) tileCache.delete(key);
-      ownershipDirty = true;
-    }
-    invalidate();
-  } catch (e) {
-    if (generation === authGeneration && e.status === 401) {
-      signedOut();
-      await refreshAuth();
-    }
-  } finally {
-    if (generation === authGeneration) tilesBusy = false;
+    lastMapRequest={key:request.key,at:Date.now()};invalidate();
+  }catch(error){
+    if(generation===authGeneration&&error.status===401){signedOut();await refreshAuth();}
+  }finally{
+    if(mapRequestController===controller){mapRequestController=null;tilesBusy=false;}
+    if(revision!==viewRevision&&!drag&&!pinch)scheduleTiles();
   }
 }
+
 function beginPlacement() {
   if (!account) return;
   closePanels();
@@ -1004,6 +1006,7 @@ canvas.addEventListener("pointermove", (e) => {
     panX += x - anchor.x;
     panY += y - anchor.y;
     clampPan();
+    cameraChanged();
     invalidate();
     lastDetails = 0;
     $("mapTooltip").hidden = true;
@@ -1016,6 +1019,7 @@ canvas.addEventListener("pointermove", (e) => {
       panX = drag.panX + dx;
       panY = drag.panY + dy;
       clampPan();
+      cameraChanged();
       invalidate();
       lastDetails = 0;
       $("mapTooltip").hidden = true;
@@ -1024,7 +1028,7 @@ canvas.addEventListener("pointermove", (e) => {
   }
   mouse = pointFor(e);
   const p = atPoint(mouse.x, mouse.y);
-  if (zoom >= 256 && !placing) {
+  if (detailedMap() && !placing) {
     const cell = latLngToCell(p.lat, p.lng, 8), owner = ownerCells().get(cell), known = playerById(owner);
     if (known) {
       const pCol = playerColor(known, known.faction);
@@ -1061,11 +1065,12 @@ canvas.addEventListener("pointerup", async (e) => {
   }
   const point = pointFor(e), p = atPoint(point.x, point.y), cell = latLngToCell(p.lat, p.lng, 8);
   if (armyTargeting && model?.player) {
+    if(!detailedMap()){focusAt(p.lat,p.lng,2048);return;}
     armyTargeting=false;const result=await action("/api/army/order",{mode:"attack",cell},"Приказ передан войскам.");updateUI();return;
   }
   if (placing) {
-    if (zoom < 256) {
-      focusAt(p.lat, p.lng, 384);
+    if (!detailedMap()) {
+      focusAt(p.lat, p.lng, 2048);
       return;
     }
     const referrer = localStorage.getItem("pd_referrer") || undefined;
@@ -1098,8 +1103,9 @@ canvas.addEventListener("pointerup", async (e) => {
       updateUI();
       invalidate();
     } else toast("Можно выделить только свою территорию, кроме базы.", true);
-  } else if (zoom < 256) {
-    focusAt(p.lat, p.lng, 384);
+  } else if (!detailedMap()) {
+    const hit=hitMapOverview(mapOverview,project,cw,ch,point.x,point.y);
+    focusAt(hit?.lat??p.lat,hit?.lng??p.lng,hit&&hit.players>1?Math.min(2048,zoom*8):2048);
   }
 });
 canvas.addEventListener("pointerleave", (e) => {
@@ -1848,7 +1854,7 @@ async function pollWorld() {
   clearTimeout(pollTimer);
   if (document.hidden || stopped) return;
   if(account)await refreshState();else await refreshTiles();
-  pollTimer = setTimeout(pollWorld, Math.min(30000, 2000 * 2 ** Math.min(connectionErrors, 3)));
+  pollTimer = setTimeout(pollWorld, Math.min(30000, mapDetail(zoom).pollMs * 2 ** Math.min(connectionErrors, 3)));
 }
 new ResizeObserver(fit).observe($("mapViewport"));
 function frame(now) {

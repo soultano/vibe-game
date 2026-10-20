@@ -32,7 +32,7 @@ await build({entryPoints:['src/client/main.js'],outdir:'dist/client',chunkNames:
 const release=createHash('sha256').update(await readFile('dist/client/main.js')).update(await readFile('dist/client/styles.css')).digest('hex').slice(0,16);
 const html=(await readFile('dist/client/index.html','utf8')).replace('/main.js',`/main.js?v=${release}`).replace('/styles.css',`/styles.css?v=${release}`);
 await writeFile('dist/client/index.html',html);
-await writeFile('dist/client/release.json',JSON.stringify({release,features:['web-play','server-npc','fantasy-landscape']}));
+await writeFile('dist/client/release.json',JSON.stringify({release,features:['web-play','server-npc','fantasy-landscape','lod-overview','viewport-streaming']}));
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.webp':'image/webp','.svg':'image/svg+xml','.glb':'model/gltf-binary'};
 const assets={};
 async function walk(dir,prefix=''){for(const name of await readdir(dir)){const p=dir+'/'+name,key=prefix+'/'+name;if((await stat(p)).isDirectory())await walk(p,key);else {const bytes=await readFile(p);const etag='"'+createHash('sha256').update(bytes).digest('hex').slice(0,24)+'"';

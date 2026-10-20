@@ -1,0 +1,5 @@
+// Offline rasterization of our deterministic biome field, never an external map.
+import sharp from 'sharp';import{readFile,writeFile}from'node:fs/promises';import{landscapeAt}from'../src/shared/landscape.js';
+const mask=JSON.parse(await readFile('data/world-mask.json')),width=1024,height=512,pixels=Buffer.alloc(width*height*3),palette={grass:[88,123,64],forest:[42,86,68],rock:[120,128,103],mountain:[159,168,150],sand:[184,162,98],water:[30,91,117]};
+for(let y=0;y<height;y++)for(let x=0;x<width;x++){const lat=90-(y+.5)*180/height,lng=(x+.5)*360/width-180,land=!!mask.land[Math.min(179,Math.floor(y*180/height))*360+Math.min(359,Math.floor(x*360/width))],d=landscapeAt(lat,lng,land),color=palette[d.type];const shade=land?.88+d.elevation*.045:.92+Math.sin(x*.075+y*.13)*.03;for(let c=0;c<3;c++)pixels[(y*width+x)*3+c]=Math.round(color[c]*shade);}
+await sharp(pixels,{raw:{width,height,channels:3}}).webp({quality:65}).toFile('src/client/assets/terrain/world-overview.webp');console.log('Prepared lightweight 1024×512 world biome overview.');

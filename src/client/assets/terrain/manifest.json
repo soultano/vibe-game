@@ -63,5 +63,11 @@
       "bytes": 15948,
       "sha256": "43198bee6bf80d0bd1bbac719a980040709e4f65cf13ccb83e7a50b229540ea3"
     }
-  ]
+  ],
+  "overview": {
+    "file": "world-overview.webp",
+    "bytes": 54296,
+    "sha256": "968d50ce58181b37e42de9002bd915acd7dc070aa18715e04a64e5efba18eeb3",
+    "source": "deterministic game biome field; generated offline"
+  }
 }

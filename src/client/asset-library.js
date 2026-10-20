@@ -4,7 +4,7 @@ export function createAssetLibrary({ load, makeStamp, disposeAsset = () => {}, o
   let disposed = false;
   function ensure(id) {
     if (disposed) return Promise.reject(new Error('Asset library is closed'));
-    if (entries.has(id)) return entries.get(id).promise;
+    if (entries.has(id)) { const entry=entries.get(id);entries.delete(id);entries.set(id,entry);return entry.promise; }
     const entry = { asset: null, stamp: null, error: null };
     entries.set(id, entry);
     entry.promise = Promise.resolve().then(() => {
@@ -26,6 +26,14 @@ export function createAssetLibrary({ load, makeStamp, disposeAsset = () => {}, o
   }
   return {
     ensure,
+    peekStamp(id) { return entries.get(id)?.stamp || null; },
+    prune({keepIds=new Set(),maxEntries=6}={}) {
+      for(const [id,entry]of entries){
+        if(entries.size<=maxEntries)break;
+        if(keepIds.has(id)||!entry.asset&&!entry.error)continue;
+        if(entry.asset)disposeAsset(entry.asset);entries.delete(id);
+      }
+    },
     retry(id) {
       if (entries.get(id)?.error) entries.delete(id);
       return ensure(id);

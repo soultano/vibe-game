@@ -30,10 +30,14 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
         if(path==='/api/health') {
           if(request.method!=='GET')throw new HttpError(405,'Метод не поддерживается.');
           await store.get('health:readiness');
-          return json({ok:true,version:2,worldVersion:CONFIG.WORLD_VERSION,storage:'persistent',timeAuthority:'server',gameplay:'npc-v1',landscape:'fantasy-v1',webGuest:true,serverTime:clock()});
+          return json({ok:true,version:2,worldVersion:CONFIG.WORLD_VERSION,storage:'persistent',timeAuthority:'server',gameplay:'npc-v1',landscape:'fantasy-v1',webGuest:true,mapLod:'v1',serverTime:clock()});
         }
         if(path==='/api/config'&&request.method==='GET')return json({worldVersion:CONFIG.WORLD_VERSION,region:CONFIG.REGION,factions:FACTIONS,tileResolution:5,cellResolution:8,pollMs:CONFIG.TILE_POLL_INTERVAL_MS,rotation:{crystals:CONFIG.ROTATE_CRYSTAL_COST,cooldownHours:CONFIG.ROTATE_COOLDOWN_HOURS},terrain:{approximate:true,source:CONFIG.TERRAIN_SOURCE}});
         if(path==='/api/state'&&request.method==='GET') {const {account}=await requireAuth(request,env,store);return json(await service.state(account.id));}
+        if(path==='/api/map/overview'&&request.method==='GET') {
+          const input=Object.fromEntries(['west','east','south','north','resolution'].map(k=>[k,url.searchParams.get(k)]));
+          return json(await service.overview(input),200,{'Cache-Control':'public, max-age=10, s-maxage=10, stale-while-revalidate=10'});
+        }
         if(path==='/api/leaderboard'&&request.method==='GET')return json(await service.leaderboard());
         if(path==='/api/tiles'&&request.method==='GET') {
           const parents=(url.searchParams.get('parents')||'').split(',').filter(Boolean);

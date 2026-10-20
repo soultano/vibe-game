@@ -8,6 +8,7 @@ import { resolveCombat } from '../shared/combat.js';
 import { troopDeployment } from '../shared/troops.js';
 import { createArmy, advanceArmies, publicArmy, reconcileArmy } from './npc-simulation.js';
 import { traversable } from '../shared/landscape.js';
+import { aggregateOverview, mapEntry } from './map-overview.js';
 import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.js';
 export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
@@ -100,7 +101,7 @@ export class GameService {
       const tx = new Transaction(this.store);
       const result = await fn(tx, this.clock());
       if (!tx.dirty.size && !tx.deleted.size) return result;
-      if (await tx.commit()) return result;
+      if (await tx.commit()) {if([...tx.dirty].some(key=>key.startsWith('spatial:')))this.mapEntriesCache=null;return result;}
     }
     throw new GameError('Мир изменился одновременно с запросом. Повторите действие.', 409, 'CONCURRENT_UPDATE');
   }
@@ -761,7 +762,10 @@ export class GameService {
           changes: canDiff ? changes : undefined, diffBitmask: encodeTile(parent, changes.map(e => e.cell)).bitmask,
           locks: Object.fromEntries(Object.entries(tile.locks).filter(([, until]) => until > now)) });
       }
-      const ownerIds = new Set([...players.map(p=>p.id),...tiles.flatMap(tile => [...Object.keys(tile.owners ?? {}), ...(tile.changes ?? []).flatMap(change => [change.owner, change.previous]).filter(Boolean)])]);
+      const requestedParents=new Set(parents),inView=cell=>cell&&requestedParents.has(tileForCell(cell));
+      const ownerIds=new Set(players.filter(p=>inView(p.baseCell)||(p.army?.units||[]).some(u=>inView(u.cell)||inView(u.move?.to))).map(p=>p.id));
+      // Unchanged ownership masks still need fresh visible army metadata.
+      for(const parent of requestedParents)for(const id of (await this.tile(tx,parent))._cells.values())ownerIds.add(id);
       const profiles = [];
       for (const id of ownerIds) {
         const player = await tx.get(`player:${id}`);
@@ -774,33 +778,49 @@ export class GameService {
           baseCell: player.baseCell,
           troops: troopDeployment(player, now),
           frontier: (player.borderCells ?? [player.baseCell]).slice(0, 8),
-          army: publicArmy(player.army,now),
+          army: player.army?publicArmy({...player.army,units:player.army.units.filter(u=>inView(u.cell)||inView(u.move?.from)||inView(u.move?.to))},now):null,
           color: player.color ?? null,
           customLink: player.customLink ?? null,
           customLinkTitle: player.customLinkTitle ?? null,
         });
       }
-      return { serverTime: now, seasonId: this.config.seasonId, tiles, conflicts, players: profiles };
+      return { serverTime: now, seasonId: this.config.seasonId, tiles, conflicts:conflicts.filter(c=>(c.fronts||[]).some(f=>inView(f.aCell)||inView(f.bCell))), players: profiles };
     });
   }
 
+  async mapEntries() {
+    const now=this.clock();
+    if(this.mapEntriesCache && now-this.mapEntriesCache.at<10000)return this.mapEntriesCache.entries;
+    if(this.mapEntriesPending)return this.mapEntriesPending;
+    this.mapEntriesPending=(async()=>{
+      // The compact spatial index has no paths, skeletons, receipts or full NPC records.
+      const rows=await this.store.list(`spatial:${this.config.seasonId}:`),entries=[];
+      let budget=32;
+      for(const row of rows){
+        const missing=Object.values(row.value.entries||{}).filter(e=>!e.faction).slice(0,budget);budget-=missing.length;
+        if(missing.length){
+          const updated={...row.value,entries:{...row.value.entries}};
+          const players=await Promise.all(missing.map(e=>this.store.get(`player:${e.id}`)));
+          for(const record of players)if(record?.value){const p=record.value;updated.entries[p.id]={...updated.entries[p.id],...mapEntry(p)};}
+          // Lazy, bounded migration of old metadata; never advances the world.
+          if(await this.store.atomic({checks:[{key:row.key,version:row.version}],puts:[{key:row.key,value:updated}]}))row.value=updated;
+        }
+        entries.push(...Object.values(row.value.entries||{}));
+      }
+      this.mapEntriesCache={at:now,entries};return entries;
+    })().finally(()=>{this.mapEntriesPending=null;});
+    return this.mapEntriesPending;
+  }
+
+  async overview(input) {
+    try{aggregateOverview([],input);return {serverTime:this.clock(),seasonId:this.config.seasonId,...aggregateOverview(await this.mapEntries(),input)};}
+    catch(error){if(error instanceof RangeError)throw new GameError('Некорректная область карты.',400,'INVALID_VIEWPORT');throw error;}
+  }
+
   async leaderboard() {
-    const now = this.clock(), rows = await this.store.list('player:');
-    return {
-      serverTime: now,
-      seasonId: this.config.seasonId,
-      players: rows.map(({ value: p }) => ({
-        id: p.id,
-        name: p.name,
-        faction: p.faction,
-        level: p.level,
-        pixels: Math.floor(p.pixels),
-        baseCell: p.baseCell,
-        color: p.color ?? null,
-        customLink: p.customLink ?? null,
-        customLinkTitle: p.customLinkTitle ?? null,
-      })).sort((a, b) => b.level - a.level || b.pixels - a.pixels || a.id.localeCompare(b.id)).slice(0, 100),
-    };
+    const entries=await this.mapEntries();
+    return {serverTime:this.clock(),seasonId:this.config.seasonId,players:entries.map(p=>({id:p.id,name:p.name||'Штаб',faction:p.faction||'protocol',level:p.level||1,pixels:p.pixels||1,baseCell:p.baseCell,
+      color:p.color||null,customLink:p.customLink||null,customLinkTitle:p.customLinkTitle||null})).sort((a,b)=>b.level-a.level||b.pixels-a.pixels||a.id.localeCompare(b.id)).slice(0,100)};
   }
 
   shop() { return { items: CATALOG, energyDailyCapHours: PAID_ENERGY_HOURS_PER_DAY, transfers: false, secondBaseEnabled: false }; }

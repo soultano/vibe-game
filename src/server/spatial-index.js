@@ -1,6 +1,7 @@
 import { cellToParent, gridDistance, cellToLatLng, greatCircleDistance, gridDisk, getHexagonEdgeLengthAvg } from 'h3-js';
 import { deriveLevel } from '../shared/economy.js';
 import { CONFIG } from '../shared/config.js';
+import { mapEntry } from './map-overview.js';
 
 function distance(a, b) {
   try { return gridDistance(a, b); }
@@ -52,12 +53,17 @@ export async function indexPlayer(tx, player) {
   const bucket = cellToParent(player.baseCell, 1);
   const key = `spatial:${player.seasonId}:${bucket}:${parent}`;
   const row = await tx.get(key) ?? { parent, entries: {} };
-  const entry = { id: player.id, baseCell: player.baseCell, radiusRings: projectedRadius(player) };
+  const at=player.army?.at??player.tLast??player.createdAt??0;
+  const entry = {...mapEntry(player,at), radiusRings: projectedRadius(player)};
   const old = row.entries[player.id];
-  if (old && old.baseCell === entry.baseCell && old.radiusRings === entry.radiusRings) return;
+  if (old && old.baseCell === entry.baseCell && old.radiusRings === entry.radiusRings
+    && old.name===entry.name && old.faction===entry.faction && old.level===entry.level && old.pixels===entry.pixels && old.color===entry.color
+    && old.customLink===entry.customLink && old.customLinkTitle===entry.customLinkTitle && at-(old.summaryAt||0)<10000) return;
   row.entries[player.id] = entry;
   await tx.put(key, row);
   tx.spatialMetadata?.set(key, row);
-  const epochKey = `world-index:${player.seasonId}`, epoch = await tx.get(epochKey);
-  await tx.put(epochKey, { epoch: (epoch?.epoch ?? 0) + 1 });
+  if(!old || old.baseCell!==entry.baseCell || old.radiusRings!==entry.radiusRings){
+    const epochKey = `world-index:${player.seasonId}`, epoch = await tx.get(epochKey);
+    await tx.put(epochKey, { epoch: (epoch?.epoch ?? 0) + 1 });
+  }
 }

@@ -117,6 +117,7 @@ async function checkWorker() {
     const terrainManifest=await (await call('/assets/terrain/manifest.json')).json();
     assert.equal(terrainManifest.assets.length,12);
     for(const asset of terrainManifest.assets){const path='/assets/terrain/'+asset.file,response=await call(path);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/webp');assert.deepEqual(Buffer.from(await response.arrayBuffer()),await readFile(join(project,'dist/client',path)));}
+    const worldOverview=await call('/assets/terrain/world-overview.webp');assert.equal(worldOverview.status,200);assert.ok((await worldOverview.arrayBuffer()).byteLength<80000);
     const release=await (await call('/release.json')).json();assert.match(release.release,/^[0-9a-f]{16}$/);assert.ok(release.features.includes('server-npc'));
     for (const name of await readdir(join(project, 'dist/client/chunks'))) {
       const response = await call('/chunks/' + name); assert.equal(response.status, 200);
@@ -135,6 +136,7 @@ async function checkWorker() {
     const providers = await (await call('/api/auth/providers')).json();
     assert.equal(providers.development, false, 'the Worker must override LOCAL_DEV:true');
     assert.equal((await call('/api/auth/dev', { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ name: 'Denied', fingerprint: 'worker-check-device' }) })).status, 404);
+    const map=await call('/api/map/overview?west=-180&east=180&south=-85&north=85&resolution=1');assert.equal(map.status,200);assert.match(map.headers.get('cache-control'),/s-maxage=10/);assert.deepEqual((await map.json()).regions,[]);
     const tilesPath = `/api/tiles?parents=${parentCell}`;
     const first = await call(tilesPath);
     assert.equal(first.status, 200); assert.equal(first.headers.get('cache-control'),'no-store');

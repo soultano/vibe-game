@@ -4,6 +4,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { normalizeHeadquarters,disposeHeadquarters } from './model-geometry.js';
 import { createAssetLibrary } from './asset-library.js';
 import { troopFor } from '../shared/troops.js';
+import { MAP_LIMITS } from '../shared/map-view.js';
 
 const factorFor=zoom=>Math.max(.75,Math.min(2.2,zoom/1024));
 export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},reducedMotion=false,maxUnits=36 }={}) {
@@ -16,11 +17,13 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
   const rim=new DirectionalLight(0xa0dfff,1.8);rim.position.set(400,300,-400);scene.add(rim);
   const actors=new Map(),loader=new GLTFLoader(),pending=[];
   let loads=0,disposed=false,lost=false,visibleCount=0,animated=false,lastTime=null,preview=null,lastSize='';
-  function queueLoad(work) { return new Promise((resolve,reject)=>{pending.push({work,resolve,reject});drain();}); }
-  function drain(){while(loads<3&&pending.length&&!disposed){const task=pending.shift();loads++;task.work().then(task.resolve,task.reject).finally(()=>{loads--;drain();});}}
+  const wanted=id=>preview?.id===id||[...actors.values()].some(a=>a.id===id);
+  function queueLoad(id,work) { return new Promise((resolve,reject)=>{pending.push({id,work,resolve,reject});drain();}); }
+  function drain(){while(loads<3&&pending.length&&!disposed){const task=pending.shift();if(!wanted(task.id)){task.reject(Object.assign(new Error('Unit left view'),{name:'AbortError'}));continue;}loads++;task.work().then(task.resolve,task.reject).finally(()=>{loads--;drain();});}}
+  function trimAssets(maxEntries=6){library.prune({keepIds:new Set([...actors.values()].map(a=>a.id)),maxEntries});}
   const library=createAssetLibrary({
-    load:id=>queueLoad(async()=>{const gltf=await loader.loadAsync('/assets/troops/'+id+'.glb');return{scene:gltf.scene,animations:gltf.animations};}),
-    makeStamp:()=>null,disposeAsset:asset=>disposeHeadquarters(asset.scene),onReady,onError:id=>{if(preview?.id===id)preview.fallback();onUnavailable(id);},
+    load:id=>queueLoad(id,async()=>{const gltf=await loader.loadAsync('/assets/troops/'+id+'.glb');return{scene:gltf.scene,animations:gltf.animations};}),
+    makeStamp:()=>null,disposeAsset:asset=>disposeHeadquarters(asset.scene),onReady:()=>{trimAssets();onReady();},onError:(id,error)=>{if(error.name==='AbortError')return;if(preview?.id===id)preview.fallback();onUnavailable(id);},
   });
   const shotPositions=new Float32Array(maxUnits*6),shotColors=new Float32Array(maxUnits*6);
   const shotGeometry=new BufferGeometry().setAttribute('position',new BufferAttribute(shotPositions,3)).setAttribute('color',new BufferAttribute(shotColors,3));
@@ -35,7 +38,7 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
     if(actors.has(unit.key))return actors.get(unit.key);
     const actor={key:unit.key,id:unit.id,root:null,mixer:null,action:null,mode:null,loading:true,phase:unit.phase||0,...effects(unit.color)};
     actors.set(unit.key,actor);
-    library.ensure(unit.id).then(asset=>{
+    library.retry(unit.id).then(asset=>{
       if(disposed||actors.get(unit.key)!==actor)return;
       const content=clone(asset.scene),normalized=normalizeHeadquarters(content),root=new Group();root.add(normalized);
       const mixer=new AnimationMixer(root);
@@ -100,8 +103,9 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
       actor.dome.visible=unit.id==='protocol-ultimate';actor.dome.position.copy(actor.root.position);actor.dome.position.y=0;actor.dome.scale.setScalar(unit.size*.8*factor);
     }
     for(const key of actors.keys())if(!keep.has(key))removeActor(key);
+    trimAssets();
     shotGeometry.setDrawRange(0,shotCount*2);shotGeometry.getAttribute('position').needsUpdate=true;shotGeometry.getAttribute('color').needsUpdate=true;
-    const ratio=Math.min(1.25,globalThis.devicePixelRatio||1),w=Math.round(width*ratio),h=Math.round(height*ratio);
+    const ratio=Math.min(1.25,globalThis.devicePixelRatio||1,Math.sqrt(MAP_LIMITS.troopPixels/Math.max(1,width*height))),w=Math.round(width*ratio),h=Math.round(height*ratio);
     if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
     size(w,h);renderer.render(scene,camera);copy(canvas);
     const hud=canvas.getContext('2d'),sx=canvas.width/width,sy=canvas.height/height;
@@ -125,6 +129,7 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
     animate(name){if(!preview)return;preview.mode=name;preview.actor.mode=null;lastTime=null;onReady();},
     rotate(delta){if(!preview)return;preview.angle+=delta;onReady();},
     close(){if(preview){removeActor(preview.actor.key);preview=null;}lastTime=null;onReady();},
+    suspendMap(){if(preview)return;this.clear();trimAssets(3);size(1,1);},
     clear(){for(const key of [...actors.keys()])removeActor(key);preview=null;animated=false;lastTime=null;canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);},
     dispose(){this.clear();disposed=true;for(const task of pending.splice(0))task.reject(new Error('Renderer disposed'));library.dispose();shotGeometry.dispose();shots.material.dispose();ringGeometry.dispose();domeGeometry.dispose();renderer.dispose();renderer.forceContextLoss();},
   };

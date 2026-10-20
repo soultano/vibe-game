@@ -117,6 +117,7 @@ export function createHeadquarters3D({ onReady = () => {}, onUnavailable = () =>
   document.addEventListener('visibilitychange', resume);
   return {
     getStamp: stamp,
+    getCachedStamp: id => library.peekStamp(id),
     show: view,
     rotate(canvas, delta) { const state = views.get(canvas); if (!state?.root) return; state.angle += delta; state.paint(); },
     reset(canvas) { const state = views.get(canvas); if (!state?.root) return; state.angle = DEFAULT_ANGLE; state.paint(); },
