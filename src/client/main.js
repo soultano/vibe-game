@@ -70,12 +70,26 @@ const battlefield = createBattlefieldState({ maxUnits: Math.min(window.innerWidt
 const tileConflicts = new Map();
 let troops3D = null, troopsPromise = null, troopsUnavailable = false, troopsEnabled = true, inspectingTroop = null, troopGeneration = 0;
 let troopSprites=null,troopSpritesPromise=null,fallbackVisible=false;
+let unitControls=null,unitControlsPromise=null;
+async function ensureUnitControls(){
+ if(!unitControlsPromise)unitControlsPromise=import('./unit-controls.js').then(({createUnitControls})=>{
+  unitControls=createUnitControls({$,getPlayer:()=>model?.player,getUnits:()=>battlefield.units(serverNow()),getView:unitCommandView,
+   send:input=>action('/api/army/unit-order',input,'Приказ отряду принят.'),notify:toast,invalidate,
+   ownerAt:cell=>ownerCells().get(cell),onSelect:id=>battlefield.select(id),
+   focus:cell=>focusAt(...cellToLatLng(cell),Math.max(2048,zoom)),
+   onOpen(){armyTargeting=false;selecting=false;selectedCells.clear();closePanels();updateUI();}});
+  unitControls.update();invalidate();return unitControls;
+ }).catch(()=>{unitControlsPromise=null;toast('Не удалось загрузить управление отрядами. Повторите.',true);return null;});
+ return unitControlsPromise;
+}
+function unitCommandView(){return{...troopView(battlefield.units(serverNow())),shapeCell:cell=>project.shape(border(cell)),cellLabel:cell=>{const[lat,lng]=cellToLatLng(cell);return `${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;}};}
 try { troopsEnabled = localStorage.getItem('pd-troops') !== 'off'; } catch {}
 const animationLabels = { idle: 'Ожидание', walk: 'Шаг', run: 'Бег', attack: 'Атака', capture: 'Захват', death: 'Поражение' };
 function syncBattlefield() {
   const now = serverNow();
   for (const [id, conflict] of tileConflicts) if ((conflict.lastResolvedAt || 0) < now - 15000) tileConflicts.delete(id);
   battlefield.sync({ player: model?.player, players: [...leaderboard, ...profiles.values()], conflicts: [...tileConflicts.values(), ...(model?.conflicts || [])] }, now);
+  unitControls?.update();
 }
 async function ensureTroops3D() {
   if (troopsUnavailable) return null;
@@ -396,6 +410,7 @@ function updateFaction() {
   syncHeadquartersPreview();
 }
 function resetWorldState() {
+  unitControls?.reset();
   mapRequestController?.abort();viewRevision++;lastMapRequest=null;mapOverview=null;overviewCache.clear();
   armyTargeting=false;
   model = null;
@@ -584,6 +599,8 @@ function updateUI() {
   $("missionSteps").hidden = !!p;
   $("missionBtn").hidden = !p;
   $("armyControls").hidden = !p;
+  if(p&&!unitControls)ensureUnitControls();
+  unitControls?.update();
   const armyUnits=p?.army?.units||[];
   setText("armyStatus",armyTargeting?"Укажите цель на карте":armyUnits.some(u=>u.state==='attack')?"Войска ведут бой":armyUnits.some(u=>u.state==='capture')?"Закрепляемся на территории":armyUnits.some(u=>u.activity==='regroup')?"Перегруппировка на своей территории":armyUnits.some(u=>u.activity==='patrol')?"Патрулируем свою территорию":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономное продвижение к фронтиру");
   $("missionSteps").children[0]?.classList.toggle("current", !account);
@@ -956,6 +973,7 @@ function draw(now) {
   }
   drawAbilityBursts(now);
   drawTroops(now);
+  if(detailedMap()&&unitControls?.isOpen())unitControls.draw(ctx,unitCommandView());
 }
 
 async function refreshTiles(force=false) {
@@ -970,7 +988,7 @@ async function refreshTiles(force=false) {
       const cached=overviewCache.get(request.key);
       const result=!force&&cached&&Date.now()-cached.at<10000?cached.value:await api(request.url,undefined,{signal:controller.signal,cache:'default',public:true});
       if(generation!==authGeneration||revision!==viewRevision||controller.signal.aborted)return;
-      mapOverview=result;battlefield.clear();
+      mapOverview=result;battlefield.sync({player:model?.player},serverNow());unitControls?.update();
       while(tileCache.size>16){tileCache.delete(tileCache.keys().next().value);ownershipDirty=true;}
       ownership.clear();ownershipDirty=true;
       overviewCache.delete(request.key);overviewCache.set(request.key,{value:result,at:Date.now()});
@@ -1016,6 +1034,7 @@ function beginPlacement() {
   home();
 }
 canvas.addEventListener("pointerdown", (e) => {
+  if(e.button===2)return;
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 1) {
@@ -1079,6 +1098,7 @@ canvas.addEventListener("pointermove", (e) => {
   if (placing) invalidate();
 });
 canvas.addEventListener("pointerup", async (e) => {
+  if(e.button===2)return;
   const didMove = moved || gestureMoved;
   pointers.delete(e.pointerId);
   pinch = null;
@@ -1139,7 +1159,14 @@ canvas.addEventListener("pointerup", async (e) => {
   } else if (!detailedMap()) {
     const hit=hitMapOverview(mapOverview,project,cw,ch,point.x,point.y);
     focusAt(hit?.lat??p.lat,hit?.lng??p.lng,hit&&hit.players>1?Math.min(2048,zoom*8):2048);
+  } else if(model?.player){
+    await (await ensureUnitControls())?.click({x:point.x,y:point.y,cell});
   }
+});
+canvas.addEventListener('contextmenu',async event=>{
+ if(!model?.player||placing||selecting||!detailedMap())return;
+ event.preventDefault();const point=pointFor(event),p=atPoint(point.x,point.y);if(!p.valid)return;
+ await(await ensureUnitControls())?.click({x:point.x,y:point.y,cell:latLngToCell(p.lat,p.lng,8),right:true});
 });
 canvas.addEventListener("pointerleave", (e) => {
   if (e.relatedTarget && ($("mapTooltip").contains(e.relatedTarget) || e.relatedTarget === $("mapTooltip"))) return;
@@ -1236,7 +1263,8 @@ $('guestLogin').onclick = async () => {
 };
 $('armyExpand').onclick=()=>action('/api/army/order',{mode:'expand'},'Войска ищут свободную территорию.');
 $('armyDefend').onclick=()=>action('/api/army/order',{mode:'defend'},'Войска возвращаются к штабу.');
-$('armyAttack').onclick=()=>{armyTargeting=!armyTargeting;updateUI();toast(armyTargeting?'Нажмите на цель на карте.':'Выбор цели отменён.');};
+$('armyAttack').onclick=()=>{unitControls?.reset();armyTargeting=!armyTargeting;updateUI();toast(armyTargeting?'Нажмите на цель на карте.':'Выбор цели отменён.');};
+$('armySquads').onclick=async()=>{(await ensureUnitControls())?.open();};
 $("devLogin").onclick = async () => {
   const result = await action("/api/auth/dev", { name: $("devName").value.trim() || "Командир", fingerprint: await fingerprint() });
   if (result) await refreshAuth();
@@ -1480,6 +1508,7 @@ for (const dialog of document.querySelectorAll("dialog")) dialog.onclick = (e) =
 };
 window.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input,textarea,select") || document.querySelector("dialog[open]")) return;
+  if(unitControls?.key(e)){e.preventDefault();return;}
   if (/^[1-4]$/.test(e.key) && !e.repeat && model?.player) useAbility(ABILITIES[Number(e.key) - 1].id);
   if (e.key === "+" || e.key === "=") changeZoom(zoom * 2);
   if (e.key === "-") changeZoom(zoom / 2);
@@ -1488,6 +1517,7 @@ window.addEventListener("keydown", (e) => {
     cameraChanged();invalidate();lastDetails=0;scheduleTiles();
   }
   if (e.key === "Escape") {
+    armyTargeting=false;
     closePanels();
     closeAccount();
     if (placing) {

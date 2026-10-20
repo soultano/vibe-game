@@ -26,6 +26,11 @@ test('finished waypoints stop foot skating but retain the authoritative destinat
  const state=createBattlefieldState(),move={from:cell,to:cell,startedAt:at,endsAt:at+1000};state.sync({player:{id:'p',baseCell:cell,army:{at,units:[{id:'u',owner:'p',faction:'pack',type:'infantry',cell,hp:100,maxHp:100,state:'move',move}]}}},at);
  assert.equal(state.units(at+500)[0].animation,'walk');const ended=state.units(at+1500)[0];assert.equal(ended.animation,'idle');assert.equal(ended.progress,1);assert.equal(ended.cell,cell);
 });
+test('a partial own tile snapshot preserves offscreen squad selection and the full roster',()=>{
+ const unit=id=>({id,owner:'p',faction:'pack',type:'infantry',cell,hp:100,maxHp:100,state:'idle'}),full={id:'p',baseCell:cell,army:{at,units:[unit('one'),unit('two')]}},partial={id:'p',baseCell:cell,army:{at:at+500,units:[{...unit('one'),state:'capture'}]}},state=createBattlefieldState();
+ state.select('two');state.sync({player:full,players:[partial]},at+500);assert.equal(state.units(at+600).length,2);assert.equal(state.units(at+600)[0].key,'two');assert.equal(state.units(at+600).find(u=>u.key==='one').animation,'capture');
+ const removed={...full,army:{at:at+1000,units:[unit('one')]}};state.sync({player:removed,players:[partial]},at+1000);assert.equal(state.units(at+1100).length,1);
+});
 test('a unit leaving the viewport remains visible while its actual starting cell is still on screen',()=>{
  const next=latLngToCell(41.32,69.28,8),state=createBattlefieldState();state.sync({player:{id:'p',baseCell:cell,army:{at,units:[{id:'u',owner:'p',faction:'pack',type:'infantry',cell,hp:100,maxHp:100,state:'move',move:{from:cell,to:next,startedAt:at,endsAt:at+2000}}]}}},at);
  assert.equal(state.units(at+500,c=>c===cell).length,1);

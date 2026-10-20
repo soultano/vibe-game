@@ -4,7 +4,7 @@ const modes={idle:'idle',move:'walk',retreat:'run',attack:'attack',capture:'capt
 // This adapter only interpolates persisted server NPC positions. It neither
 // invents patrols nor predicts damage, victories, or ownership changes.
 export function createBattlefieldState({maxUnits=36}={}){
- let actors=[],syncedAt=0,ownId=null;
+ let actors=[],syncedAt=0,ownId=null,selected=null;
  return{
   sync(snapshot,now){
    ownId=snapshot.player?.id||null;
@@ -14,12 +14,15 @@ export function createBattlefieldState({maxUnits=36}={}){
    }
    const units=new Map();
    for(const player of players.values())for(const u of player.army?.units||[])if(u?.id&&u.cell&&(!units.has(u.id)||player.id===ownId))units.set(u.id,{...u,baseCell:player.baseCell,at:player.army.at});
+   // Public tiles include only the squads in that viewport. Keep the rest of
+   // our authoritative full roster until the next full /state snapshot arrives.
+   if(players.get(ownId)!==snapshot.player)for(const u of snapshot.player?.army?.units||[])if(!units.has(u.id))units.set(u.id,{...u,baseCell:snapshot.player.baseCell,at:snapshot.player.army.at});
    actors=[...units.values()].sort((a,b)=>(b.owner===ownId)-(a.owner===ownId)||a.id.localeCompare(b.id));syncedAt=now;
   },
   capture(){return false;},
   units(now,isVisible=()=>true){
    const byId=new Map(actors.map(u=>[u.id,u]));
-   return actors.filter(u=>isVisible(u.move?.to||u.cell)||u.move?.from&&isVisible(u.move.from)).slice(0,maxUnits).map(u=>{
+   return [...actors].sort((a,b)=>(b.id===selected)-(a.id===selected)).filter(u=>isVisible(u.move?.to||u.cell)||u.move?.from&&isVisible(u.move.from)).slice(0,maxUnits).map(u=>{
     const fresh=now-syncedAt<10000&&now-u.at<10000;
     const spec=troopFor(u.faction,u.type),move=u.move;
     const progress=move?Math.max(0,Math.min(1,((fresh?now:syncedAt)-move.startedAt)/(move.endsAt-move.startedAt))):1;
@@ -30,10 +33,11 @@ export function createBattlefieldState({maxUnits=36}={}){
      phase:unitSeed(u.id),offsetX:((unitSeed(u.id+':x')-.5)*9),offsetY:((unitSeed(u.id+':y')-.5)*7),
      target:target?.move?.to||target?.cell||null,hp:u.hp,maxHp:u.maxHp,neutral:!!u.neutral,
      capture:fresh&&u.state==='capture',ultimate:u.type==='ultimate',azimuth:0,
-     state:u.state,stateAt:u.stateAt,at:u.at,
+     state:u.state,stateAt:u.stateAt,at:u.at,order:u.order||null,waypoints:u.waypoints||[],routePartial:!!u.routePartial,
     };
    });
   },
-  clear(){actors=[];syncedAt=0;ownId=null;},
+  select(id){selected=id;},
+  clear(){actors=[];syncedAt=0;ownId=null;selected=null;},
  };
 }

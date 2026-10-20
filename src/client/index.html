@@ -78,7 +78,20 @@
 
   <div id="connectionNotice" class="connection-notice surface" hidden><span>Нет связи</span><button id="syncBtn" aria-label="Попробовать подключиться снова">Повторить</button></div>
 
-  <aside class="army-controls surface" id="armyControls" hidden aria-label="Приказы войскам"><span id="armyStatus" role="status">Автономные войска</span><div><button id="armyExpand" aria-label="Автоматический захват территории">⚑ Захватывать</button><button id="armyDefend" aria-label="Вернуться к штабу и защищать его">♜ Защищать</button><button id="armyAttack" aria-label="Указать цель на карте">⌖ Указать цель</button></div></aside>
+  <aside class="army-controls surface" id="armyControls" hidden aria-label="Приказы войскам"><span id="armyStatus" role="status">Автономные войска</span><div><button id="armySquads" aria-label="Выбрать отдельный отряд">☷ Отряды</button><button id="armyExpand" title="Общий приказ заменит индивидуальные" aria-label="Автоматический захват территории">⚑ Захватывать</button><button id="armyDefend" title="Общий приказ заменит индивидуальные" aria-label="Вернуться к штабу и защищать его">♜ Защищать</button><button id="armyAttack" title="Общий приказ заменит индивидуальные" aria-label="Указать цель на карте">⌖ Цель армии</button></div></aside>
+  <section id="unitPanel" class="unit-panel surface" hidden aria-labelledby="unitName">
+    <header class="unit-heading"><img id="unitPortrait" alt="" width="64" height="64" hidden><div><small id="unitRole">Ваши войска</small><h2 id="unitName">Ваши отряды</h2><div id="unitDetail" hidden><span id="unitHp"></span><div id="unitHealth" class="unit-health" role="progressbar" aria-label="Здоровье отряда" aria-valuemin="0"><i></i></div></div></div><button id="unitClose" class="close-button" aria-label="Снять выбор отряда">×</button></header>
+    <div id="unitRoster" class="unit-roster" role="group" aria-label="Выбор своего отряда"></div>
+    <div id="unitCommandGrid" class="unit-command-grid" role="group" aria-label="Команды выбранному отряду" hidden>
+      <button id="unit-move" aria-pressed="false" aria-keyshortcuts="M"><b>↗</b><span>Идти</span><kbd>M</kbd></button>
+      <button id="unit-attack" aria-pressed="false" aria-keyshortcuts="A"><b>⚔</b><span>Атаковать</span><kbd>A</kbd></button>
+      <button id="unit-capture" aria-pressed="false" aria-keyshortcuts="C"><b>⚑</b><span>Захватить</span><kbd>C</kbd></button>
+      <button id="unit-hold" aria-keyshortcuts="S"><b>■</b><span>Стоп</span><kbd>S</kbd></button>
+      <button id="unit-auto" aria-keyshortcuts="U"><b>↻</b><span>Автономно</span><kbd>U</kbd></button>
+      <button id="unit-focus" aria-keyshortcuts="F"><b>⊙</b><span>К отряду</span><kbd>F</kbd></button>
+    </div>
+    <p id="unitOrderStatus" class="unit-order-status" role="status" aria-live="polite"></p><p id="unitRouteInfo" class="unit-route-info"></p>
+  </section>
   <section class="floating-card welcome-card" id="authCard" aria-labelledby="welcomeTitle">
     <button class="close-button" data-dismiss="authCard" aria-label="Свернуть вход"><svg><use href="#i-close"/></svg></button>
     <span class="eyebrow"><span class="status-light" aria-hidden="true"></span> КОМАНДИР, ВЫ НА СВЯЗИ?</span>

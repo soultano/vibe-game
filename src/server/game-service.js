@@ -6,8 +6,8 @@ import { ABILITIES, abilityDefinition, factionAbilityName, captureMultiplierAt }
 import { CATALOG } from '../shared/catalog.js';
 import { resolveCombat } from '../shared/combat.js';
 import { troopDeployment } from '../shared/troops.js';
-import { createArmy, advanceArmies, publicArmy, reconcileArmy } from './npc-simulation.js';
-import { traversable } from '../shared/landscape.js';
+import { createArmy, advanceArmies, publicArmy, reconcileArmy, findRoute } from './npc-simulation.js';
+import { traversable, adjacentCells } from '../shared/landscape.js';
 import { aggregateOverview, mapEntry } from './map-overview.js';
 import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.js';
 export { CATALOG } from '../shared/catalog.js';
@@ -357,7 +357,41 @@ export class GameService {
         fail(distance(p.baseCell,input.cell)<=Math.max(12,projectedRadius(p)+8),'Цель слишком далеко.');
       }
       p.army??=createArmy(p,now);p.army.order={mode:input.mode,cell:input.mode==='attack'?input.cell:null};
-      for(const u of p.army.units){u.path=[];u.targetCell=null;u.waitUntil=0;u.blockedGoals={};u.activity=input.mode==='defend'?'guard':'advance';}
+      for(const u of p.army.units){delete u.order;u.path=[];u.targetCell=null;u.waitUntil=0;u.blockedGoals={};u.activity=input.mode==='defend'?'guard':'advance';}
+    });
+  }
+
+  async commandUnit(accountId,input={}){
+    fail(['move','attack','capture','hold','auto'].includes(input.mode),'Неизвестный приказ отряду.');
+    fail(typeof input.unitId==='string'&&input.unitId.length<=160,'Укажите отряд.');
+    return this.action(accountId,async(p,tx,now)=>{
+      fail(this.config.npcEnabled,'Войска пока недоступны.');
+      const unit=p.army?.units.find(u=>u.id===input.unitId&&!u.neutral&&u.owner===accountId);
+      fail(unit,'Можно управлять только своим отрядом.',403);fail(unit.hp>0,'Отряд погиб. Дождитесь возрождения.');
+      const from=unit.move?.to||unit.cell;
+      let goal=input.mode==='hold'?from:input.cell,path=[];
+      if(['move','attack','capture'].includes(input.mode)){
+        fail(validCell(goal)&&traversable(goal,unit.type,p.baseCell),'Выберите проходимый гекс в игровом регионе.');
+        fail(distance(from,goal)<=64,'Цель слишком далеко: не более 64 гексов от отряда.');
+        fail(distance(p.baseCell,goal)<=Math.max(12,projectedRadius(p)+8),'Цель за пределами радиуса действий базы.');
+        fail(!((await this.tile(tx,tileForCell(goal))).locks[goal]>now),'Этот гекс временно заблокирован.');
+        const previous=await this.owner(tx,goal),defender=previous&&previous!==p.id?await tx.get('player:'+previous):null;
+        if(['attack','capture'].includes(input.mode))fail(!defender||((defender.shieldUntil||0)<=now&&(p.shieldUntil||0)<=now),'Территорию защищает щит.');
+        if(input.mode==='capture'){
+          fail(unit.type!=='air','Авиация сражается, но не захватывает землю.');
+          fail(goal!==p.baseCell&&goal!==defender?.baseCell,'Захват штаба запрещён.');
+          fail(previous!==p.id,'Этот гекс уже принадлежит вам.');
+          fail(p.pixels<deriveLevel(p.level,p.faction).cap,'Достигнут лимит территории. Улучшите штаб.');
+          fail((await Promise.all(adjacentCells(goal).map(c=>this.owner(tx,c)))).includes(p.id),'Захватывать можно только гекс рядом со своей территорией.');
+        }
+        path=await findRoute(from,goal,{type:unit.type,baseCell:p.baseCell,allowPartial:true,canEnter:async c=>!((await this.tile(tx,tileForCell(c))).locks[c]>now)});
+        fail(path!==null,'Путь к этому гексу не найден. Выберите другую цель.');
+      }
+      unit.path=path;unit.targetId=null;unit.targetCell=input.mode==='auto'?null:goal;unit.waitUntil=0;unit.blockedGoals={};
+      if(input.mode==='auto'){delete unit.order;unit.activity='advance';}
+      else{unit.order={mode:input.mode,cell:goal,status:unit.move||path.length?'moving':'queued',issuedAt:now,reason:null};unit.activity='command';}
+      // A new command replaces only the remaining path. The in-flight adjacent
+      // step finishes at its original timestamp, avoiding mid-cell teleports.
     });
   }
 

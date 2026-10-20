@@ -18,7 +18,7 @@ async function clientSource() {
       globalThis.clientCheck = {
         ready: init(), refreshState, refreshAuth, draw, frame, openPanel, ownerCells, changeZoom, focusAt, refreshTiles,
         mapSnapshot: () => ({zoom,mapKind,overview:mapOverview,tiles:tileCache.size,profiles:profiles.size,revision:viewRevision,projection:geometry().globe?'globe':'flat',center:geometry().center}),
-        autoMiniAppLogin, pollWorld, setupTelegram,
+        autoMiniAppLogin, pollWorld, setupTelegram, ensureUnitControls, unitCommandView,
         state: () => ({ account, model, placing, selecting, activePanel, authBusy, connectionErrors })
       };
     `;

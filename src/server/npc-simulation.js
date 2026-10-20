@@ -56,6 +56,48 @@ export function reconcileArmy(army,player,at){
 function state(unit,value,at){if(unit.state!==value){unit.state=value;unit.stateAt=at;}}
 function event(army,value){army.events.push(value);army.events=army.events.slice(-24);}
 
+// Explicit squad orders use the same clock, pathfinder, damage and ownership
+// transactions as autonomous NPCs. Reaching a goal holds position until a new
+// order (or auto) is issued; move/attack never silently capture another cell.
+async function followUnitOrder({unit,player,army,at,dt,stats,currentOwner,byId,headquarters,owner,locked,claim,terrain,canTraverse}){
+  const order=unit.order,goal=order.cell;
+  const hold=(status,reason=null)=>{order.status=status;order.reason=reason;unit.path=[];unit.targetCell=goal;unit.activity='hold';state(unit,'idle',at);};
+  if(unit.cell===player.baseCell&&unit.hp<unit.maxHp)unit.hp=Math.min(unit.maxHp,unit.hp+dt*.012);
+  if(order.status==='blocked'){hold('blocked',order.reason);return;}
+  if(order.mode==='hold'){hold('complete');return;}
+  if(['attack','capture'].includes(order.mode)){
+    const defender=byId.get(await owner(goal));
+    if(defender&&defender.id!==player.id&&((defender.shieldUntil||0)>at||(player.shieldUntil||0)>at)){hold('blocked','shield');return;}
+  }
+  if(unit.cell===goal){
+    if(order.mode!=='capture'||currentOwner===player.id){hold('complete');return;}
+    let reason=null;
+    if(headquarters.has(goal))reason='headquarters';
+    else if(unit.type==='air')reason='air';
+    else if(player.pixels>=stats.cap)reason='cap';
+    else if(await locked(goal,at))reason='locked';
+    else if(!(await Promise.all(adjacentCells(goal).map(owner))).includes(player.id))reason='border';
+    if(reason){hold('blocked',reason);return;}
+    const cost=currentOwner?1.5:1;
+    if(army.credit<cost){hold('waiting-credit');return;}
+    order.status='capturing';order.reason=null;unit.activity='capture';unit.targetCell=goal;state(unit,'capture',at);
+    if(at-unit.stateAt>=NPC_RULES.captureMs){
+      if(await claim(goal,currentOwner,player.id,at)){army.credit-=cost;event(army,{kind:'capture',at,unitId:unit.id,cell:goal,previous:currentOwner});hold('complete');}
+      else hold('blocked','ownership');
+    }
+    return;
+  }
+  if(!canTraverse(goal,unit.type,player.baseCell)||await locked(goal,at)){hold('blocked','terrain');return;}
+  if(unit.targetCell!==goal||!unit.path.length||await locked(unit.path[0],at)||!canTraverse(unit.path[0],unit.type,player.baseCell)){
+    unit.path=await findRoute(unit.cell,goal,{type:unit.type,baseCell:player.baseCell,isTraversable:canTraverse,allowPartial:true,canEnter:async c=>!await locked(c,at)})||[];
+    unit.targetCell=goal;
+  }
+  const next=unit.path.shift();
+  if(!next){hold('blocked','route');return;}
+  const speed=unitStats(unit.faction,unit.type).speed/(unit.type==='air'?1:terrain(next).speed);
+  order.status='moving';order.reason=null;unit.activity='command';unit.move={from:unit.cell,to:next,startedAt:at,endsAt:at+speed};state(unit,'move',at);
+}
+
 /** Persisted server simulation. No client positions, health, clocks or capture
  * requests are accepted. Every ownership mutation awaits the service transaction. */
 export async function advanceArmies({players,armies,now,owner,locked,claim,terrain=landscape,canTraverse=traversable,neutral=true}){
@@ -75,17 +117,19 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
       const reservations=new Set(army.units.filter(u=>u.hp>0).map(u=>u.targetCell).filter(Boolean));
       for(const unit of [...army.units].sort((a,b)=>a.id.localeCompare(b.id))){
         const spec=unitStats(unit.faction,unit.type);
-        if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.cell=player.baseCell;unit.path=[];delete unit.move;unit.targetCell=null;state(unit,'idle',at);}continue;}
+        if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.cell=player.baseCell;unit.path=[];delete unit.move;delete unit.order;unit.targetCell=null;state(unit,'idle',at);}continue;}
         if(unit.move){if(at<unit.move.endsAt)continue;unit.cell=unit.move.to;delete unit.move;
           if(unit.activity==='patrol'&&!unit.path.length){unit.patrolStep=(unit.patrolStep||0)+1;unit.waitUntil=at+2000+captureHash(unit.cell,unit.index+unit.patrolStep)%2000;state(unit,'idle',at);}}
         const currentOwner=await owner(unit.cell);
         const enemies=all.filter(other=>other.hp>0&&other.owner!==unit.owner && (other.createdAt||0)<=at && (armies.get(other.owner)?.at||0)<=at
           && !(other.neutral&&unit.neutral)
           && (other.neutral || unit.neutral || ((byId.get(other.owner)?.shieldUntil||0)<=at&&(player.shieldUntil||0)<=at)));
-        const wounded=!unit.neutral && unit.hp<unit.maxHp*.24 && unit.cell!==player.baseCell;
-        const target=!wounded && enemies.filter(other=>distance(unit.cell,other.cell)<=spec.range).sort((a,b)=>distance(unit.cell,a.cell)-distance(unit.cell,b.cell)||a.hp-b.hp||a.id.localeCompare(b.id))[0];
+        const wounded=!unit.neutral && !unit.order && unit.hp<unit.maxHp*.24 && unit.cell!==player.baseCell;
+        const walkingOrder=unit.order?.mode==='move'&&unit.order.status!=='blocked'&&unit.cell!==unit.order.cell;
+        const target=!wounded&&!walkingOrder && enemies.filter(other=>distance(unit.cell,other.cell)<=spec.range).sort((a,b)=>(b.cell===unit.order?.cell)-(a.cell===unit.order?.cell)||distance(unit.cell,a.cell)-distance(unit.cell,b.cell)||a.hp-b.hp||a.id.localeCompare(b.id))[0];
         if(target){
           unit.activity='combat';unit.waitUntil=0;
+          if(unit.order)unit.order.status='attacking';
           state(unit,'attack',at);unit.targetId=target.id;unit.targetCell=target.cell;unit.path=[];
           if(at>=(unit.nextAttackAt||0)){
             const cover=target.type==='air'?0:terrain(target.cell).cover;
@@ -99,6 +143,7 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
         }
         unit.targetId=null;
         if(unit.neutral){unit.activity='guard';state(unit,'idle',at);continue;}
+        if(unit.order){await followUnitOrder({unit,player,army,at,dt,stats,currentOwner,byId,headquarters,owner,locked,claim,terrain,canTraverse});continue;}
         // Wounded units return to the HQ; recovery is visible, not a free teleport.
         const retreat=unit.hp<unit.maxHp*.24;
         if(unit.cell===player.baseCell&&unit.hp<unit.maxHp){unit.hp=Math.min(unit.maxHp,unit.hp+dt*.012);unit.activity='recover';state(unit,'idle',at);if(unit.hp<unit.maxHp*.8)continue;}
@@ -180,5 +225,5 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
 export function publicArmy(army,now){
   if(!army)return null;
   return {version:1,at:army.at,order:army.order,events:army.events.filter(e=>now-e.at<15000),
-    units:army.units.map(({path,nextAttackAt,index,blockedGoals,waitUntil,patrolStep,frontierCursor,...unit})=>({...unit,waypoints:path.slice(0,8)}))};
+    units:army.units.map(({path,nextAttackAt,index,blockedGoals,waitUntil,patrolStep,frontierCursor,...unit})=>({...unit,waypoints:path.slice(0,8),...(unit.order?{routePartial:path.length>8||(path.at(-1)||unit.move?.to||unit.cell)!==unit.order.cell}:{} )}))};
 }

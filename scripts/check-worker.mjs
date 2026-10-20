@@ -109,6 +109,10 @@ async function checkWorker() {
       return bytes;
     }
     assert.ok(await staticModuleBytes('/main.js',main)<625000,'the complete static module graph, including shared chunks, must fit 625 KB');
+    const squadModule=main.match(/import\("(\.\/chunks\/unit-controls-[^"]+\.js)"\)/)?.[1];
+    assert.ok(squadModule,'individual squad controls must remain a lazy module');
+    const squadResponse=await call(squadModule.slice(1));assert.equal(squadResponse.status,200);assert.match(squadResponse.headers.get('content-type'),/javascript/);
+    assert.ok(Buffer.byteLength(await squadResponse.text())<20000,'squad controls must fit 20 KB without model downloads');
     const terrainWorker=await call('/terrain-worker.js');assert.equal(terrainWorker.status,200);assert.match(terrainWorker.headers.get('content-type'),/javascript/);
     const chunk = await call(lazyModule.slice(1));
     assert.equal(chunk.status, 200); assert.match(chunk.headers.get('content-type'), /javascript/);
