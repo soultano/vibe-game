@@ -70,6 +70,14 @@
 
   <section id="unitPanel" class="unit-panel surface" hidden aria-labelledby="unitName">
     <header class="unit-heading"><img id="unitPortrait" alt="" width="64" height="64" hidden><div><small id="unitRole">Ваши войска</small><h2 id="unitName">Ваши отряды</h2><div id="unitDetail" hidden><span id="unitHp"></span><div id="unitHealth" class="unit-health" role="progressbar" aria-label="Здоровье отряда" aria-valuemin="0"><i></i></div></div></div><button id="unitClose" class="close-button" aria-label="Снять выбор отряда">×</button></header>
+    <div id="unitGroups" class="unit-groups" role="group" aria-label="Сохранённые группы отрядов" aria-describedby="unitGroupsHint">
+      <button type="button" data-control-group="1" aria-keyshortcuts="1 Control+1 Meta+1" aria-pressed="false">1</button>
+      <button type="button" data-control-group="2" aria-keyshortcuts="2 Control+2 Meta+2" aria-pressed="false">2</button>
+      <button type="button" data-control-group="3" aria-keyshortcuts="3 Control+3 Meta+3" aria-pressed="false">3</button>
+      <button type="button" data-control-group="4" aria-keyshortcuts="4 Control+4 Meta+4" aria-pressed="false">4</button>
+      <button type="button" data-control-group="5" aria-keyshortcuts="5 Control+5 Meta+5" aria-pressed="false">5</button>
+    </div>
+    <p id="unitGroupsHint" class="unit-selection-hint"><span class="selection-help-desktop">Группы: Ctrl/Cmd + 1–5 — сохранить · 1–5 — выбрать</span><span class="selection-help-touch">Группы: касание — выбрать · удержание — сохранить</span></p>
     <div id="unitRoster" class="unit-roster" role="group" aria-label="Выбор одного или нескольких отрядов" aria-describedby="unitSelectionHint"></div>
     <p id="unitSelectionHint" class="unit-selection-hint"><span class="selection-help-desktop">Shift-клик или Shift-рамка — выбрать несколько</span><span class="selection-help-touch">Удержите бойца, затем касайтесь остальных</span></p>
     <div id="unitCommandGrid" class="unit-command-grid" role="group" aria-label="Команды выбранному отряду" hidden>
@@ -82,7 +90,7 @@
       <button id="unit-auto" aria-keyshortcuts="U"><b>↻</b><span>Автономно</span><kbd>U</kbd></button>
       <button id="unit-focus" aria-keyshortcuts="F"><b>⊙</b><span>К отряду</span><kbd>F</kbd></button>
 
-    </div></details>
+    </div><button id="unitForgetGroup" class="text-button" type="button" hidden>Забыть группу</button></details>
     <button id="unitCancelTarget" class="text-button" hidden>Отмена выбора цели</button>
     <p id="unitPurpose" class="unit-purpose"></p>
     <p id="unitHealthReason" class="unit-health-reason"></p>
@@ -209,7 +217,7 @@
   <section class="floating-card game-panel" data-panel="abilities" id="abilitiesPanel" aria-labelledby="abilitiesTitle" hidden>
     <div class="panel-heading"><h2 id="abilitiesTitle">Способности</h2><button class="close-button" data-panel-close aria-label="Закрыть способности"><svg><use href="#i-close"/></svg></button></div>
     <p class="subtle">Усильте войска на время. Выберите способность, чтобы увидеть её действие и стоимость.</p>
-    <div id="abilityBar" class="ability-bar surface" aria-label="Боевые способности. Клавиши от 1 до 4" hidden></div>
+    <div id="abilityBar" class="ability-bar surface" aria-label="Боевые способности. Alt и клавиши от 1 до 4" hidden></div>
   </section>
   <div class="map-tools"><button class="surface home-button" id="homeBtn" aria-label="К моей базе" title="К моей базе"><svg><use href="#i-target"/></svg></button><div class="zoom-controls surface"><button id="zoomIn" aria-label="Приблизить карту">+</button><button id="zoomOut" aria-label="Отдалить карту">−</button></div></div>
   <div class="map-readout" aria-hidden="true"><span class="crosshair-mark">⌖</span><span id="mapCoordinates">41.31° N · 69.28° E</span><i></i><span id="mapScale">ГЛОБУС</span></div>

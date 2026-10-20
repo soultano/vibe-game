@@ -115,6 +115,10 @@ async function checkWorker() {
     assert.ok(squadModule,'individual squad controls must remain a lazy module');
     const squadResponse=await call(squadModule.slice(1));assert.equal(squadResponse.status,200);assert.match(squadResponse.headers.get('content-type'),/javascript/);
     assert.ok(Buffer.byteLength(await squadResponse.text())<20000,'squad controls must fit 20 KB without model downloads');
+    const savedModule=main.match(/import\("(\.\/chunks\/control-groups-[^"]+\.js)"\)/)?.[1];
+    assert.ok(savedModule,'saved control groups must be a separate deferred module');
+    const savedResponse=await call(savedModule.slice(1));assert.equal(savedResponse.status,200);
+    assert.ok(Buffer.byteLength(await savedResponse.text())<6500,'saved groups must fit 6.5 KB without loading models');
     const terrainWorker=await call('/terrain-worker.js');assert.equal(terrainWorker.status,200);assert.match(terrainWorker.headers.get('content-type'),/javascript/);
     const chunk = await call(lazyModule.slice(1));
     assert.equal(chunk.status, 200); assert.match(chunk.headers.get('content-type'), /javascript/);
@@ -145,7 +149,7 @@ async function checkWorker() {
     assert.equal(config.cellResolution, 8); assert.equal(config.tileResolution, 5);
     assert.deepEqual(config.factions.map(faction => faction.id), factionIds);
     const health = await (await call('/api/health')).json();
-    assert.equal(health.ok, true); assert.equal(health.storage, 'persistent'); assert.equal(health.timeAuthority, 'server'); assert.equal(health.groupOrders,'v1');
+    assert.equal(health.ok, true); assert.equal(health.storage, 'persistent'); assert.equal(health.timeAuthority, 'server'); assert.equal(health.groupOrders,'v1');assert.equal(health.controlGroups,'v1');
     const anonymous = await call('/api/auth/me');
     assert.equal(anonymous.status, 200); const me = await anonymous.json();
     assert.equal(me.account, null); assert.ok(me.csrfToken);
@@ -179,6 +183,9 @@ async function checkWorker() {
     const order=await call('/api/army/order',{method:'POST',headers:writeHeaders,body:JSON.stringify({mode:'defend'})});assert.equal(order.status,200);assert.equal((await order.json()).player.army.order.mode,'defend');
     const groupIds=baseState.player.army.units.filter(u=>!u.neutral).slice(0,2).map(u=>u.id);
     const group=await call('/api/army/unit-orders',{method:'POST',headers:writeHeaders,body:JSON.stringify({unitIds:groupIds,mode:'hold'})});assert.equal(group.status,200);assert.ok((await group.json()).player.army.units.filter(u=>groupIds.includes(u.id)).every(u=>u.order.mode==='hold'));
+    const saved=await call('/api/army/unit-groups',{method:'POST',headers:writeHeaders,body:JSON.stringify({slot:1,unitIds:groupIds})});assert.equal(saved.status,200);assert.deepEqual((await saved.json()).unitGroups,[groupIds,[],[],[],[]]);
+    const restored=await call('/api/state',{headers:{authorization:writeHeaders.authorization}});assert.deepEqual((await restored.json()).player.unitGroups[0],groupIds);
+    const cleared=await call('/api/army/unit-groups',{method:'POST',headers:writeHeaders,body:JSON.stringify({slot:1,unitIds:[]})});assert.equal(cleared.status,200);assert.deepEqual((await cleared.json()).unitGroups,[[],[],[],[],[]]);
     assert.equal(db.prepare('SELECT count(*) AS count FROM _atomic_guard').get().count, 0);
     console.log(`Worker OK: HTML, ten WebP sprites, five GLBs and posters, lazy 3D chunk, download budgets, H3 config, SQL storage, host cookies, disabled dev auth, fresh NPC tile snapshots, 404 (${DB.counts.statements} real SQL statements).`);
   } finally { db.close(); }

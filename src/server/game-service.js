@@ -13,7 +13,7 @@ import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.j
 export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
 import { isClanHallCell } from '../shared/clan-hall.js';
-import { UNIT_GROUP_LIMIT, groupOrderMode } from '../shared/unit-orders.js';
+import { UNIT_GROUP_LIMIT, UNIT_CONTROL_SLOTS, controlGroups, groupOrderMode } from '../shared/unit-orders.js';
 import { playerProfile, promotionUrl } from '../shared/player-profile.js';
 
 const HOUR = 3_600_000;
@@ -165,7 +165,7 @@ export class GameService {
       capturePerHour: stats.capturePerHour * multiplier, baseCapturePerHour: stats.capturePerHour,
       captureMultiplier: multiplier, netPerHour: net, grossPerHour: gross,
       troops: troopDeployment(player, now), frontier: (borderCells ?? [player.baseCell]).slice(0, 8),
-      army: publicArmy(army, now),
+      army: publicArmy(army, now), unitGroups: controlGroups(player), unitGroupsVersion: player.unitGroupsVersion||0,
       abilities: ABILITIES.map(definition => ({ ...definition, name: factionAbilityName(player.faction, definition.id),
         readyAt: abilities?.[definition.id]?.readyAt ?? 0, activeFrom: abilities?.[definition.id]?.activeFrom ?? 0,
         activeUntil: abilities?.[definition.id]?.activeUntil ?? 0 })),
@@ -387,6 +387,26 @@ export class GameService {
       // entire group transaction; shared routes are planned only once.
       for(const unit of units)plans.push(await this.planUnitOrder(p,unit,groupOrderMode(input.mode,unit),input.cell,tx,now,routes));
       units.forEach((unit,index)=>this.applyUnitOrder(unit,plans[index],now));
+    });
+  }
+
+  async saveUnitGroup(accountId, input={}) {
+    fail(accountId,'Необходим вход.',401,'AUTH_REQUIRED');
+    fail(Number.isInteger(input.slot)&&input.slot>=1&&input.slot<=UNIT_CONTROL_SLOTS,'Выберите группу от 1 до 5.');
+    const ids=input.unitIds;
+    fail(Array.isArray(ids)&&ids.length<=UNIT_GROUP_LIMIT&&ids.every(id=>typeof id==='string'&&id.length>0&&id.length<=160)&&new Set(ids).size===ids.length,'В группе может быть до 36 разных отрядов.');
+    // Group membership is account metadata. Saving it must not tick the world,
+    // compute routes, change orders, or force a terrain refresh.
+    return this.transaction(async tx=>{
+      const player=await tx.get(`player:${accountId}`);
+      fail(player,'Сначала поставьте базу.',409,'NO_BASE');
+      const owned=new Set((player.army?.units||[]).filter(u=>u.owner===accountId&&!u.neutral).map(u=>u.id));
+      fail(ids.every(id=>owned.has(id)),'Сохранять можно только свои отряды.',403);
+      player.unitGroups=controlGroups(player);
+      player.unitGroups[input.slot-1]=[...ids];
+      player.unitGroupsVersion=(player.unitGroupsVersion||0)+1;
+      await tx.put(`player:${accountId}`,player);
+      return {unitGroups:player.unitGroups,unitGroupsVersion:player.unitGroupsVersion};
     });
   }
 

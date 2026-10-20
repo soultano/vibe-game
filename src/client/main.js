@@ -81,17 +81,27 @@ const battlefield = createBattlefieldState({ maxUnits: Math.min(window.innerWidt
 const tileConflicts = new Map();
 let troops3D = null, troopsPromise = null, troopsUnavailable = false, troopsEnabled = true, inspectingTroop = null, troopGeneration = 0;
 let troopSprites=null,troopSpritesPromise=null,fallbackVisible=false;
-let unitControls=null,unitControlsPromise=null;
+let unitControls=null,unitControlsPromise=null,unitGroups=null,unitGroupsPromise=null;
+async function ensureControlGroups(){
+ if(!unitGroupsPromise)unitGroupsPromise=import('./control-groups.js').then(({createControlGroups})=>{
+  unitGroups=createControlGroups({$,getPlayer:()=>model?.player,getSelection:()=>unitControls?.state().selectedIds||[],
+   select:ids=>unitControls?.selectMany(ids),isBusy:()=>!!unitControls?.state().busy,notify:toast,
+   focus:cell=>focusAt(...cellToLatLng(cell),Math.max(2048,zoom)),
+   async save(input){const result=await action('/api/army/unit-groups',input);if(result&&model?.player&&(result.unitGroupsVersion||0)>=(model.player.unitGroupsVersion||0))Object.assign(model.player,result);return result;}});
+  return unitGroups;
+ }).catch(()=>{unitGroupsPromise=null;toast('Не удалось загрузить группы. Откройте отряды повторно.',true);return null;});
+ return unitGroupsPromise;
+}
 async function ensureUnitControls(){
- if(!unitControlsPromise)unitControlsPromise=import('./unit-controls.js').then(({createUnitControls})=>{
+ if(!unitControlsPromise)unitControlsPromise=import('./unit-controls.js').then(async({createUnitControls})=>{
   unitControls=createUnitControls({$,getPlayer:()=>model?.player,getUnits:()=>battlefield.units(serverNow()),getView:unitCommandView,
-   send:input=>action(input.unitIds?'/api/army/unit-orders':'/api/army/unit-order',input,input.unitIds?`Приказ группе принят: ${input.unitIds.length}.`:'Приказ отряду принят.'),notify:toast,invalidate:paint,onChange:()=>surfaces.sync(),
-   ownerAt:cell=>ownerCells().get(cell),onSelect:id=>battlefield.select(id),
+   send:input=>action(input.unitIds?'/api/army/unit-orders':'/api/army/unit-order',input,input.unitIds?`Приказ группе принят: ${input.unitIds.length}.`:'Приказ отряду принят.'),notify:toast,invalidate:paint,onChange:()=>{if(!unitControls?.isOpen())unitGroups?.cancel();surfaces.sync();},
+   ownerAt:cell=>ownerCells().get(cell),onSelect:id=>{battlefield.select(id);unitGroups?.update();},
    focus:cell=>focusAt(...cellToLatLng(cell),Math.max(2048,zoom)),
    onOpen(){armyTargeting=false;selecting=false;selectedCells.clear();surfaces.closeAll('unitPanel');updateUI();}});
-  unitControls.update();paint();return unitControls;
+  unitControls.update();await ensureControlGroups();paint();return unitControls;
  }).catch(()=>{unitControlsPromise=null;toast('Не удалось загрузить управление отрядами. Повторите.',true);return null;});
- return unitControlsPromise;
+ const controls=await unitControlsPromise;if(controls&&!unitGroups)await ensureControlGroups();return controls;
 }
 function unitCommandView(){const center=atPoint(cw/2,ch/2);return{...troopView(battlefield.units(serverNow())),now:serverNow(),detailed:detailedMap(),revision:viewRevision,centerCell:latLngToCell(center.lat,center.lng,8),targetData:{player:model?.player,owners:ownerCells(),profiles,tiles:tileCache,now:serverNow()},shapeCell:cell=>project.shape(border(cell)),cellLabel:cell=>{const[lat,lng]=cellToLatLng(cell);return `${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;}};}
 try { troopsEnabled = localStorage.getItem('pd-troops') !== 'off'; } catch {}
@@ -101,6 +111,7 @@ function syncBattlefield() {
   for (const [id, conflict] of tileConflicts) if ((conflict.lastResolvedAt || 0) < now - 15000) tileConflicts.delete(id);
   battlefield.sync({ player: model?.player, players: [...leaderboard, ...profiles.values()], conflicts: [...tileConflicts.values(), ...(model?.conflicts || [])] }, now);
   unitControls?.update();
+  unitGroups?.update();
 }
 async function ensureTroops3D() {
   if (troopsUnavailable) return null;
@@ -553,6 +564,10 @@ function acceptModel(next) {
   if (model?.player && !next.player) return;
   if (Number.isFinite(next.serverTime)) serverOffset = next.serverTime - Date.now();
   const prior = model?.player;
+  // An older in-flight world poll must not undo a just-saved control group.
+  if(prior?.id===next.player?.id&&(prior?.unitGroupsVersion||0)>(next.player?.unitGroupsVersion||0)){
+    next.player.unitGroups=prior.unitGroups;next.player.unitGroupsVersion=prior.unitGroupsVersion;
+  }
   for (const [id, conflict] of tileConflicts) if (conflict.players?.includes(account?.id)) tileConflicts.delete(id);
   model = next;
   syncBattlefield();
@@ -653,6 +668,7 @@ function updateUI() {
   $("armyControls").hidden = !p;
   if(p&&!unitControls)ensureUnitControls();
   unitControls?.update();
+  unitGroups?.update();
   const armyUnits=p?.army?.units||[];
   setText('conquestTotals', p ? `${fmt(p.pixels)} ячеек · доход ${p.netPerHour >= 0 ? '+' : ''}${p.netPerHour.toFixed(1)} ⚡/ч` : '');
   setText("armyStatus",armyTargeting?"Укажите цель на карте":armyUnits.some(u=>u.state==='attack')?"Войска ведут бой":armyUnits.some(u=>u.state==='capture')?"Закрепляемся на территории":armyUnits.some(u=>u.activity==='regroup')?"Перегруппировка на своей территории":armyUnits.some(u=>u.activity==='patrol')?"Патрулируем свою территорию":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономное продвижение к фронтиру");
@@ -1285,6 +1301,7 @@ $("mapTooltip").addEventListener("pointerleave", () => {
 });
 function cancelMapGesture(){
   unitControls?.gestures.cancel();
+  unitGroups?.cancel();
   pointers.clear();
   pinch = null;
   drag = null;
@@ -1534,7 +1551,7 @@ function abilityState(id) {
 }
 function renderAbilities() {
   const labels = { infantry: "Пехота", field: "Тяжёлые", heavy: "Авиация", ultimate: "Ульта" };
-  $("abilityBar").innerHTML = ABILITIES.map((a, index) => `<button id="ability-${a.id}" class="ability-button" data-ability="${a.id}"><span class="ability-key" aria-hidden="true">${index + 1}</span><span class="ability-icon"><img id="ability-unit-${a.id}" src="${troopForAbility(selectedFaction, a.id).poster}" alt="" width="38" height="30"></span><span class="ability-label">${labels[a.id]}</span><span class="ability-state" id="ability-state-${a.id}">Готово</span></button>`).join("");
+  $("abilityBar").innerHTML = ABILITIES.map((a, index) => `<button id="ability-${a.id}" class="ability-button" data-ability="${a.id}" aria-keyshortcuts="Alt+${index+1}"><span class="ability-key" aria-hidden="true">Alt+${index + 1}</span><span class="ability-icon"><img id="ability-unit-${a.id}" src="${troopForAbility(selectedFaction, a.id).poster}" alt="" width="38" height="30"></span><span class="ability-label">${labels[a.id]}</span><span class="ability-state" id="ability-state-${a.id}">Готово</span></button>`).join("");
 }
 function updateAbilities() {
   const p = model?.player, now = serverNow();
@@ -1667,11 +1684,13 @@ for (const dialog of document.querySelectorAll("dialog")) dialog.onclick = (e) =
   }
 };
 window.addEventListener("keydown", (e) => {
-  if (e.target.matches("input,textarea,select") || document.querySelector("dialog[open]")) return;
+  if (e.isComposing||e.target.isContentEditable||e.target.matches("input,textarea,select") || document.querySelector("dialog[open]")) return;
   if(mapPaused&&e.key!=='Escape')return;
+  if(unitGroups?.key(e)){e.preventDefault();return;}
+  const abilityKey=/^Digit([1-4])$/.exec(e.code||'')?.[1]||e.key;
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&/^[1-4]$/.test(abilityKey)&&model?.player){e.preventDefault();if(!e.repeat)useAbility(ABILITIES[Number(abilityKey)-1].id);return;}
   if(unitControls?.key(e)){e.preventDefault();return;}
   if(e.ctrlKey||e.metaKey||e.altKey)return;
-  if (/^[1-4]$/.test(e.key) && !e.repeat && model?.player) useAbility(ABILITIES[Number(e.key) - 1].id);
   if (e.key === "+" || e.key === "=") changeZoom(zoom * 2);
   if (e.key === "-") changeZoom(zoom / 2);
   if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){

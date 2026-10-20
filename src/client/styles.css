@@ -788,6 +788,12 @@ html,body,.game,.map-viewport{overscroll-behavior:none}
 .unit-roster button[aria-pressed=true]::after{content:'✓';position:absolute;top:1px;left:2px;color:#e5ffb0;background:#16321ce6;border-radius:3px;font-size:11px;line-height:14px;padding:0 2px}
 .unit-panel.group-selecting{border-color:#b7f587}.unit-panel.group-selecting .unit-roster button{border-style:dashed}.unit-panel.group-selecting .unit-roster button[aria-pressed=true]{border-style:solid}
 .unit-panel.targeting .unit-selection-hint{display:none}
+.unit-groups{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;margin:8px 0 5px;touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.unit-groups button{position:relative;min-width:44px;min-height:44px;border:1px solid #75876788;border-radius:5px;background:#0b1917;color:#dce8c5;font-family:inherit;font-size:15px;font-weight:700;padding:3px 2px 14px;cursor:pointer}
+.unit-groups button::after{content:attr(data-count);position:absolute;bottom:3px;left:0;right:0;font-size:9px;font-weight:400;color:#b4c3a7;text-align:center}
+.unit-groups button[aria-pressed=true]{border-color:#dfd491;background:#3e5830;box-shadow:inset 0 0 0 1px #dfd491}
+.unit-groups button:focus-visible{outline:2px solid #ebf9ae;outline-offset:2px}.unit-groups button:disabled{opacity:.45;cursor:wait}
+.unit-panel.targeting .unit-groups{display:none}
 #worldCanvas{-webkit-touch-callout:none}
 @media(pointer:coarse){.selection-help-desktop{display:none}.selection-help-touch{display:inline}}
 
