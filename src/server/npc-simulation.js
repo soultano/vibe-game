@@ -118,9 +118,14 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
       const reservations=new Set(army.units.filter(u=>u.hp>0).map(u=>u.targetCell).filter(Boolean));
       for(const unit of [...army.units].sort((a,b)=>a.id.localeCompare(b.id))){
         const spec=unitStats(unit.faction,unit.type);
-        if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.life=(unit.life||0)+1;unit.cell=player.baseCell;unit.path=[];delete unit.move;delete unit.order;delete unit.lastDamage;unit.targetCell=null;state(unit,'idle',at);}continue;}
+        if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.life=(unit.life||0)+1;unit.cell=player.baseCell;unit.path=[];delete unit.move;delete unit.order;delete unit.orderQueue;delete unit.lastDamage;unit.targetCell=null;state(unit,'idle',at);}continue;}
         if(unit.move){if(at<unit.move.endsAt)continue;unit.cell=unit.move.to;delete unit.move;
           if(unit.activity==='patrol'&&!unit.path.length){unit.patrolStep=(unit.patrolStep||0)+1;unit.waitUntil=at+2000+captureHash(unit.cell,unit.index+unit.patrolStep)%2000;state(unit,'idle',at);}}
+        if(unit.orderQueue?.length&&unit.order?.status!=='blocked'&&(unit.order?.status==='complete'||unit.order?.mode==='move'&&unit.cell===unit.order.cell)){
+          const next=unit.orderQueue.shift();unit.order={...next,status:'queued',issuedAt:at,reason:null};
+          unit.path=[];unit.targetId=null;unit.targetCell=next.cell;unit.waitUntil=0;unit.activity='command';
+          if(!unit.orderQueue.length)delete unit.orderQueue;
+        }
         const currentOwner=await owner(unit.cell);
         const enemies=all.filter(other=>other.hp>0&&other.owner!==unit.owner && (other.createdAt||0)<=at && (armies.get(other.owner)?.at||0)<=at
           && !(other.neutral&&unit.neutral)
@@ -130,7 +135,7 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
         const target=!wounded&&!walkingOrder && enemies.filter(other=>distance(unit.cell,other.cell)<=spec.range).sort((a,b)=>(b.cell===unit.order?.cell)-(a.cell===unit.order?.cell)||distance(unit.cell,a.cell)-distance(unit.cell,b.cell)||a.hp-b.hp||a.id.localeCompare(b.id))[0];
         if(target){
           unit.activity='combat';unit.waitUntil=0;
-          if(unit.order)unit.order.status='attacking';
+          if(unit.order&&unit.order.status!=='blocked')unit.order.status='attacking';
           state(unit,'attack',at);unit.targetId=target.id;unit.targetCell=target.cell;unit.path=[];
           if(at>=(unit.nextAttackAt||0)){
             const cover=target.type==='air'?0:terrain(target.cell).cover;

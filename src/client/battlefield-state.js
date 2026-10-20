@@ -34,7 +34,7 @@ export function createBattlefieldState({maxUnits=36}={}){
      target:target?.move?.to||target?.cell||null,hp:u.hp,maxHp:u.maxHp,neutral:!!u.neutral,
      activity:u.activity,lastDamage:u.lastDamage||null,
      capture:fresh&&u.state==='capture',ultimate:u.type==='ultimate',azimuth:0,
-     state:u.state,stateAt:u.stateAt,at:u.at,order:u.order||null,waypoints:u.waypoints||[],routePartial:!!u.routePartial,
+     state:u.state,stateAt:u.stateAt,at:u.at,order:u.order||null,orderQueue:u.orderQueue||[],waypoints:u.waypoints||[],routePartial:!!u.routePartial,
     };
    });
   },

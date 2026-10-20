@@ -794,6 +794,9 @@ html,body,.game,.map-viewport{overscroll-behavior:none}
 .unit-groups button[aria-pressed=true]{border-color:#dfd491;background:#3e5830;box-shadow:inset 0 0 0 1px #dfd491}
 .unit-groups button:focus-visible{outline:2px solid #ebf9ae;outline-offset:2px}.unit-groups button:disabled{opacity:.45;cursor:wait}
 .unit-panel.targeting .unit-groups{display:none}
+.unit-queue-actions{display:flex;gap:6px;align-items:center}.unit-queue-actions button{min-height:44px}.unit-queue-actions #unitCancelTarget{flex:1}.unit-queue-actions #unitQueueUndo{min-width:44px;font-size:22px}
+.unit-panel.queue-planning #unitCommandGrid{display:grid}.unit-queue-info{font-size:11px;line-height:1.4;color:#e4dca6;margin:6px 0;overflow-wrap:anywhere}
+.unit-panel.queue-planning .unit-order-status,.unit-panel.queue-planning #unitPurpose,.unit-panel.queue-planning #unitHealthReason{display:none}.unit-panel.queue-planning.targeting{max-height:42vh}.unit-command-grid button{touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #worldCanvas{-webkit-touch-callout:none}
 @media(pointer:coarse){.selection-help-desktop{display:none}.selection-help-touch{display:inline}}
 

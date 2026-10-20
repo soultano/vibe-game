@@ -114,7 +114,10 @@ async function checkWorker() {
     const squadModule=main.match(/import\("(\.\/chunks\/unit-controls-[^"]+\.js)"\)/)?.[1];
     assert.ok(squadModule,'individual squad controls must remain a lazy module');
     const squadResponse=await call(squadModule.slice(1));assert.equal(squadResponse.status,200);assert.match(squadResponse.headers.get('content-type'),/javascript/);
-    assert.ok(Buffer.byteLength(await squadResponse.text())<20000,'squad controls must fit 20 KB without model downloads');
+    const squadSource=await squadResponse.text();assert.ok(Buffer.byteLength(squadSource)<20000,'squad controls must fit 20 KB without model downloads');
+    const queueModule=main.match(/import\("(\.\/chunks\/unit-queue-[^"]+\.js)"\)/)?.[1];assert.ok(queueModule,'queue planner must remain deferred');
+    const queueResponse=await call(queueModule.slice(1));assert.equal(queueResponse.status,200);const queueSource=await queueResponse.text();assert.ok(Buffer.byteLength(queueSource)<6500,'queue planner must fit 6.5 KB');
+    assert.ok(await staticModuleBytes(squadModule.slice(1),squadSource)+await staticModuleBytes(queueModule.slice(1),queueSource)<32000,'all deferred tactical controls and their shared helpers must fit 32 KB');
     const savedModule=main.match(/import\("(\.\/chunks\/control-groups-[^"]+\.js)"\)/)?.[1];
     assert.ok(savedModule,'saved control groups must be a separate deferred module');
     const savedResponse=await call(savedModule.slice(1));assert.equal(savedResponse.status,200);
@@ -149,7 +152,7 @@ async function checkWorker() {
     assert.equal(config.cellResolution, 8); assert.equal(config.tileResolution, 5);
     assert.deepEqual(config.factions.map(faction => faction.id), factionIds);
     const health = await (await call('/api/health')).json();
-    assert.equal(health.ok, true); assert.equal(health.storage, 'persistent'); assert.equal(health.timeAuthority, 'server'); assert.equal(health.groupOrders,'v1');assert.equal(health.controlGroups,'v1');
+    assert.equal(health.ok, true); assert.equal(health.storage, 'persistent'); assert.equal(health.timeAuthority, 'server'); assert.equal(health.groupOrders,'v1');assert.equal(health.controlGroups,'v1');assert.equal(health.orderQueue,'v1');
     const anonymous = await call('/api/auth/me');
     assert.equal(anonymous.status, 200); const me = await anonymous.json();
     assert.equal(me.account, null); assert.ok(me.csrfToken);
@@ -183,6 +186,9 @@ async function checkWorker() {
     const order=await call('/api/army/order',{method:'POST',headers:writeHeaders,body:JSON.stringify({mode:'defend'})});assert.equal(order.status,200);assert.equal((await order.json()).player.army.order.mode,'defend');
     const groupIds=baseState.player.army.units.filter(u=>!u.neutral).slice(0,2).map(u=>u.id);
     const group=await call('/api/army/unit-orders',{method:'POST',headers:writeHeaders,body:JSON.stringify({unitIds:groupIds,mode:'hold'})});assert.equal(group.status,200);assert.ok((await group.json()).player.army.units.filter(u=>groupIds.includes(u.id)).every(u=>u.order.mode==='hold'));
+    const sequence=[{mode:'move',cell:baseCell},{mode:'attack',cell:baseCell}];
+    const queued=await call('/api/army/unit-orders',{method:'POST',headers:writeHeaders,body:JSON.stringify({unitIds:groupIds,orders:sequence,append:true})});assert.equal(queued.status,200);assert.ok((await queued.json()).player.army.units.filter(u=>groupIds.includes(u.id)).every(u=>u.order.mode==='move'&&u.orderQueue.at(-1).mode==='attack'));
+    const queueReload=await call('/api/state',{headers:{authorization:writeHeaders.authorization}});assert.ok((await queueReload.json()).player.army.units.filter(u=>groupIds.includes(u.id)).every(u=>u.orderQueue?.length||u.order.mode==='attack'));
     const saved=await call('/api/army/unit-groups',{method:'POST',headers:writeHeaders,body:JSON.stringify({slot:1,unitIds:groupIds})});assert.equal(saved.status,200);assert.deepEqual((await saved.json()).unitGroups,[groupIds,[],[],[],[]]);
     const restored=await call('/api/state',{headers:{authorization:writeHeaders.authorization}});assert.deepEqual((await restored.json()).player.unitGroups[0],groupIds);
     const cleared=await call('/api/army/unit-groups',{method:'POST',headers:writeHeaders,body:JSON.stringify({slot:1,unitIds:[]})});assert.equal(cleared.status,200);assert.deepEqual((await cleared.json()).unitGroups,[[],[],[],[],[]]);

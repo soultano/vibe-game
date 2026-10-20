@@ -13,7 +13,7 @@ import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.j
 export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
 import { isClanHallCell } from '../shared/clan-hall.js';
-import { UNIT_GROUP_LIMIT, UNIT_CONTROL_SLOTS, controlGroups, groupOrderMode } from '../shared/unit-orders.js';
+import { UNIT_GROUP_LIMIT, UNIT_CONTROL_SLOTS, UNIT_ORDER_LIMIT, TARGET_ORDER_MODES, remainingOrders, controlGroups, groupOrderMode } from '../shared/unit-orders.js';
 import { playerProfile, promotionUrl } from '../shared/player-profile.js';
 
 const HOUR = 3_600_000;
@@ -360,33 +360,33 @@ export class GameService {
         fail(distance(p.baseCell,input.cell)<=Math.max(12,projectedRadius(p)+8),'Цель слишком далеко.');
       }
       p.army??=createArmy(p,now);p.army.order={mode:input.mode,cell:input.mode==='attack'?input.cell:null};
-      for(const u of p.army.units){delete u.order;u.path=[];u.targetCell=null;u.waitUntil=0;u.blockedGoals={};u.activity=input.mode==='defend'?'guard':'advance';}
+      for(const u of p.army.units){delete u.order;delete u.orderQueue;u.path=[];u.targetCell=null;u.waitUntil=0;u.blockedGoals={};u.activity=input.mode==='defend'?'guard':'advance';}
     });
   }
 
   async commandUnit(accountId,input={}){
-    fail(['move','attack','capture','hold','auto'].includes(input.mode),'Неизвестный приказ отряду.');
+    const sequence=this.readUnitSequence(input);
     fail(typeof input.unitId==='string'&&input.unitId.length<=160,'Укажите отряд.');
     return this.action(accountId,async(p,tx,now)=>{
       fail(this.config.npcEnabled,'Войска пока недоступны.');
       const unit=this.commandableUnit(p,input.unitId);
-      const plan=await this.planUnitOrder(p,unit,input.mode,input.cell,tx,now);
-      this.applyUnitOrder(unit,plan,now);
+      const plan=await this.planUnitSequence(p,unit,sequence,tx,now);
+      this.applyUnitSequence(unit,plan,now);
     });
   }
 
   async commandUnits(accountId,input={}){
-    fail(['move','attack','capture','hold','auto'].includes(input.mode),'Неизвестный приказ группе.');
+    const sequence=this.readUnitSequence(input);
     const ids=input.unitIds;
     fail(Array.isArray(ids)&&ids.length>0&&ids.length<=UNIT_GROUP_LIMIT&&ids.every(id=>typeof id==='string'&&id.length>0&&id.length<=160)&&new Set(ids).size===ids.length,'Выберите от 1 до 36 разных отрядов.');
     return this.action(accountId,async(p,tx,now)=>{
       fail(this.config.npcEnabled,'Войска пока недоступны.');
       const units=ids.map(id=>this.commandableUnit(p,id)),routes=new Map(),plans=[];
-      if(input.mode==='capture')fail(units.some(unit=>unit.type!=='air'),'Авиация сражается, но не захватывает землю.');
+      if(sequence.orders.some(o=>o.mode==='capture'))fail(units.some(unit=>unit.type!=='air'),'Авиация сражается, но не захватывает землю.');
       // Prepare every route before changing any order. A failure rejects the
       // entire group transaction; shared routes are planned only once.
-      for(const unit of units)plans.push(await this.planUnitOrder(p,unit,groupOrderMode(input.mode,unit),input.cell,tx,now,routes));
-      units.forEach((unit,index)=>this.applyUnitOrder(unit,plans[index],now));
+      for(const unit of units)plans.push(await this.planUnitSequence(p,unit,{...sequence,orders:sequence.orders.map(o=>({...o,mode:groupOrderMode(o.mode,unit)}))},tx,now,routes));
+      units.forEach((unit,index)=>this.applyUnitSequence(unit,plans[index],now));
     });
   }
 
@@ -416,8 +416,38 @@ export class GameService {
     return unit;
   }
 
-  async planUnitOrder(p,unit,mode,cell,tx,now,routes=new Map()){
-    const from=unit.move?.to||unit.cell;
+  readUnitSequence(input){
+    fail(input.append===undefined||typeof input.append==='boolean','Некорректный способ добавления в очередь.');
+    const batch=input.orders!==undefined,orders=batch?input.orders:[{mode:input.mode,cell:input.cell}];
+    fail(Array.isArray(orders)&&orders.length>0&&orders.length<=UNIT_ORDER_LIMIT,'В очереди может быть от 1 до 12 приказов.');
+    fail(!batch||input.mode===undefined&&input.cell===undefined,'Укажите либо один приказ, либо очередь.');
+    fail(orders.every(o=>o&&typeof o==='object'&&!Array.isArray(o)&&(batch||input.append?TARGET_ORDER_MODES:[...TARGET_ORDER_MODES,'hold','auto']).includes(o.mode)),'Неизвестный приказ в очереди.');
+    return {append:input.append===true,orders:orders.map(({mode,cell})=>({mode,cell}))};
+  }
+
+  async planUnitSequence(p,unit,{orders,append},tx,now,routes=new Map()){
+    const prior=append?remainingOrders(unit):[],keep=append&&unit.order&&TARGET_ORDER_MODES.includes(unit.order.mode)&&unit.order.status!=='complete';
+    fail(!append||unit.order?.status!=='blocked','Очередь заблокирована. Сначала отдайте новый приказ.');
+    fail(prior.length+orders.length<=UNIT_ORDER_LIMIT,'Очередь заполнена: не более 12 приказов.');
+    const captured=new Set(keep?prior.filter(o=>o.mode==='capture').map(o=>o.cell):[]),plans=[];
+    let from=prior.at(-1)?.cell||unit.move?.to||unit.cell;
+    const incoming=keep?orders:[...prior,...orders];
+    if(!keep)from=unit.move?.to||unit.cell;
+    for(const order of incoming){
+      const plan=await this.planUnitOrder(p,unit,order.mode,order.cell,tx,now,routes,{from,captured});plans.push(plan);from=plan.goal;
+      if(order.mode==='capture')captured.add(order.cell);
+    }
+    return {keep,plans,prior:keep?(unit.orderQueue||[]):[]};
+  }
+
+  applyUnitSequence(unit,{keep,plans,prior},now){
+    const pending=keep?[...prior,...plans.map(p=>({mode:p.mode,cell:p.goal}))]:plans.slice(1).map(p=>({mode:p.mode,cell:p.goal}));
+    if(!keep)this.applyUnitOrder(unit,plans[0],now);
+    if(pending.length)unit.orderQueue=pending;else delete unit.orderQueue;
+  }
+
+  async planUnitOrder(p,unit,mode,cell,tx,now,routes=new Map(),options={}){
+    const from=options.from||unit.move?.to||unit.cell,captured=options.captured||new Set();
     let goal=mode==='hold'?from:cell,path=[];
     if(['move','attack','capture'].includes(mode)){
       fail(validCell(goal)&&traversable(goal,unit.type,p.baseCell),'Выберите проходимый гекс в игровом регионе.');
@@ -432,7 +462,8 @@ export class GameService {
         fail(goal!==p.baseCell&&goal!==defender?.baseCell,'Захват штаба запрещён.');
         fail(previous!==p.id,'Этот гекс уже принадлежит вам.');
         fail(p.pixels<deriveLevel(p.level,p.faction).cap,'Достигнут лимит территории. Улучшите штаб.');
-        fail((await Promise.all(adjacentCells(goal).map(c=>this.owner(tx,c)))).includes(p.id),'Захватывать можно только гекс рядом со своей территорией.');
+        const adjacent=adjacentCells(goal);
+        fail(adjacent.some(c=>captured.has(c))||(await Promise.all(adjacent.map(c=>this.owner(tx,c)))).includes(p.id),'Захватывать можно только гекс рядом со своей территорией.');
       }
       const key=[from,goal,unit.type==='air'?'air':'ground'].join(':');
       if(!routes.has(key))routes.set(key,await findRoute(from,goal,{type:unit.type,baseCell:p.baseCell,allowPartial:true,canEnter:async c=>!((await this.tile(tx,tileForCell(c))).locks[c]>now)}));
@@ -443,6 +474,7 @@ export class GameService {
   }
 
   applyUnitOrder(unit,{mode,goal,path},now){
+    delete unit.orderQueue;
     unit.path=[...path];unit.targetId=null;unit.targetCell=mode==='auto'?null:goal;unit.waitUntil=0;unit.blockedGoals={};
     if(mode==='auto'){delete unit.order;unit.activity='advance';}
     else{unit.order={mode,cell:goal,status:unit.move||path.length?'moving':'queued',issuedAt:now,reason:null};unit.activity='command';}

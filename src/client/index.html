@@ -79,8 +79,8 @@
     </div>
     <p id="unitGroupsHint" class="unit-selection-hint"><span class="selection-help-desktop">Группы: Ctrl/Cmd + 1–5 — сохранить · 1–5 — выбрать</span><span class="selection-help-touch">Группы: касание — выбрать · удержание — сохранить</span></p>
     <div id="unitRoster" class="unit-roster" role="group" aria-label="Выбор одного или нескольких отрядов" aria-describedby="unitSelectionHint"></div>
-    <p id="unitSelectionHint" class="unit-selection-hint"><span class="selection-help-desktop">Shift-клик или Shift-рамка — выбрать несколько</span><span class="selection-help-touch">Удержите бойца, затем касайтесь остальных</span></p>
-    <div id="unitCommandGrid" class="unit-command-grid" role="group" aria-label="Команды выбранному отряду" hidden>
+    <p id="unitSelectionHint" class="unit-selection-hint"><span class="selection-help-desktop">Shift-клик или Shift-рамка — несколько бойцов · Shift с командой — очередь</span><span class="selection-help-touch">Удержите бойца — выбрать несколько · команду — очередь</span></p>
+    <div id="unitCommandGrid" class="unit-command-grid" role="group" aria-label="Команды выбранному отряду" aria-describedby="unitSelectionHint" hidden>
       <button id="unit-move" aria-pressed="false" aria-keyshortcuts="M"><b>↗</b><span>Идти</span><kbd>M</kbd></button>
       <button id="unit-attack" aria-pressed="false" aria-keyshortcuts="A"><b>⚔</b><span>Атаковать</span><kbd>A</kbd></button>
       <button id="unit-capture" aria-pressed="false" aria-keyshortcuts="C"><b>⚑</b><span>Захватить</span><kbd>C</kbd></button>
@@ -91,7 +91,8 @@
       <button id="unit-focus" aria-keyshortcuts="F"><b>⊙</b><span>К отряду</span><kbd>F</kbd></button>
 
     </div><button id="unitForgetGroup" class="text-button" type="button" hidden>Забыть группу</button></details>
-    <button id="unitCancelTarget" class="text-button" hidden>Отмена выбора цели</button>
+    <div class="unit-queue-actions"><button id="unitCancelTarget" class="text-button" hidden>Отмена выбора цели</button><button id="unitQueueUndo" class="text-button" aria-label="Убрать последний приказ из очереди" hidden>↶</button></div>
+    <p id="unitQueueInfo" class="unit-queue-info" hidden></p>
     <p id="unitPurpose" class="unit-purpose"></p>
     <p id="unitHealthReason" class="unit-health-reason"></p>
     <p id="unitOrderStatus" class="unit-order-status" role="status" aria-live="polite"></p><p id="unitRouteInfo" class="unit-route-info"></p>

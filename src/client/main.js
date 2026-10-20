@@ -93,9 +93,9 @@ async function ensureControlGroups(){
  return unitGroupsPromise;
 }
 async function ensureUnitControls(){
- if(!unitControlsPromise)unitControlsPromise=import('./unit-controls.js').then(async({createUnitControls})=>{
-  unitControls=createUnitControls({$,getPlayer:()=>model?.player,getUnits:()=>battlefield.units(serverNow()),getView:unitCommandView,
-   send:input=>action(input.unitIds?'/api/army/unit-orders':'/api/army/unit-order',input,input.unitIds?`Приказ группе принят: ${input.unitIds.length}.`:'Приказ отряду принят.'),notify:toast,invalidate:paint,onChange:()=>{if(!unitControls?.isOpen())unitGroups?.cancel();surfaces.sync();},
+ if(!unitControlsPromise)unitControlsPromise=Promise.all([import('./unit-controls.js'),import('./unit-queue.js')]).then(async([{createUnitControls},{createUnitQueue}])=>{
+  unitControls=createUnitControls({$,createQueue:createUnitQueue,getPlayer:()=>model?.player,getUnits:()=>battlefield.units(serverNow()),getView:unitCommandView,
+   send:input=>action(input.unitIds?'/api/army/unit-orders':'/api/army/unit-order',input,input.orders?`Очередь принята: ${input.orders.length} приказов.`:input.unitIds?`Приказ группе принят: ${input.unitIds.length}.`:'Приказ отряду принят.'),notify:toast,invalidate:paint,onChange:()=>{if(!unitControls?.isOpen())unitGroups?.cancel();surfaces.sync();},
    ownerAt:cell=>ownerCells().get(cell),onSelect:id=>{battlefield.select(id);unitGroups?.update();},
    focus:cell=>focusAt(...cellToLatLng(cell),Math.max(2048,zoom)),
    onOpen(){armyTargeting=false;selecting=false;selectedCells.clear();surfaces.closeAll('unitPanel');updateUI();}});
@@ -1139,7 +1139,7 @@ canvas.addEventListener("pointerdown", (e) => {
     gestureMoved = true;
     unitControls?.gestures.cancel();
   }
-  if(pointers.size===1&&model?.player&&detailedMap()&&!placing&&!selecting&&!armyTargeting){
+  if(pointers.size===1&&model?.player&&detailedMap()&&!placing&&!selecting&&!armyTargeting&&!unitControls?.state().targetMode){
     if(unitControls?.gestures.down(e,pointFor(e)))drag=null;
   }
 });
@@ -1281,14 +1281,14 @@ canvas.addEventListener("pointerup", async (e) => {
   } else {
     const owner = playerById(ownerCells().get(cell));
     if (owner && owner.baseCell === cell && owner.id !== account?.id && !unitControls?.state().targetMode) { showPlayerProfile(owner); return; }
-    if (model?.player) await (await ensureUnitControls())?.click({x:point.x,y:point.y,cell,additive:!!e.shiftKey});
+    if (model?.player) await (await ensureUnitControls())?.click({x:point.x,y:point.y,cell,additive:!!e.shiftKey,append:!!e.shiftKey});
   }
 });
 canvas.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
 canvas.addEventListener('contextmenu',async event=>{
  if(!model?.player||placing||selecting||!detailedMap())return;
  event.preventDefault();if(unitControls?.gestures.ignoreContextMenu(event))return;const point=pointFor(event),p=atPoint(point.x,point.y);if(!p.valid)return;
- await(await ensureUnitControls())?.click({x:point.x,y:point.y,cell:latLngToCell(p.lat,p.lng,8),right:true});
+ await(await ensureUnitControls())?.click({x:point.x,y:point.y,cell:latLngToCell(p.lat,p.lng,8),right:true,append:!!event.shiftKey});
 });
 canvas.addEventListener("pointerleave", (e) => {
   if (e.relatedTarget && ($("mapTooltip").contains(e.relatedTarget) || e.relatedTarget === $("mapTooltip"))) return;
@@ -1301,6 +1301,7 @@ $("mapTooltip").addEventListener("pointerleave", () => {
 });
 function cancelMapGesture(){
   unitControls?.gestures.cancel();
+  unitControls?.queue.cancelGesture();
   unitGroups?.cancel();
   pointers.clear();
   pinch = null;
@@ -1714,10 +1715,12 @@ window.addEventListener("keydown", (e) => {
     invalidate();
   }
 });
+window.addEventListener('keyup',event=>{if(!mapPaused&&!document.hidden&&!event.target?.isContentEditable&&!event.target?.matches('input,textarea,select'))unitControls?.queue.keyUp(event);else unitControls?.queue.pause();});
+window.addEventListener('blur',()=>unitControls?.queue.pause());
 document.addEventListener("visibilitychange", () => {
   clearTimeout(pollTimer);
   if (document.hidden) {
-    cancelMapGesture();
+    cancelMapGesture();unitControls?.queue.pause();
     if (frameHandle !== null) cancelAnimationFrame(frameHandle);
     frameHandle = null;
     return;
@@ -2072,7 +2075,7 @@ function setupTutorial() {
 }
 
 const telegramShell=createTelegramShell({getApp:()=>window.Telegram?.WebApp,launchData:telegramLaunchData,style:document.documentElement.style,
- onViewport:fit,onBack:()=>surfaces.back(),onActivity(active){telegramActive=active;if(active){paint();pollWorld();}else{cancelMapGesture();clearTimeout(pollTimer);if(frameHandle!==null)cancelAnimationFrame(frameHandle);frameHandle=null;}}
+ onViewport:fit,onBack:()=>surfaces.back(),onActivity(active){telegramActive=active;if(active){paint();pollWorld();}else{cancelMapGesture();unitControls?.queue.pause();clearTimeout(pollTimer);if(frameHandle!==null)cancelAnimationFrame(frameHandle);frameHandle=null;}}
 });
 function setupTelegram(){telegramShell.setup();surfaces.sync();}
 // SDK loading is optional for authentication and never blocks the game.

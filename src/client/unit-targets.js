@@ -2,7 +2,10 @@ import {cellToParent,gridDisk,gridDistance} from 'h3-js';
 import {traversable} from '../shared/landscape.js';
 import {deriveLevel} from '../shared/economy.js';
 import {isClanHallCell} from '../shared/clan-hall.js';
-import {groupOrderMode} from '../shared/unit-orders.js';
+import {groupOrderMode,remainingOrders} from '../shared/unit-orders.js';
+export function queuedTargetUnits(units,draft=[]){
+ return units.map(u=>{const steps=[...remainingOrders(u),...draft];return{...u,cell:steps.at(-1)?.cell||u.cell,queuedCaptures:steps.filter(o=>o.mode==='capture').map(o=>o.cell)};});
+}
 const distance=(a,b)=>{try{return gridDistance(a,b);}catch{return Infinity;}};
 // Advisory snapshot check only. The server rechecks ownership, shields and the
 // actual traversable route atomically when accepting each order.
@@ -24,7 +27,7 @@ export function unitTarget(unit,mode,cell,data){
   if(cell===player.baseCell||cell===defender?.baseCell)return fail('Штаб нельзя захватить.');
   if(owner===player.id)return fail('Этот гекс уже ваш. Выберите соседнюю свободную или вражескую землю.');
   if(player.pixels>=(player.cap??deriveLevel(player.level,player.faction).cap))return fail('Лимит территории достигнут. Улучшите базу.');
-  if(!gridDisk(cell,1).some(c=>c!==cell&&owners.get(c)===player.id))return fail('Захват возможен только рядом с вашей территорией.');
+  if(!gridDisk(cell,1).some(c=>c!==cell&&(owners.get(c)===player.id||unit.queuedCaptures?.includes(c))))return fail('Захват возможен только рядом со своей территорией или предыдущим захватом в очереди.');
  }
  const enemy=owner&&owner!==player.id;
  return{ok:true,kind:enemy?'enemy':'free',message:mode==='capture'?'Захватить этот гекс':mode==='attack'?enemy?'Атаковать территорию противника':'Идти с атакой: вступать в бой по пути':'Идти в этот гекс'};
