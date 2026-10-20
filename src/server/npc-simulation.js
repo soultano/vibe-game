@@ -123,12 +123,14 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
         if(!retreat&&!chase&&(unit.waitUntil||0)>at){state(unit,'idle',at);continue;}
         unit.blockedGoals=Object.fromEntries(Object.entries(unit.blockedGoals||{}).filter(([,until])=>until>at).slice(-8));
         let goal=retreat?player.baseCell:chase?.cell || (army.order.mode==='defend'?null:army.order.cell);
-        let patrol=unit.activity==='patrol'&&!!unit.path.length&&!retreat&&!chase;
+        let patrol=unit.activity==='patrol'&&!!unit.path.length&&!retreat&&!chase,regroup=unit.activity==='regroup'&&!!unit.path.length&&!retreat&&!chase;
         if(goal&&currentOwner===player.id&&goal===unit.cell&&!retreat&&!chase)goal=null;
         if(!goal && unit.path.length)goal=unit.targetCell;
         if(!goal&&army.order.mode!=='defend'&&player.pixels<stats.cap){
-          const border=[...(player.borderCells||[player.baseCell])].sort((a,b)=>distance(unit.cell,a)-distance(unit.cell,b)||a.localeCompare(b)).slice(0,64),candidates=new Set();
-          for(const cell of border)for(const n of adjacentCells(cell))candidates.add(n);
+          const border=[...(player.borderCells||[player.baseCell])].sort((a,b)=>distance(unit.cell,a)-distance(unit.cell,b)||a.localeCompare(b)),candidates=new Set();
+          const start=(unit.frontierCursor||0)%Math.max(1,border.length),batch=Array.from({length:Math.min(64,border.length)},(_,i)=>border[(start+i)%border.length]);
+          unit.frontierCursor=(start+batch.length)%Math.max(1,border.length);
+          for(const cell of batch)if(await owner(cell)===player.id)for(const n of adjacentCells(cell))candidates.add(n);
           const choices=[];
           for(const c of candidates){
             if(c===unit.cell||headquarters.has(c)||unit.blockedGoals[c]||!canTraverse(c,unit.type,player.baseCell)||!inExpansion(player,c)||await locked(c,at))continue;
@@ -152,7 +154,7 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
           const near=new Set([player.baseCell,...adjacentCells(unit.cell),...adjacentCells(player.baseCell)]),choices=[];
           for(const c of near)if(c!==unit.cell&&!unit.blockedGoals[c]&&canTraverse(c,unit.type,player.baseCell)&&!await locked(c,at)&&await owner(c)===player.id)choices.push(c);
           choices.sort((a,b)=>distance(unit.cell,a)-distance(unit.cell,b)||captureHash(a,(player.seed||0)+(unit.index||0)*41+(unit.patrolStep||0)*97)-captureHash(b,(player.seed||0)+(unit.index||0)*41+(unit.patrolStep||0)*97));
-          goal=choices[0]||player.baseCell;patrol=true;
+          goal=choices[0]||player.baseCell;regroup=currentOwner!==player.id;patrol=!regroup;
         }
         if(goal===unit.cell){unit.path=[];unit.targetCell=null;unit.activity='guard';state(unit,'idle',at);continue;}
         if(goal!==unit.targetCell||!unit.path.length){
@@ -163,7 +165,7 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
         const next=unit.path.shift();
         if(next && canTraverse(next,unit.type,player.baseCell) && !await locked(next,at) && (!patrol||await owner(next)===player.id)){
           const speed=spec.speed/(unit.type==='air'?1:terrain(next).speed);
-          unit.activity=retreat?'retreat':patrol?'patrol':'advance';unit.waitUntil=0;unit.move={from:unit.cell,to:next,startedAt:at,endsAt:at+speed};state(unit,retreat?'retreat':'move',at);reservations.add(goal);
+          unit.activity=retreat?'retreat':patrol?'patrol':regroup?'regroup':'advance';unit.waitUntil=0;unit.move={from:unit.cell,to:next,startedAt:at,endsAt:at+speed};state(unit,retreat?'retreat':'move',at);reservations.add(goal);
         }else{unit.path=[];unit.activity='guard';unit.blockedGoals[goal]=at+8000;unit.waitUntil=at+1000;state(unit,'idle',at);unit.targetCell=null;}
       }
       army.units=army.units.filter(u=>!u.neutral||u.hp>0||at-u.stateAt<10000).slice(0,16);
@@ -178,5 +180,5 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
 export function publicArmy(army,now){
   if(!army)return null;
   return {version:1,at:army.at,order:army.order,events:army.events.filter(e=>now-e.at<15000),
-    units:army.units.map(({path,nextAttackAt,index,blockedGoals,waitUntil,patrolStep,...unit})=>({...unit,waypoints:path.slice(0,8)}))};
+    units:army.units.map(({path,nextAttackAt,index,blockedGoals,waitUntil,patrolStep,frontierCursor,...unit})=>({...unit,waypoints:path.slice(0,8)}))};
 }

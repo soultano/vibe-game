@@ -585,7 +585,7 @@ function updateUI() {
   $("missionBtn").hidden = !p;
   $("armyControls").hidden = !p;
   const armyUnits=p?.army?.units||[];
-  setText("armyStatus",armyTargeting?"Укажите цель на карте":armyUnits.some(u=>u.state==='attack')?"Войска ведут бой":armyUnits.some(u=>u.state==='capture')?"Закрепляемся на территории":armyUnits.some(u=>u.activity==='patrol')?"Патрулируем свою территорию":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономное продвижение к фронтиру");
+  setText("armyStatus",armyTargeting?"Укажите цель на карте":armyUnits.some(u=>u.state==='attack')?"Войска ведут бой":armyUnits.some(u=>u.state==='capture')?"Закрепляемся на территории":armyUnits.some(u=>u.activity==='regroup')?"Перегруппировка на своей территории":armyUnits.some(u=>u.activity==='patrol')?"Патрулируем свою территорию":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономное продвижение к фронтиру");
   $("missionSteps").children[0]?.classList.toggle("current", !account);
   $("missionSteps").children[1]?.classList.toggle("current", !!account && !placing);
   $("missionSteps").children[2]?.classList.toggle("current", placing);
