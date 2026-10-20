@@ -1,7 +1,7 @@
 import { cellToLatLng, cellToBoundary, latLngToCell, gridDisk, getHexagonEdgeLengthAvg } from "h3-js";
 import { CONFIG, FACTIONS, getFaction } from "../shared/config.js";
 import { decodeTile, cellIsLand } from "../shared/geography.js";
-import worldMask from "../../data/world-mask.json";
+import worldMask from "../../data/world-mask.json" with {type:"json"};
 import { skipCost } from "../shared/economy.js";
 import { ABILITIES, factionAbilityName } from "../shared/abilities.js";
 import { troopForAbility, troopFor, TROOP_CLASSES, TROOP_ANIMATIONS } from '../shared/troops.js';
@@ -19,10 +19,13 @@ import { footprintBounds, headquartersLayout, layoutTroops, spriteBounds } from 
 import { headquartersFor } from "../shared/headquarters.js";
 import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./telegram.js";
 import { getLang, setLang, t, LANGUAGES } from "./i18n.js";
-import { ACHIEVEMENTS, playAchievementFanfare, launchFireworks } from "./achievements.js";
-import { initTutorial, isTutorialDone, setTutorialDone } from "./tutorial.js";
+import { ACHIEVEMENTS, playAchievementFanfare } from "./achievements.js";
+import { initTutorial } from "./tutorial.js";
 import { CLAN_HALL_CENTER_COORDS, isClanHallCell } from "../shared/clan-hall.js";
-import { drawClanHallHexes, drawClanHallCastle, hitClanHall } from "./clan-hall-renderer.js";
+import { drawClanHallHexes, hitClanHall } from "./clan-hall-renderer.js";
+import { createSurfaces } from './surfaces.js';
+import { createTelegramShell } from './telegram-shell.js';
+import { createMapPreview } from './map-preview.js';
 const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), displayCtx = canvas.getContext("2d", { alpha: false });
 let ctx = displayCtx;
 const mapLayer = document.createElement("canvas"), mapCtx = mapLayer.getContext("2d", { alpha: false });
@@ -43,10 +46,13 @@ function detailedMap(){return zoom>=DETAIL_ZOOM&&mapKind==='tiles';}
 const landscapeView = createLandscapeRenderer({ onReady: invalidate });
 let sessionToken = '', loginToken = '', authBusy = false, launchExpired = false, lastLeaderboard = 0;
 let frameHandle = null, tileTimer, pollTimer, neutralKey = '', drawingGeometry = null, ownership = new Map(), ownershipDirty = true;
+let mapDirty=true,mapPaints=0,mapPaused=false,telegramActive=true,castleDraw=null,castleLoading=false;
+const mapPreview=createMapPreview();
 let cameraCache=null,cameraCacheInput=null;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
-function invalidate() { dirty = true; requestFrame(); }
-function requestFrame() { if (frameHandle === null && !document.hidden) frameHandle = requestAnimationFrame(frame); }
+function paint() { dirty = true; requestFrame(); }
+function invalidate() { mapDirty=true;paint(); }
+function requestFrame() { if (frameHandle === null && !document.hidden&&telegramActive) frameHandle = requestAnimationFrame(frame); }
 function scheduleTiles() { clearTimeout(tileTimer); tileTimer = setTimeout(refreshTiles, 160); }
 function setText(id, value) { const node = $(id), text = String(value); if (node && node.textContent !== text) node.textContent = text; }
 try { sessionToken = sessionStorage.getItem('pd-session') || ''; } catch {}
@@ -76,15 +82,15 @@ let unitControls=null,unitControlsPromise=null;
 async function ensureUnitControls(){
  if(!unitControlsPromise)unitControlsPromise=import('./unit-controls.js').then(({createUnitControls})=>{
   unitControls=createUnitControls({$,getPlayer:()=>model?.player,getUnits:()=>battlefield.units(serverNow()),getView:unitCommandView,
-   send:input=>action('/api/army/unit-order',input,'Приказ отряду принят.'),notify:toast,invalidate,
+   send:input=>action('/api/army/unit-order',input,'Приказ отряду принят.'),notify:toast,invalidate:paint,onChange:()=>surfaces.sync(),
    ownerAt:cell=>ownerCells().get(cell),onSelect:id=>battlefield.select(id),
    focus:cell=>focusAt(...cellToLatLng(cell),Math.max(2048,zoom)),
-   onOpen(){armyTargeting=false;selecting=false;selectedCells.clear();closePanels();updateUI();}});
-  unitControls.update();invalidate();return unitControls;
+   onOpen(){armyTargeting=false;selecting=false;selectedCells.clear();surfaces.closeAll('unitPanel');updateUI();}});
+  unitControls.update();paint();return unitControls;
  }).catch(()=>{unitControlsPromise=null;toast('Не удалось загрузить управление отрядами. Повторите.',true);return null;});
  return unitControlsPromise;
 }
-function unitCommandView(){return{...troopView(battlefield.units(serverNow())),shapeCell:cell=>project.shape(border(cell)),cellLabel:cell=>{const[lat,lng]=cellToLatLng(cell);return `${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;}};}
+function unitCommandView(){const center=atPoint(cw/2,ch/2);return{...troopView(battlefield.units(serverNow())),detailed:detailedMap(),revision:viewRevision,centerCell:latLngToCell(center.lat,center.lng,8),targetData:{player:model?.player,owners:ownerCells(),profiles,tiles:tileCache,now:serverNow()},shapeCell:cell=>project.shape(border(cell)),cellLabel:cell=>{const[lat,lng]=cellToLatLng(cell);return `${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;}};}
 try { troopsEnabled = localStorage.getItem('pd-troops') !== 'off'; } catch {}
 const animationLabels = { idle: 'Ожидание', walk: 'Шаг', run: 'Бег', attack: 'Атака', capture: 'Захват', death: 'Поражение' };
 function syncBattlefield() {
@@ -97,8 +103,8 @@ async function ensureTroops3D() {
   if (troopsUnavailable) return null;
   if(typeof window.WebGL2RenderingContext === 'undefined'){troopsUnavailable=true;return null;}
   if (!troopsPromise) troopsPromise = import('./troops-3d.js').then(module => {
-    troops3D = module.createTroops3D({ canvas: $('troopsCanvas'), reducedMotion, maxUnits: (window.innerWidth || 1280) < 760 ? 24 : 36, onReady: invalidate,
-      onUnavailable(id) { if (!id||!$('troopsDialog').open) { troopsUnavailable = true;troops3D?.suspendMap(); }invalidate(); } });
+    troops3D = module.createTroops3D({ canvas: $('troopsCanvas'), reducedMotion, maxUnits: (window.innerWidth || 1280) < 760 ? 24 : 36, onReady: paint,
+      onUnavailable(id) { if (!id||!$('troopsDialog').open) { troopsUnavailable = true;troops3D?.suspendMap(); }paint(); } });
     return troops3D;
   }).catch(() => { troopsUnavailable = true; return null; });
   return troopsPromise;
@@ -106,7 +112,7 @@ async function ensureTroops3D() {
 function troopView(units){return{width:cw,height:ch,zoom,units,footprintCell:cellFootprint,projectCell(cell){try{return project(...cellToLatLng(cell));}catch{return null;}}};}
 function drawTroopFallback(units,now) {
   const target=$('troopsCanvas');target.hidden=!units.length;fallbackVisible=units.length>0;
-  if(troopsUnavailable&&!troopSpritesPromise)troopSpritesPromise=import('./troops-sprites.js').then(module=>{troopSprites=module.createTroopSprites({onReady:invalidate,reducedMotion});invalidate();return troopSprites;}).catch(()=>null);
+  if(troopsUnavailable&&!troopSpritesPromise)troopSpritesPromise=import('./troops-sprites.js').then(module=>{troopSprites=module.createTroopSprites({onReady:paint,reducedMotion});paint();return troopSprites;}).catch(()=>null);
   if(troopSprites){troopSprites.render(now,{...troopView(units),canvas:target,serverNow:serverNow()});return;}
   const c=target.getContext('2d');target.width=Math.round(cw);target.height=Math.round(ch);c.clearRect(0,0,cw,ch);
   for(const{unit:u,x,y,span,elevation}of layoutTroops(units,troopView(units))){let img=troopPosters.get(u.id);if(!img){img=new Image();img.src=u.poster;img.onload=invalidate;troopPosters.set(u.id,img);}if(img.complete&&img.naturalWidth)c.drawImage(img,x-span*.7,y-span*1.18-elevation*.8,span*1.4,span*1.4);}
@@ -114,14 +120,16 @@ function drawTroopFallback(units,now) {
 const troopPosters=new Map();
 function troopsNeedFrame() {
  if($('troopsDialog').open)return !!troops3D&&!troopsUnavailable&&troops3D.needsFrame();
+ if(mapPaused||!telegramActive)return false;
  return troopsEnabled&&detailedMap()&&(!troopsUnavailable&&troops3D?troops3D.needsFrame():troopSprites?troopSprites.needsFrame():fallbackVisible&&!reducedMotion);
 }
 function drawTroops(now) {
   const inspecting = $('troopsDialog').open;
+  if(mapPaused&&!inspecting)return;
   if (!inspecting && (!troopsEnabled || !detailedMap())) { fallbackVisible=false;troopSprites?.suspend();$('troopsCanvas').hidden = true;if(!troopsMapSuspended){troops3D?.suspendMap();troopsMapSuspended=true;}return; }
   troopsMapSuspended=false;
   const units = battlefield.units(serverNow(),cell=>{try{const p=project(...cellToLatLng(cell)),margin=Math.max(160,geometry().size*.018);return p.x>=-margin&&p.x<=cw+margin&&p.y>=-margin*2&&p.y<=ch+margin;}catch{return false;}}).slice(0,mapDetail(zoom).unitLimit);
-  if (!troops3D || troopsUnavailable) { if (!troopsUnavailable && (units.length || inspecting)) ensureTroops3D().then(engine => { if (engine) invalidate(); }); if(!inspecting)drawTroopFallback(units,now); return; }
+  if (!troops3D || troopsUnavailable) { if (!troopsUnavailable && (units.length || inspecting)) ensureTroops3D().then(engine => { if (engine) paint(); }); if(!inspecting)drawTroopFallback(units,now); return; }
   fallbackVisible=false;troopSprites?.suspend();
   $('troopsCanvas').hidden = inspecting ? $('troopsCanvas').hidden : !units.length;
   try{troops3D.render(now,troopView(units));}catch{troopsUnavailable=true;troops3D.dispose();troops3D=null;if(!inspecting)drawTroopFallback(units,now);}
@@ -136,7 +144,7 @@ async function inspectTroop(faction, type = 'infantry') {
   $('troopRolePicker').innerHTML = TROOP_CLASSES.map(role => { const unit = troopFor(spec.faction, role.id); return `<button data-troop-role="${role.id}" aria-pressed="${role.id === spec.type}" class="${role.id === spec.type ? 'selected' : ''}"><img src="${unit.poster}" alt="" width="70" height="62"><b>${role.label}</b></button>`; }).join('');
   $('troopFactionPicker').innerHTML = FACTIONS.map(side => `<button data-troop-faction="${side.id}" style="--faction:${side.color}" aria-pressed="${side.id === spec.faction}" class="${side.id === spec.faction ? 'selected' : ''}"><img src="${side.logo}" alt=""><b>${side.name}</b></button>`).join('');
   $('troopAnimations').innerHTML = TROOP_ANIMATIONS.map(name => `<button data-troop-animation="${name}" aria-pressed="${name === 'walk'}" class="${name === 'walk' ? 'selected' : ''}">${animationLabels[name]}</button>`).join('');
-  if (!$('troopsDialog').open) $('troopsDialog').showModal();
+  if (!$('troopsDialog').open) showDialog('troopsDialog');
   const fallback = () => { if (generation !== troopGeneration) return; $('troopPoster').hidden = false; $('troopModelCanvas').hidden = true; $('troopAnimations').hidden = true; $('troopRotateControls').hidden = true; setText('troopStatus', 'Сейчас доступно изображение отряда.'); };
   const engine = await ensureTroops3D();
   if (generation !== troopGeneration || !$('troopsDialog').open) return;
@@ -215,7 +223,7 @@ async function inspectHeadquarters(faction) {
   $("modelHelp").hidden = false;
   setText("modelStatus", "Загружаем модель…");
   $("modelFactionPicker").innerHTML = FACTIONS.map(f => `<button data-model-faction="${f.id}" style="--faction:${f.color}" aria-pressed="${f.id === hq.id}" class="${f.id === hq.id ? "selected" : ""}" aria-label="Осмотреть ${escape(headquartersFor(f.id).name)}"><img src="${f.logo}" alt=""><b>${f.name}</b></button>`).join("");
-  if (!$("headquartersDialog").open) $("headquartersDialog").showModal();
+  if (!$("headquartersDialog").open) showDialog("headquartersDialog");
   const fallback = () => {
     if (inspectedFaction !== hq.id) return;
     $("modelPoster").hidden = false; $("modelCanvas").hidden = true; $("modelControls").hidden = true;
@@ -251,12 +259,19 @@ function playerColor(playerOrId, fallbackFaction) {
 function closeAccount() {
   $("accountPanel").hidden = true;
   $("profileButton").setAttribute("aria-expanded", "false");
+  surfaces.sync();
 }
+const surfaces=createSurfaces({document,closeUnits:()=>unitControls?.reset(),closeTutorial:()=>{if(tutorialController?.isActive())tutorialController.stop();},onChange(){
+ activePanel=[...document.querySelectorAll('[data-panel]')].find(p=>!p.hidden)?.dataset.panel||null;
+ mapPaused=surfaces.covered();$('gameRoot').classList.toggle('surface-open',mapPaused);
+ $('profileButton').setAttribute('aria-expanded',String(!$('accountPanel').hidden));
+ document.querySelectorAll('[data-open]').forEach(b=>b.setAttribute('aria-expanded',String(b.dataset.open===activePanel)));
+ $('armySquads').setAttribute('aria-expanded',String(!!unitControls?.isOpen()));
+ telegramShell.backVisible(mapPaused||!!unitControls?.isOpen());paint();
+}});
+function showDialog(id){surfaces.showDialog(id);}
 function closePanels() {
-  activePanel = null;
-  document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = true);
-  document.querySelectorAll("[data-open]").forEach((b) => b.setAttribute("aria-expanded", "false"));
-  invalidate();
+  surfaces.closeAll();
 }
 function openPanel(name) {
   const wasOpen = activePanel === name;
@@ -289,7 +304,7 @@ function openPanel(name) {
   activePanel = name;
   document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = p.dataset.panel !== name);
   document.querySelectorAll("[data-open]").forEach((b) => b.setAttribute("aria-expanded", String(b.dataset.open === name)));
-  invalidate();
+  surfaces.sync();paint();
 }
 function toast(message, error = false) {
   clearTimeout(toastTimer);
@@ -477,17 +492,14 @@ async function refreshAuth() {
     await refreshState(true);
   }
   else {
-    resetWorldState();
     updateUI();
   }
 }
 async function autoMiniAppLogin() {
   const initData = telegramLaunchData || readTelegramInitData(location, window.Telegram?.WebApp);
   if (account || authBusy || !providers.telegram?.enabled || !initData) return;
-  authBusy = true;
-  $('telegramLogin').disabled = true;
-  $('telegramLogin').setAttribute('aria-busy', 'true');
-  $('authNotice').textContent = 'Подключаем ваш командный центр…';
+  setAuthBusy(true);
+  setAuthNotice('Подключаем ваш командный центр…');
   try {
     // A previous challenge may have expired while the app was suspended.
     await refreshAuth();
@@ -498,30 +510,36 @@ async function autoMiniAppLogin() {
     removeTelegramInitData(location, history);
   } catch (e) {
     const message = ['TimeoutError', 'AbortError', 'TypeError'].includes(e.name) ? 'Нет связи с сервером. Нажмите «Войти», чтобы повторить.' : e.message;
-    $('authNotice').textContent = message;
+    setAuthNotice(message);
     toast(message, true);
     if (e.status === 401) { launchExpired = true; $("telegramLogin").innerHTML = "Открыть игру заново ↗"; }
   } finally {
-    authBusy = false;
-    $('telegramLogin').disabled = false;
-    $('telegramLogin').setAttribute('aria-busy', 'false');
+    setAuthBusy(false);
   }
+}
+function setAuthBusy(busy) {
+  authBusy = busy;
+  for (const id of ['telegramLogin', 'modalTelegramBtn', 'guestLogin', 'credRegisterBtn', 'credLoginBtn']) {
+    $(id).disabled = busy;
+    $(id).setAttribute('aria-busy', String(busy));
+  }
+  $('modalGoogleBtn').disabled = busy || !providers.google?.enabled;
+}
+function setAuthNotice(message) {
+  setText('authNotice', message);
+  setText('modalAuthNotice', message);
 }
 async function initAuth() {
   providers = await api("/api/auth/providers");
   await refreshAuth();
-  $("googleLogin").hidden = !providers.google?.enabled;
-  $("googleLogin").disabled = !providers.google?.enabled;
-  $("googleLogin").innerHTML = providers.google?.enabled ? "Продолжить с Google" : 'Google <span class="soon-label">скоро</span>';
-  if ($("modalGoogleSoon")) $("modalGoogleSoon").hidden = !!providers.google?.enabled;
-  $("telegramLogin").hidden = !providers.telegram?.enabled;
+  $('modalGoogleBtn').hidden = !providers.google?.enabled;
+  $('modalGoogleBtn').disabled = !providers.google?.enabled;
+  $('modalTelegramBtn').hidden = !providers.telegram?.enabled;
+  $("telegramLogin").hidden = !providers.telegram?.enabled || !telegramLaunchData;
   $("devAuth").hidden = !providers.development;
-  $('browserTelegramLogin').hidden = !providers.telegram?.enabled || !!telegramLaunchData;
   $('telegramBotLink').hidden = !providers.telegram?.enabled;
   $('telegramBotLink').href = telegramLink(providers.telegram?.botUsername, false) || '#';
-  setText("authNotice", providers.telegram?.enabled ? telegramLaunchData ? 'Входим через Telegram…' : 'Откройте игру в Telegram или войдите прямо здесь.' : providers.development ? "" : "Вход через Telegram временно недоступен. Попробуйте позже.");
-  $('guestLogin').hidden = !!telegramLaunchData;
-  setText('authNotice', telegramLaunchData ? 'Входим через Telegram…' : 'Играйте прямо на сайте. Прогресс гостя хранится в этом браузере.');
+  setAuthNotice(telegramLaunchData ? 'Входим через Telegram…' : 'Войдите или играйте без регистрации прямо здесь.');
   await autoMiniAppLogin();
 }
 function acceptModel(next) {
@@ -550,7 +568,7 @@ function acceptModel(next) {
     $("refDot").hidden = !(next.player.reserveEnergy > 0);
   }
   updateUI();
-  invalidate();
+  if(!prior||prior.baseCell!==next.player?.baseCell||prior.color!==next.player?.color||prior.azimuth!==next.player?.azimuth)invalidate();else paint();
 }
 async function refreshState(force = false) {
   if (!account || pollBusy || stopped || document.hidden && !force) return;
@@ -603,6 +621,7 @@ function updateUI() {
   setText("missionTitle", p ? `Штаб: уровень ${p.level}` : account ? "Время выбрать сторону" : "Ваша история начнётся здесь");
   setText("missionCopy", p ? `${fmt(p.pixels)} ячеек под вашим командованием. ${p.expansionBlocked ? "Смените направление, чтобы продолжить экспансию." : "Усильте базу, чтобы расширить пределы своей территории."}` : account ? "Изучите бонусы фракций. Затем выберите свободную сушу и разверните свой первый штаб." : "Пять фракций. Одна планета. Выберите сторону и превратите первую ячейку в империю.");
   $("missionSteps").hidden = !!p;
+  $('worldIntel').hidden=!!p;
   $("missionBtn").hidden = !p;
   $("armyControls").hidden = !p;
   if(p&&!unitControls)ensureUnitControls();
@@ -720,9 +739,9 @@ function home() {
 }
 function fit() {
   const rect = $("mapViewport").getBoundingClientRect();
-  cw = rect.width;
-  ch = rect.height;
-  dpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAP_LIMITS.mapPixels/Math.max(1,cw*ch)));
+  const ratio=Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAP_LIMITS.mapPixels/Math.max(1,rect.width*rect.height)));
+  if(cw===rect.width&&ch===rect.height&&dpr===ratio&&canvas.width)return;
+  cw = rect.width;ch = rect.height;dpr=ratio;
   canvas.width = Math.round(cw * dpr);
   canvas.height = Math.round(ch * dpr);
   mapLayer.width = canvas.width;
@@ -834,7 +853,7 @@ function drawMap(now) {
   const g = geometry();
   ctx.imageSmoothingEnabled = false;
   if(!g.globe)for(const p of g.rasterPatches()){ctx.save();ctx.translate(p.x,p.y+(p.flipY?p.height:0));ctx.scale(1,p.flipY?-1:1);ctx.drawImage(terrain,0,0,p.width,p.height);ctx.restore();}
-  landscapeView.draw(ctx,{width:cw,height:ch,zoom:detailedMap()?zoom:Math.min(767,zoom),project,atPoint,camera:g,moving:!!(drag||pinch),fallback:terrain,baseCells:[...profiles.values(),model?.player].filter(Boolean).map(p=>p.baseCell),roads:[...profiles.values(),model?.player].filter(Boolean).flatMap(p=>(p.army?.units||[]).flatMap(u=>[u.cell,...(u.waypoints||[])]))});
+  landscapeView.draw(ctx,{width:cw,height:ch,zoom:detailedMap()?zoom:Math.min(767,zoom),project,atPoint,camera:g,moving:!!(moved||pinch),fallback:terrain,baseCells:[...profiles.values(),model?.player].filter(Boolean).map(p=>p.baseCell)});
   // Tactical latitude/longitude grid stays on the cached map layer.
   if (zoom < 12) drawWorldGrid(ctx,g);
   const center = atPoint(cw / 2, ch / 2);
@@ -851,7 +870,6 @@ function drawMap(now) {
       ctx.stroke();
     }
   }
-  if (activePanel === "sector") drawSector(model?.player);
   if(detailedMap())for (const [cell, id] of ownerCells()) {
     if (!cellVisible(cell)) continue;
     const owner = playerById(id), color = playerColor(owner, owner?.faction);
@@ -941,7 +959,11 @@ function drawMap(now) {
       ctx.textAlign = "left";
     }
   }
-  drawClanHallCastle(ctx, { project, zoom, cw, ch, detailed: detailedMap(), now });
+  const castle=project(CLAN_HALL_CENTER_COORDS.lat,CLAN_HALL_CENTER_COORDS.lng);
+  if(castle.x>=-180&&castle.x<=cw+180&&castle.y>=-180&&castle.y<=ch+180){
+   if(castleDraw)castleDraw(ctx,{project,zoom,cw,ch,detailed:detailedMap(),now});
+   else if(!castleLoading){castleLoading=true;import('./clan-hall-castle.js').then(m=>{castleDraw=m.drawClanHallCastle;invalidate();}).catch(()=>{castleLoading=false;});}
+  }
   if (mouse && placing && detailedMap()) {
     const p = atPoint(mouse.x, mouse.y), cell = latLngToCell(p.lat, p.lng, 8);
     cellPath(cell);
@@ -957,12 +979,17 @@ function drawMap(now) {
   }
 }
 function draw(now) {
-  if (dirty) {
+  const camera=geometry(),moving=!!(moved&&drag||pinch);
+  if (mapDirty&&(!mapPaused||!mapPaints)&&mapPreview.shouldPaint(camera,now,moving)) {
     ctx = mapCtx;
     drawingGeometry = geometry();
     try { drawMap(now); } finally { ctx = displayCtx; drawingGeometry = null; }
+    mapDirty=false;mapPaints++;mapPreview.commit(camera,now);
   }
-  ctx.drawImage(mapLayer, 0, 0, cw, ch);
+  ctx.fillStyle='#17372d';ctx.fillRect(0,0,cw,ch);
+  if(moving&&!camera.globe)for(const p of camera.rasterPatches()){ctx.save();ctx.translate(p.x,p.y+(p.flipY?p.height:0));ctx.scale(1,p.flipY?-1:1);ctx.drawImage(terrain,0,0,p.width,p.height);ctx.restore();}
+  mapPreview.draw(ctx,mapLayer,camera,cw,ch);
+  if(activePanel==='sector')drawSector(model?.player);
   for (let i = effects.length - 1; i >= 0; i--) {
     const e = effects[i], age = (now - e.at) / 1500;
     if (age > 1) {
@@ -1007,21 +1034,22 @@ async function refreshTiles(force=false) {
       const result=await api('/api/tiles?parents='+encodeURIComponent(request.parents.join(','))+'&versions='+encodeURIComponent(JSON.stringify(versions)),undefined,{signal:controller.signal,public:true});
       if(generation!==authGeneration||revision!==viewRevision||account?.id!==id||controller.signal.aborted)return;
       if(Number.isFinite(result.serverTime))serverOffset=result.serverTime-Date.now();
-      for(const p of result.players||[]){profiles.delete(p.id);profiles.set(p.id,p);}
+      let changed=false;
+      for(const p of result.players||[]){const old=profiles.get(p.id);if(!old||old.baseCell!==p.baseCell||old.color!==p.color||old.faction!==p.faction)changed=true;profiles.delete(p.id);profiles.set(p.id,p);}
       for(const conflict of result.conflicts||[])tileConflicts.set(conflict.id,conflict);
       for(const t of result.tiles||[]){
-        if(t.unchanged)continue;ownershipDirty=true;
+        if(t.unchanged)continue;ownershipDirty=true;changed=true;
         const old=tileCache.get(t.parent),cells=t.full?new Map():new Map(old?.cells||[]);
         if(t.full){for(const [owner,bits]of Object.entries(t.owners||{}))for(const cell of decodeTile(t.parent,bits))cells.set(cell,owner);}
         else for(const change of t.changes||[]){if(change.owner){cells.set(change.cell,change.owner);if(!reducedMotion&&effects.length<40)effects.push({cell:change.cell,owner:change.owner,at:performance.now()});}else cells.delete(change.cell);}
-        tileCache.delete(t.parent);tileCache.set(t.parent,{version:t.version,cells});
+        tileCache.delete(t.parent);tileCache.set(t.parent,{version:t.version,cells,locks:t.locks||{}});
       }
       const keep=new Set(request.parents);
       for(const key of tileCache.keys())if(tileCache.size>MAP_LIMITS.cachedTiles&&!keep.has(key)){tileCache.delete(key);ownershipDirty=true;}
       while(profiles.size>MAP_LIMITS.profiles){const key=profiles.keys().next().value;if(key===id){const value=profiles.get(key);profiles.delete(key);profiles.set(key,value);}else profiles.delete(key);}
-      syncBattlefield();
+      syncBattlefield();if(changed)mapDirty=true;
     }
-    lastMapRequest={key:request.key,at:Date.now()};invalidate();
+    lastMapRequest={key:request.key,at:Date.now()};if(request.kind==='overview')mapDirty=true;paint();
   }catch(error){
     if(generation===authGeneration&&error.status===401){signedOut();await refreshAuth();}
   }finally{
@@ -1043,6 +1071,8 @@ function beginPlacement() {
 }
 canvas.addEventListener("pointerdown", (e) => {
   if(e.button===2)return;
+  if(mapPaused&&!document.querySelector('dialog[open]'))surfaces.closeAll();
+  if(e.pointerType==='touch')e.preventDefault?.();
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 1) {
@@ -1060,6 +1090,7 @@ canvas.addEventListener("pointerdown", (e) => {
   }
 });
 canvas.addEventListener("pointermove", (e) => {
+  if(pointers.has(e.pointerId))e.preventDefault?.();
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch && pointers.size >= 2) {
     const [a, b] = [...pointers.values()], rect = canvas.getBoundingClientRect(), x = (a.x + b.x) / 2 - rect.left, y = (a.y + b.y) / 2 - rect.top;
@@ -1083,8 +1114,11 @@ canvas.addEventListener("pointermove", (e) => {
       return;
     }
   }
+  if(e.pointerType==='touch')return;
   mouse = pointFor(e);
   const p = atPoint(mouse.x, mouse.y);
+  if(!p.valid)return;
+  if(unitControls?.state().targetMode){unitControls.hover(latLngToCell(p.lat,p.lng,8));$('mapTooltip').hidden=true;return;}
   if (detailedMap() && !placing) {
     const cell = latLngToCell(p.lat, p.lng, 8), owner = ownerCells().get(cell), known = playerById(owner);
     if (isClanHallCell(cell)) {
@@ -1149,7 +1183,7 @@ canvas.addEventListener("pointerup", async (e) => {
       return;
     }
     beep(360);
-    $("clanHallDialog")?.showModal();
+    showDialog("clanHallDialog");
     toast(CLAN_HALL_CENTER_COORDS.eventMessage, false);
     return;
   }
@@ -1180,11 +1214,7 @@ canvas.addEventListener("pointerup", async (e) => {
       await refreshLeaderboard();
       home();
       appendEvent("База основана. Началась экспансия.", "base-founded");
-      if (!isTutorialDone()) {
-        setTimeout(() => {
-          tutorialController?.start();
-        }, 600);
-      }
+      toast('Штаб готов. Откройте «Отряды», чтобы управлять бойцами.');
     }
   } else if (selecting && model?.player) {
     if (ownerCells().get(cell) === account.id && cell !== model.player.baseCell) {
@@ -1199,6 +1229,7 @@ canvas.addEventListener("pointerup", async (e) => {
     await (await ensureUnitControls())?.click({x:point.x,y:point.y,cell});
   }
 });
+canvas.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
 canvas.addEventListener('contextmenu',async event=>{
  if(!model?.player||placing||selecting||!detailedMap())return;
  event.preventDefault();const point=pointFor(event),p=atPoint(point.x,point.y);if(!p.valid)return;
@@ -1229,9 +1260,9 @@ canvas.addEventListener("wheel", (e) => {
 }, { passive: false });
 $("zoomIn").onclick = () => changeZoom(zoom * 2);
 $("zoomOut").onclick = () => changeZoom(zoom / 2);
-$("zoomReset").onclick = () => changeZoom(1);
-$("mapFlat").onclick = () => setMapMode('flat');
-$("mapGlobe").onclick = () => setMapMode('globe');
+$("zoomReset").onclick = () => {closePanels();changeZoom(1);};
+$("mapFlat").onclick = () => {closePanels();setMapMode('flat');};
+$("mapGlobe").onclick = () => {closePanels();setMapMode('globe');};
 $("homeBtn").onclick = home;
 $("startBtn").onclick = beginPlacement;
 $("cancelPlacement").onclick = () => {
@@ -1250,7 +1281,7 @@ $("factionPicker").onclick = (e) => {
     beep(400);
   }
 };
-$("factionPreview").onclick = () => $("factionsDialog").showModal();
+$("factionPreview").onclick = () => showDialog("factionsDialog");
 $('troopsBtn').onclick = () => inspectTroop(model?.player?.faction || selectedFaction);
 $('troopRolePicker').onclick = event => { const button = event.target.closest('[data-troop-role]'); if (button) return inspectTroop(inspectingTroop?.faction || selectedFaction, button.dataset.troopRole); };
 $('troopFactionPicker').onclick = event => { const button = event.target.closest('[data-troop-faction]'); if (button) return inspectTroop(button.dataset.troopFaction, inspectingTroop?.type || 'infantry'); };
@@ -1259,14 +1290,14 @@ $('troopRotateLeft').onclick = () => troops3D?.rotate(-.25);
 $('troopRotateRight').onclick = () => troops3D?.rotate(.25);
 $('troopsDialog').addEventListener('close', () => { troopGeneration++; troops3D?.close(); invalidate(); });
 $('troopsToggle').setAttribute('aria-pressed', String(troopsEnabled));
-$('troopsToggle').onclick = () => { troopsEnabled = !troopsEnabled; $('troopsToggle').setAttribute('aria-pressed', String(troopsEnabled)); try { localStorage.setItem('pd-troops', troopsEnabled ? 'on' : 'off'); } catch {} invalidate(); };
+$('troopsToggle').onclick = () => { closePanels();troopsEnabled = !troopsEnabled; $('troopsToggle').setAttribute('aria-pressed', String(troopsEnabled)); try { localStorage.setItem('pd-troops', troopsEnabled ? 'on' : 'off'); } catch {} invalidate(); };
 let troopPointer = null;
 $('troopModelCanvas').addEventListener('pointerdown', event => { troopPointer = { id: event.pointerId, x: event.clientX }; $('troopModelCanvas').setPointerCapture(event.pointerId); });
 $('troopModelCanvas').addEventListener('pointermove', event => { if (troopPointer?.id !== event.pointerId) return; troops3D?.rotate((event.clientX - troopPointer.x) * .012); troopPointer.x = event.clientX; });
 for (const name of ['pointerup','pointercancel','lostpointercapture']) $('troopModelCanvas').addEventListener(name, () => { troopPointer = null; });
 $('troopModelCanvas').addEventListener('keydown', event => { if (!['ArrowLeft','ArrowRight'].includes(event.key)) return; event.preventDefault(); troops3D?.rotate(event.key === 'ArrowLeft' ? -.2 : .2); });
 
-$("factionsBtn").onclick = () => $("factionsDialog").showModal();
+$("factionsBtn").onclick = () => showDialog("factionsDialog");
 $("factionAtlas").onclick = event => {
   const button = event.target.closest("[data-model]");
   if (!button) return;
@@ -1284,7 +1315,7 @@ $("modelRotateRight").onclick = () => headquarters3D?.rotate($("modelCanvas"), .
 $("modelReset").onclick = () => headquarters3D?.reset($("modelCanvas"));
 $("helpBtn").onclick = () => {
   closeAccount();
-  $("helpDialog").showModal();
+  showDialog("helpDialog");
 };
 $("syncBtn").onclick = () => refreshState(true);
 $("soundBtn").onclick = () => {
@@ -1295,30 +1326,48 @@ $("soundBtn").onclick = () => {
   beep();
 };
 $('guestLogin').onclick = async () => {
-  $('guestLogin').disabled=true;try { await refreshAuth();if(!account){const result=await action('/api/auth/guest',{name:'Командир',fingerprint:await fingerprint()});if(!result)return;await refreshAuth();}home();}finally{$('guestLogin').disabled=false;}
+  if (authBusy) return;
+  setAuthBusy(true);
+  setText('modalAuthNotice', 'Открываем игру…');
+  try {
+    await refreshAuth();
+    if (!account) {
+      await api('/api/auth/guest', { name: 'Командир', fingerprint: await fingerprint() });
+      await refreshAuth();
+    }
+    home();
+  } catch (error) {
+    setText('modalAuthNotice', 'Не удалось войти. Проверьте связь и нажмите «Играть без регистрации» ещё раз.');
+    toast(error.message, true);
+  } finally {
+    setAuthBusy(false);
+  }
 };
 $('armyExpand').onclick=()=>action('/api/army/order',{mode:'expand'},'Войска ищут свободную территорию.');
 $('armyDefend').onclick=()=>action('/api/army/order',{mode:'defend'},'Войска возвращаются к штабу.');
-$('armyAttack').onclick=()=>{unitControls?.reset();armyTargeting=!armyTargeting;updateUI();toast(armyTargeting?'Нажмите на цель на карте.':'Выбор цели отменён.');};
+$('armyAttack').onclick=()=>{closePanels();unitControls?.reset();armyTargeting=!armyTargeting;updateUI();toast(armyTargeting?'Нажмите на цель на карте.':'Выбор цели отменён.');};
 $('armySquads').onclick=async()=>{(await ensureUnitControls())?.open();};
 $("devLogin").onclick = async () => {
   const result = await action("/api/auth/dev", { name: $("devName").value.trim() || "Командир", fingerprint: await fingerprint() });
   if (result) await refreshAuth();
 };
-$("googleLogin").onclick = async (e) => {
-  e.preventDefault();
-  if (!providers.google?.enabled) return;
-  location.href = "/api/auth/google/start?fingerprint=" + encodeURIComponent(await fingerprint());
-};
 window.onTelegramAuth = async (user) => {
-  const result = await action("/api/auth/telegram", { telegram: user, fingerprint: await fingerprint() });
-  if (result) {
-    if ($("authModal")?.open) $("authModal").close();
+  if (authBusy) return;
+  setAuthBusy(true);
+  try {
     await refreshAuth();
+    if (account) return;
+    await api('/api/auth/telegram', { telegram: user, fingerprint: await fingerprint() });
+    await refreshAuth();
+  } catch (error) {
+    setAuthNotice(error.message || 'Не удалось войти через Telegram. Повторите попытку.');
+    toast(error.message, true);
+  } finally {
+    setAuthBusy(false);
   }
 };
-window.openTelegramWidget = (targetId = "telegramWidget") => {
-  const target = $(targetId) || $("telegramWidget");
+window.openTelegramWidget = () => {
+  const target = $('modalTelegramWidget');
   if (!providers.telegram?.enabled || target.children.length) return;
   const script = document.createElement("script");
   script.src = "https://telegram.org/js/telegram-widget.js?22";
@@ -1328,26 +1377,21 @@ window.openTelegramWidget = (targetId = "telegramWidget") => {
   script.setAttribute("data-onauth", "onTelegramAuth(user)");
   script.onerror = () => {
     target.innerHTML = '';
-    setText('authNotice', 'Не удалось загрузить окно входа. Откройте чат бота и нажмите «Играть».');
-    if ($('modalAuthNotice')) setText('modalAuthNotice', 'Не удалось загрузить окно входа. Откройте чат бота и нажмите «Играть».');
+    setAuthNotice('Не удалось загрузить вход Telegram. Нажмите «Через Telegram» ещё раз или выберите другой способ входа.');
   };
   target.appendChild(script);
 };
-$("browserTelegramLogin").onclick = () => window.openTelegramWidget();
 $("telegramLogin").onclick = () => {
   if (telegramLaunchData && !launchExpired) return autoMiniAppLogin();
-  const url = telegramLink(providers.telegram?.botUsername);
+  const url = telegramLink(providers.telegram?.botUsername, false);
   if (!url) return;
   const webApp = window.Telegram?.WebApp;
   if (webApp?.initData && webApp.openTelegramLink) webApp.openTelegramLink(url);
   else location.assign(url);
 };
 function openAuthModal() {
-  setText("modalAuthNotice", "");
-  $("authModal")?.showModal();
-  if (providers.telegram?.enabled) {
-    window.openTelegramWidget("modalTelegramWidget");
-  }
+  setText('modalAuthNotice', telegramLaunchData && !account ? $('authNotice').textContent : '');
+  showDialog("authModal");
 }
 function closeAuthModal() {
   $("authModal")?.close();
@@ -1356,36 +1400,21 @@ if ($("openAuthModalBtn")) $("openAuthModalBtn").onclick = () => openAuthModal()
 if ($("closeAuthModalBtn")) $("closeAuthModalBtn").onclick = () => closeAuthModal();
 
 if ($("modalTelegramBtn")) $("modalTelegramBtn").onclick = () => {
-  if (telegramLaunchData && !launchExpired) {
-    closeAuthModal();
-    return autoMiniAppLogin();
-  }
-  const botUser = providers.telegram?.botUsername || 'nodenoden_bot';
-  // Use direct bot link without broken ?startapp parameter that causes "bot url invalid"
-  const url = `https://t.me/${botUser}`;
-  const webApp = window.Telegram?.WebApp;
-  if (webApp?.initData && webApp.openTelegramLink) {
-    webApp.openTelegramLink(url);
-  } else {
-    window.open(url, '_blank', 'noopener,noreferrer');
-    window.openTelegramWidget("modalTelegramWidget");
-    setText("modalAuthNotice", "Открываем бота в Telegram... Либо подтвердите вход через виджет ниже:");
-  }
+  if (!providers.telegram?.enabled) return;
+  if (telegramLaunchData) return $('telegramLogin').onclick();
+  window.openTelegramWidget();
+  setText('modalAuthNotice', 'Подтвердите вход в виджете Telegram. Игра продолжится в этом окне.');
 };
 
 if ($("modalGoogleBtn")) $("modalGoogleBtn").onclick = async (e) => {
   e.preventDefault();
   if (providers.google?.enabled) {
     location.href = "/api/auth/google/start?fingerprint=" + encodeURIComponent(await fingerprint());
-  } else {
-    $("credUsername").value = "";
-    $("credUsername").placeholder = "Ваша_почта@gmail.com";
-    $("credUsername").focus();
-    setText("modalAuthNotice", "Введите вашу Google-почту (@gmail.com) и пароль для быстрой регистрации:");
   }
 };
 
 async function submitCredentials(isRegister) {
+  if (authBusy) return;
   const username = $("credUsername").value.trim();
   const password = $("credPassword").value;
   if (!username) {
@@ -1407,8 +1436,7 @@ async function submitCredentials(isRegister) {
     return;
   }
 
-  const btn = isRegister ? $("credRegisterBtn") : $("credLoginBtn");
-  btn.disabled = true;
+  setAuthBusy(true);
   setText("modalAuthNotice", isRegister ? "Создаём аккаунт..." : "Входим...");
 
   try {
@@ -1417,7 +1445,6 @@ async function submitCredentials(isRegister) {
     if (result?.sessionToken) {
       saveSession(result.sessionToken);
     }
-    closeAuthModal();
     await refreshAuth();
     toast(isRegister ? "Добро пожаловать на службу, Командир!" : "С возвращением на базу!");
   } catch (err) {
@@ -1425,7 +1452,7 @@ async function submitCredentials(isRegister) {
     setText("modalAuthNotice", msg);
     toast(msg, true);
   } finally {
-    btn.disabled = false;
+    setAuthBusy(false);
   }
 }
 
@@ -1468,7 +1495,7 @@ $("cancelSelection").onclick = () => {
   updateUI();
   invalidate();
 };
-$("abandonBtn").onclick = () => $("abandonDialog").showModal();
+$("abandonBtn").onclick = () => showDialog("abandonDialog");
 $("confirmAbandon").onclick = async () => {
   const result = await action("/api/abandon", { cells: [...selectedCells] }, "Ячейки освобождены и закрыты для захвата на 12 часов.");
   if (result) {
@@ -1480,14 +1507,18 @@ $("confirmAbandon").onclick = async () => {
 };
 async function openShop() {
   closeAccount();
-  const shop = await api("/api/shop");
+  showDialog('shopDialog');
+  setText('shopNotice','Загружаем магазин…');$('shopItems').innerHTML='';
+  let shop;
+  try{shop=await api('/api/shop');}catch(error){if($('shopDialog').open){setText('shopNotice','Не удалось загрузить. Проверьте связь и повторите.');$('shopItems').innerHTML='<button class="secondary-button" data-shop-retry>Повторить</button>';}throw error;}
+  if(!$('shopDialog').open)return;
   setText("shopNotice", shop.payments.enabled ? "Выберите кристаллы или VIP для своей базы." : "Покупки скоро откроются. Кристаллы уже можно получать в наградах.");
   $("shopItems").innerHTML = shop.items.filter((item) => item.available !== false).map((item) => `<div class="shop-item"><b>${item.crystals ? fmt(item.crystals) + " кристаллов" : "VIP"}</b><span>${(item.priceCents / 100).toLocaleString("en-US", { style: "currency", currency: item.currency })}${item.vipDays ? " / месяц" : ""}</span><button class="primary-button" data-sku="${item.id}" ${!shop.payments.enabled || !model?.player ? "disabled" : ""}>${shop.payments.enabled ? "Купить" : "Скоро"}</button>${item.vipDays ? "<small>Две очереди улучшений</small>" : ""}</div>`).join("");
-  $("shopDialog").showModal();
   updateUI();
 }
 $("shopBtn").onclick = $("crystalsBtn").onclick = () => openShop().catch((e) => toast(e.message, true));
 $("shopItems").onclick = async (e) => {
+  if(e.target.closest('[data-shop-retry]')){await openShop().catch(error=>toast(error.message,true));return;}
   const button = e.target.closest("[data-sku]");
   if (!button) return;
   const result = await action("/api/checkout", { sku: button.dataset.sku });
@@ -1497,7 +1528,7 @@ $("billingBtn").onclick = async () => {
   const result = await action("/api/billing/portal", {});
   if (result?.url) location.assign(result.url);
 };
-$("cancelSubscriptionBtn").onclick = () => $("cancelBillingDialog").showModal();
+$("cancelSubscriptionBtn").onclick = () => showDialog("cancelBillingDialog");
 $("confirmCancelBilling").onclick = async () => {
   const result = await action("/api/billing/cancel", {}, "Продление VIP отключено. Оплаченный период сохранён.");
   if (result) {
@@ -1555,7 +1586,7 @@ async function useAbility(id, resetCooldown = false) {
     setText("abilityDialogTitle", factionAbilityName(model.player.faction, id));
     setText("abilityDialogEffect", `+${definition.bonus * 100}% к скорости захвата на ${effectTime(definition.durationMs)}.`);
     setText("abilityDialogNote", (state.activeUntil || 0) > serverNow() ? "Повтор обновит длительность текущего эффекта. Его сила не складывается с предыдущим запуском." : "Сбросьте ожидание и запустите способность снова.");
-    $("abilityDialog").showModal();
+    showDialog("abilityDialog");
     updateAbilities();
     return;
   }
@@ -1629,6 +1660,7 @@ $("profileButton").onclick = () => {
   $("spawnCard").hidden = !!model?.player || placing;
   $("accountPanel").hidden = wasOpen;
   $("profileButton").setAttribute("aria-expanded", String(!wasOpen));
+  surfaces.sync();
 };
 document.addEventListener("pointerdown", (e) => {
   if (!$("accountPanel").hidden && !$("accountPanel").contains(e.target) && !$("profileButton").contains(e.target)) closeAccount();
@@ -1642,6 +1674,7 @@ for (const dialog of document.querySelectorAll("dialog")) dialog.onclick = (e) =
 };
 window.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input,textarea,select") || document.querySelector("dialog[open]")) return;
+  if(mapPaused&&e.key!=='Escape')return;
   if(unitControls?.key(e)){e.preventDefault();return;}
   if (/^[1-4]$/.test(e.key) && !e.repeat && model?.player) useAbility(ABILITIES[Number(e.key) - 1].id);
   if (e.key === "+" || e.key === "=") changeZoom(zoom * 2);
@@ -1686,48 +1719,20 @@ $("missionBtn").onclick = () => openPanel("base");
 const unlockedAchievements = new Set();
 let achievementsInitialized = false;
 
-function showAchievementWoW(ach) {
-  const lang = getLang();
-  setText("wowTitle", ach.title[lang] || ach.title.ru);
-  setText("wowDesc", ach.desc[lang] || ach.desc.ru);
-  setText("wowPointsVal", `+${ach.points}`);
-  const shield = $("wowAchievement")?.querySelector('.wow-shield');
-  if (shield) shield.textContent = ach.icon || '🏆';
-
-  if ($("wowAchievement")) {
-    $("wowAchievement").hidden = false;
-    $("wowAchievement").classList.remove("hide");
-    $("wowAchievement").classList.add("show");
-  }
-
-  playAchievementFanfare();
-  launchFireworks($("saluteCanvas"));
-
-  setTimeout(() => {
-    if ($("wowAchievement")) {
-      $("wowAchievement").classList.remove("show");
-      $("wowAchievement").classList.add("hide");
-      setTimeout(() => {
-        if ($("wowAchievement")) $("wowAchievement").hidden = true;
-      }, 500);
-    }
-  }, 3500);
+function announceAchievement(ach,count) {
+  toast(`Достижение: ${ach.title[getLang()] || ach.title.ru}${count>1?' · ещё '+(count-1):''}`);
+  if(sound)playAchievementFanfare();
 }
-
 function checkAchievements(p) {
-  if (!p) return;
-  for (const ach of ACHIEVEMENTS) {
-    if (ach.check(p)) {
-      if (!unlockedAchievements.has(ach.id)) {
-        unlockedAchievements.add(ach.id);
-        if (achievementsInitialized) {
-          showAchievementWoW(ach);
-          appendEvent(`Достижение получено: ${ach.title[getLang()] || ach.title.ru}`, `ach:${ach.id}`);
-        }
-      }
-    }
+  if(!p)return;
+  const earned=[];
+  for(const ach of ACHIEVEMENTS)if(ach.check(p)&&!unlockedAchievements.has(ach.id)){
+    unlockedAchievements.add(ach.id);
+    if(achievementsInitialized){earned.push(ach);appendEvent(`Достижение получено: ${ach.title[getLang()]||ach.title.ru}`,`ach:${ach.id}`);}
   }
-  achievementsInitialized = true;
+  // A single quiet notification avoids overlapping banners and particle loops.
+  if(earned.length)announceAchievement(earned[0],earned.length);
+  achievementsInitialized=true;
 }
 
 function renderAchievementsDialog() {
@@ -1843,23 +1848,23 @@ function setupReferralDialogButtons() {
   if ($("openRefFromProfile")) $("openRefFromProfile").onclick = () => {
     closeAccount();
     updateReferralsUI();
-    $("referralDialog")?.showModal();
+    showDialog("referralDialog");
   };
 
   if ($("openAchFromProfile")) $("openAchFromProfile").onclick = () => {
     closeAccount();
     renderAchievementsDialog();
-    $("achievementsDialog")?.showModal();
+    showDialog("achievementsDialog");
   };
 
   if ($("achievementsBtn")) $("achievementsBtn").onclick = () => {
     renderAchievementsDialog();
-    $("achievementsDialog")?.showModal();
+    showDialog("achievementsDialog");
   };
 
   if ($("referralsBtn")) $("referralsBtn").onclick = () => {
     updateReferralsUI();
-    $("referralDialog")?.showModal();
+    showDialog("referralDialog");
   };
 }
 
@@ -2009,7 +2014,9 @@ let tutorialController = null;
 function setupTutorial() {
   tutorialController = initTutorial({
     onStepChange: ({ index, total, step, title, desc, isFirst, isLast }) => {
+      surfaces.closeAll('tutorialOverlay');
       if ($("tutorialOverlay")) $("tutorialOverlay").hidden = false;
+      surfaces.sync();
       setText("tutStepBadge", `${index + 1} / ${total}`);
       setText("tutTitle", title);
       setText("tutDesc", desc);
@@ -2029,6 +2036,7 @@ function setupTutorial() {
     onComplete: () => {
       if ($("tutorialOverlay")) $("tutorialOverlay").hidden = true;
       document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
+      surfaces.sync();
     }
   });
 
@@ -2046,31 +2054,29 @@ function setupTutorial() {
   };
 }
 
-function setupTelegram() {
-  const webApp = window.Telegram?.WebApp;
-  if (!webApp || !telegramLaunchData) return;
-  webApp.ready?.();
-  webApp.expand?.();
-  try { webApp.setHeaderColor?.('#080f19'); webApp.setBackgroundColor?.('#080f19'); } catch {}
-}
+const telegramShell=createTelegramShell({getApp:()=>window.Telegram?.WebApp,launchData:telegramLaunchData,style:document.documentElement.style,
+ onViewport:fit,onBack:()=>surfaces.back(),onActivity(active){telegramActive=active;if(active){paint();pollWorld();}else if(frameHandle!==null){cancelAnimationFrame(frameHandle);frameHandle=null;}}
+});
+function setupTelegram(){telegramShell.setup();surfaces.sync();}
 // SDK loading is optional for authentication and never blocks the game.
 window.addEventListener("load", setupTelegram);
 async function pollWorld() {
   clearTimeout(pollTimer);
-  if (document.hidden || stopped) return;
+  if (document.hidden || stopped||!telegramActive) return;
   if(account)await refreshState();else await refreshTiles();
   pollTimer = setTimeout(pollWorld, Math.min(30000, mapDetail(zoom).pollMs * 2 ** Math.min(connectionErrors, 3)));
 }
 new ResizeObserver(fit).observe($("mapViewport"));
 function frame(now) {
   frameHandle = null;
-  if (document.hidden) return;
-  if (now - lastRender > 32 && (dirty || effects.length || abilityBursts.length || troopsNeedFrame())) {
+  if (document.hidden||!telegramActive) return;
+  const animated=(!mapPaused&&(effects.length||abilityBursts.length))||troopsNeedFrame();
+  if (now - lastRender > 32 && (dirty || animated)) {
     draw(now);
     lastRender = now;
     dirty = false;
   }
-  if (dirty || effects.length || abilityBursts.length || troopsNeedFrame()) requestFrame();
+  if (dirty || animated) requestFrame();
 }
 async function init() {
   captureReferralParam();
@@ -2092,7 +2098,7 @@ async function init() {
     $("mapLoading").hidden = true;
     if (account && !model?.player && !welcomeDismissed) $("spawnCard").hidden = false;
     pollTimer = setTimeout(pollWorld, 2000);
-    setInterval(() => { if (!document.hidden && model?.player) updateUI(); }, 1000);
+    setInterval(() => { if (!document.hidden && telegramActive && model?.player) updateUI(); }, 1000);
   } catch (e) {
     $("mapLoading").innerHTML = '<span>Не удалось открыть мир.</span><button id="retryConnect" class="secondary-button">Повторить</button>';
     document.getElementById("retryConnect").onclick = () => location.reload();

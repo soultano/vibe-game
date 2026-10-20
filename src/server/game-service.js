@@ -813,6 +813,7 @@ export class GameService {
           level: player.level,
           pixels: player.pixels,
           baseCell: player.baseCell,
+          shieldUntil: player.shieldUntil ?? 0,
           troops: troopDeployment(player, now),
           frontier: (player.borderCells ?? [player.baseCell]).slice(0, 8),
           army: player.army?publicArmy({...player.army,units:player.army.units.filter(u=>inView(u.cell)||inView(u.move?.from)||inView(u.move?.to))},now):null,

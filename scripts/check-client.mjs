@@ -1,12 +1,12 @@
 // Execute real game flows without opening a browser.
 import assert from 'node:assert/strict';
 import { createClientHarness } from '../tests/helpers/client-harness.mjs';
-const { client, $, document, app, network, requests } = await createClientHarness();
+const { client, $, click, document, app, network, requests } = await createClientHarness();
 await client.ready;
 assert.equal($('mapLoading').hidden,true);assert.equal($('resourceBar').hidden,true);assert.equal($('authCard').hidden,false);assert.equal($('sectorNav').disabled,true);
-assert.equal($('googleLogin').disabled,true);assert.match($('googleLogin').innerHTML,/скоро/);
+assert.equal($('modalGoogleBtn').disabled,true);assert.equal($('modalGoogleBtn').hidden,true);
 client.draw(performance.now());
-await $('devLogin').onclick();assert.ok(client.state().account);assert.equal($('spawnCard').hidden,false);
+await click('openAuthModalBtn');await click('guestLogin');assert.equal(client.state().account.provider,'guest');assert.equal($('spawnCard').hidden,false);
 assert.equal($('gameNav').hidden,true);assert.equal($('abilityBar').hidden,true);client.openPanel('ranking');assert.equal($('spawnCard').hidden,false,'placing the first headquarters takes priority');await client.refreshState(true);assert.equal($('spawnCard').hidden,false);
 client.openPanel('base');assert.equal($('spawnCard').hidden,false);
 const swarm=document.querySelectorAll('[data-faction]').find(node=>node.dataset.faction==='swarm');$('factionPicker').onclick({target:swarm});

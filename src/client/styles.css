@@ -382,9 +382,9 @@ dialog .secondary-button { margin-top: 16px; justify-content: center; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 
 @supports (height: 100dvh) { :root { --viewport-height: 100dvh; } }
-#telegramWidget { display: flex; justify-content: center; margin-top: 8px; max-width: 100%; }
-#telegramWidget:empty { display: none; }
-#telegramWidget iframe { max-width: 100%; }
+#modalTelegramWidget { display: flex; justify-content: center; margin-top: 8px; max-width: 100%; }
+#modalTelegramWidget:empty { display: none; }
+#modalTelegramWidget iframe { max-width: 100%; }
 @media (max-height: 560px) and (max-width: 700px) { body:has(.game-panel:not([hidden])) .map-dock, body:has(.game-panel:not([hidden])) .ability-bar { visibility: hidden; } }
 
 /* One shared WebGL renderer supplies these views and cached map stamps. */
@@ -729,3 +729,56 @@ dialog .secondary-button { margin-top: 16px; justify-content: center; }
   font-size: 13px;
   font-weight: 700;
 }
+
+/* Focused game HUD: reveal secondary actions only when requested. */
+html,body,.game,.map-viewport{overscroll-behavior:none}
+.map-viewport,#worldCanvas{touch-action:none;-webkit-user-select:none;user-select:none}
+#troopsCanvas{z-index:4}.troops-gpu-layer{z-index:3;pointer-events:none}
+.game.has-base .operation-label,.game.has-base .map-readout,.game.has-base .map-legend{display:none}
+.map-header .header-actions{margin-left:auto}
+.game.has-base .brand{display:none}
+.game.has-base .resource-bar{position:static;transform:none;margin:0;max-width:calc(100% - 70px)}
+.game.has-base .resource-pill{min-width:80px;height:50px;padding:0 12px}
+.game.has-base .profile-button{width:48px;min-width:48px;padding:12px;justify-content:center}
+.game.has-base .profile-button span{display:none}
+.map-dock{width:280px;max-width:calc(100vw - 28px)}
+.map-dock button{flex:1;min-width:0}.more-symbol{font-size:21px;line-height:21px;letter-spacing:3px}
+.game.has-base .map-tools{bottom:calc(var(--bottom) + var(--dock-height) + 20px)}
+.game.surface-open .map-tools{opacity:0;pointer-events:none}
+.more-panel{width:360px}.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.menu-grid button,.display-settings>button{display:flex;align-items:center;gap:10px;min-height:48px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink);font:inherit;text-align:left}
+.menu-grid svg,.display-settings svg{width:21px;height:21px;flex-shrink:0}.menu-grid button{position:relative;font-size:13px}
+.menu-settings,.unit-extra{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.menu-settings summary,.unit-extra summary{cursor:pointer;min-height:36px;line-height:24px;color:var(--muted);font-size:13px}
+.display-settings{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:8px}
+.display-settings .map-view-switch{position:static;grid-column:1/-1;transform:none;width:100%;margin:0;display:flex}
+.display-settings .map-view-switch button{flex:1}.display-settings .lang-picker-wrap{position:relative}
+.display-settings .lang-button,.display-settings .tutorial-button{height:48px;width:100%;justify-content:center}
+.display-settings .lang-dropdown{top:auto;bottom:100%;right:0}
+#morePanel .army-controls{position:static;transform:none;max-width:none;margin:8px 0 0;padding:10px;box-shadow:none}
+#morePanel .army-controls>div{flex-wrap:wrap}#morePanel .army-controls button{flex:1;white-space:normal;min-height:44px}
+#abilitiesPanel .ability-bar{position:static;transform:none;width:100%;display:grid;grid-template-columns:1fr 1fr;height:auto;max-width:none;margin:18px 0 0;padding:8px;gap:8px}
+#abilitiesPanel .ability-button{min-width:0;min-height:90px;width:auto}
+.unit-panel{bottom:calc(var(--bottom) + var(--dock-height) + 12px);max-height:calc(var(--viewport-height) - var(--top) - var(--dock-height) - 90px);overflow:auto;overscroll-behavior:contain}
+.unit-extra .unit-command-grid{margin-top:5px}.unit-panel.targeting .unit-roster,.unit-panel.targeting #unitCommandGrid,.unit-panel.targeting .unit-extra,.unit-panel.targeting #unitDetail,.unit-panel.targeting #unitPortrait,.unit-panel.targeting #unitRouteInfo{display:none}
+.unit-panel.targeting .unit-heading{min-height:0}.unit-panel.targeting .unit-heading h2{font-size:13px;margin:0}.unit-panel.targeting #unitRole{display:none}
+.unit-panel.targeting .unit-order-status{font-size:13px}.unit-panel.targeting{border-color:#f2d893;padding:12px}
+.game.surface-open .unit-panel{display:none}
+.game-panel,.account-panel,dialog{overscroll-behavior:contain;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+@media(max-width:760px){
+ .game.has-base .map-header{display:flex;align-items:flex-start;gap:8px}.game.has-base .resource-bar{height:48px;left:auto;top:auto;width:auto}.game.has-base .resource-pill{min-width:65px;height:48px;padding:0 8px}.game.has-base .resource-pill svg{width:17px;height:17px}.game.has-base .resource-pill strong{font-size:14px}.game.has-base .resource-pill small{font-size:8px}
+ .game.has-base .map-tools{bottom:calc(var(--bottom) + var(--dock-height) + 16px)}
+ .game.has-base .game-panel,.account-panel{left:12px;right:12px;top:auto;bottom:calc(var(--bottom) + var(--dock-height) + 12px);width:auto;max-height:calc(var(--viewport-height) - var(--top) - var(--dock-height) - 86px);transform:none;padding:20px;overflow:auto}
+ .unit-panel{left:12px;right:12px;transform:none;bottom:calc(var(--bottom) + var(--dock-height) + 12px);width:auto;padding:10px;max-height:45vh}
+ .unit-panel.targeting{max-height:160px}.unit-panel.targeting .unit-order-status{margin-bottom:0}.unit-extra{margin-top:8px;padding-top:7px}
+ .map-dock{width:min(300px,calc(100vw - 28px))}
+ dialog{width:calc(100vw - 24px);max-height:calc(var(--viewport-height) - 40px);padding:22px}
+}
+@media(max-height:560px){.game.has-base .map-dock{left:50%;right:auto;transform:translateX(-50%);width:250px}.game.has-base .game-panel,.account-panel{top:calc(var(--top) + 58px);bottom:calc(var(--bottom) + var(--dock-height) + 8px);max-height:none}.unit-panel{left:12px;right:auto;transform:none;bottom:var(--bottom);width:280px;max-height:calc(var(--viewport-height) - var(--top) - 80px)}.game.has-base .map-tools{bottom:var(--bottom)} }
+
+.map-tooltip{backdrop-filter:none;-webkit-backdrop-filter:none;background:#102326f5}
+.game.surface-open .map-tooltip{display:none}
+@media(pointer:coarse){.unit-command-grid button{min-height:48px}.unit-roster button{min-width:48px;min-height:48px}}
+
+.display-settings>button{width:100%;height:auto;min-height:48px;justify-content:flex-start}
+.display-settings .factions-button span{display:inline}

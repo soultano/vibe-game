@@ -20,13 +20,13 @@ export const TUTORIAL_STEPS = [
     icon: '🏛️',
   },
   {
-    target: 'button[data-open="sector"]',
+    target: '#armySquads',
     titleKey: 'tut_sector_title',
     descKey: 'tut_sector_desc',
     icon: '🧭',
   },
   {
-    target: '#abilityBar',
+    target: 'button[data-open="more"]',
     titleKey: 'tut_combat_title',
     descKey: 'tut_combat_desc',
     icon: '⚔️',
@@ -93,9 +93,9 @@ export function initTutorial({ onStepChange, onComplete }) {
     }
   }
 
-  function endTutorial() {
+  function endTutorial(complete=true) {
     isActive = false;
-    setTutorialDone();
+    if(complete)setTutorialDone();
     onComplete?.();
   }
 
@@ -104,6 +104,7 @@ export function initTutorial({ onStepChange, onComplete }) {
     next,
     prev,
     skip: endTutorial,
+    stop: () => endTutorial(false),
     isActive: () => isActive,
   };
 }

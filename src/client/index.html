@@ -51,17 +51,6 @@
       <button class="resource-pill crystal-pill" id="crystalsBtn" aria-label="Кристаллы и магазин"><svg><use href="#i-crystal"/></svg><strong id="crystals">0</strong></button>
     </div>
     <div class="header-actions">
-      <button class="surface theme-button" id="themeToggleBtn" aria-label="Сменить тему" title="Светлая / Тёмная тема"><svg id="themeIcon"><use href="#i-sun"/></svg></button>
-      <div class="lang-picker-wrap">
-        <button class="surface lang-button" id="langBtn" aria-label="Сменить язык" title="Язык"><span id="langFlag">🇷🇺</span><span id="langCode">RU</span></button>
-        <div id="langDropdown" class="lang-dropdown surface" hidden>
-          <button data-lang="ru">🇷🇺 Русский</button>
-          <button data-lang="en">🇬🇧 English</button>
-          <button data-lang="uz">🇺🇿 O‘zbekcha</button>
-        </div>
-      </div>
-      <button class="surface tutorial-button" id="tutorialBtn" aria-label="Обучение" title="Обучение"><svg><use href="#i-help"/></svg><span>Обучение</span></button>
-      <button class="surface factions-button" id="factionsBtn"><svg><use href="#i-cell"/></svg><span id="factionsLabel">Фракции</span></button>
       <button class="surface profile-button" id="profileButton" aria-controls="accountPanel" aria-expanded="false" aria-label="Ваш аккаунт"><svg><use href="#i-person"/></svg><span id="profileName">Войти</span></button>
     </div>
   </header>
@@ -78,7 +67,7 @@
 
   <div id="connectionNotice" class="connection-notice surface" hidden><span>Нет связи</span><button id="syncBtn" aria-label="Попробовать подключиться снова">Повторить</button></div>
 
-  <aside class="army-controls surface" id="armyControls" hidden aria-label="Приказы войскам"><span id="armyStatus" role="status">Автономные войска</span><div><button id="armySquads" aria-label="Выбрать отдельный отряд">☷ Отряды</button><button id="armyExpand" title="Общий приказ заменит индивидуальные" aria-label="Автоматический захват территории">⚑ Захватывать</button><button id="armyDefend" title="Общий приказ заменит индивидуальные" aria-label="Вернуться к штабу и защищать его">♜ Защищать</button><button id="armyAttack" title="Общий приказ заменит индивидуальные" aria-label="Указать цель на карте">⌖ Цель армии</button></div></aside>
+
   <section id="unitPanel" class="unit-panel surface" hidden aria-labelledby="unitName">
     <header class="unit-heading"><img id="unitPortrait" alt="" width="64" height="64" hidden><div><small id="unitRole">Ваши войска</small><h2 id="unitName">Ваши отряды</h2><div id="unitDetail" hidden><span id="unitHp"></span><div id="unitHealth" class="unit-health" role="progressbar" aria-label="Здоровье отряда" aria-valuemin="0"><i></i></div></div></div><button id="unitClose" class="close-button" aria-label="Снять выбор отряда">×</button></header>
     <div id="unitRoster" class="unit-roster" role="group" aria-label="Выбор своего отряда"></div>
@@ -86,10 +75,14 @@
       <button id="unit-move" aria-pressed="false" aria-keyshortcuts="M"><b>↗</b><span>Идти</span><kbd>M</kbd></button>
       <button id="unit-attack" aria-pressed="false" aria-keyshortcuts="A"><b>⚔</b><span>Атаковать</span><kbd>A</kbd></button>
       <button id="unit-capture" aria-pressed="false" aria-keyshortcuts="C"><b>⚑</b><span>Захватить</span><kbd>C</kbd></button>
+    </div>
+    <details id="unitExtra" class="unit-extra"><summary>Ещё команды</summary><div class="unit-command-grid">
       <button id="unit-hold" aria-keyshortcuts="S"><b>■</b><span>Стоп</span><kbd>S</kbd></button>
       <button id="unit-auto" aria-keyshortcuts="U"><b>↻</b><span>Автономно</span><kbd>U</kbd></button>
       <button id="unit-focus" aria-keyshortcuts="F"><b>⊙</b><span>К отряду</span><kbd>F</kbd></button>
-    </div>
+
+    </div></details>
+    <button id="unitCancelTarget" class="text-button" hidden>Отмена выбора цели</button>
     <p id="unitOrderStatus" class="unit-order-status" role="status" aria-live="polite"></p><p id="unitRouteInfo" class="unit-route-info"></p>
   </section>
   <section class="floating-card welcome-card" id="authCard" aria-labelledby="welcomeTitle">
@@ -100,15 +93,7 @@
     <p class="card-description">Захватывайте землю. Усиливайте штаб.<br>Оставьте свой след на карте мира.</p>
     <div class="welcome-emblems" id="factionPreview" aria-label="Посмотреть фракции"></div>
     <button id="openAuthModalBtn" class="primary-button auth-button"><span>Регистрация</span><span aria-hidden="true">↗</span></button>
-    <div id="legacyAuthControls" style="display: none;" aria-hidden="true">
-      <button id="guestLogin" class="primary-button auth-button" hidden>Играть на сайте</button>
-      <button id="telegramLogin" class="primary-button auth-button" hidden><svg><use href="#i-telegram"/></svg><span>Войти через Telegram</span><span aria-hidden="true">↗</span></button>
-      <button id="browserTelegramLogin" class="text-button" hidden>Войти через Telegram в этом окне</button>
-      <button id="googleLogin" class="secondary-button auth-button" disabled hidden>Google <span class="soon-label">скоро</span></button>
-      <div id="telegramWidget"></div>
-      <div id="devAuth" class="local-login" hidden><input id="devName" maxlength="24" value="Командир" aria-label="Имя командира" autocomplete="off"><button class="secondary-button" id="devLogin">Начать</button></div>
-      <a id="telegramBotLink" class="bot-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть чат бота → нажать «Играть»</a>
-    </div>
+    <button id="telegramLogin" class="secondary-button auth-button" hidden><svg><use href="#i-telegram"/></svg><span>Повторить вход через Telegram</span></button>
     <p id="authNotice" class="auth-notice" role="status" aria-live="polite"></p>
   </section>
 
@@ -181,21 +166,49 @@
   <div class="placement-hint surface" id="placementHint" hidden><svg><use href="#i-target"/></svg><span><strong>РАЗВЕРНИТЕ ШТАБ</strong>Нажмите на свободную сушу вокруг Ташкента</span><button id="cancelPlacement" aria-label="Отменить выбор места"><svg><use href="#i-close"/></svg></button></div>
   <div class="selection-bar surface" id="selectionBar" hidden><span>Выбрано <b id="selectedCount">0</b></span><button id="abandonBtn" class="primary-button" disabled>Освободить</button><button id="cancelSelection" class="close-button" aria-label="Отменить выделение"><svg><use href="#i-close"/></svg></button></div>
 
-  <div id="abilityBar" class="ability-bar surface" aria-label="Боевые способности. Клавиши от 1 до 4" hidden></div>
-  <nav class="map-dock surface" id="gameNav" aria-label="Управление игрой" hidden>
+  <nav class="map-dock surface" id="gameNav" aria-label="Главные действия" hidden>
     <button data-open="base" aria-controls="basePanel" aria-expanded="false"><svg><use href="#i-base"/></svg><span>База</span><i id="buildDot" class="notification-dot" hidden></i></button>
+    <button id="armySquads" aria-controls="unitPanel" aria-expanded="false" aria-label="Выбрать отдельный отряд"><svg><use href="#i-infantry"/></svg><span>Отряды</span></button>
+    <button data-open="more" aria-controls="morePanel" aria-expanded="false"><span class="more-symbol" aria-hidden="true">•••</span><span>Ещё</span></button>
+  </nav>
+  <section class="floating-card game-panel more-panel" data-panel="more" id="morePanel" aria-labelledby="moreTitle" hidden>
+    <div class="panel-heading"><h2 id="moreTitle">Меню</h2><button class="close-button" data-panel-close aria-label="Закрыть меню"><svg><use href="#i-close"/></svg></button></div>
+    <div class="menu-grid">
+    <button data-open="abilities" aria-controls="abilitiesPanel" aria-expanded="false"><svg><use href="#i-ultimate"/></svg><span>Способности</span></button>
     <button data-open="sector" id="sectorNav" aria-controls="sectorPanel" aria-expanded="false" disabled><svg><use href="#i-sector"/></svg><span>Сектор</span></button>
     <button data-open="rewards" id="rewardsNav" aria-controls="rewardsPanel" aria-expanded="false" disabled><svg><use href="#i-gift"/></svg><span>Награды</span><i id="rewardDot" class="notification-dot" hidden></i></button>
     <button data-open="ranking" aria-controls="rankingPanel" aria-expanded="false"><svg><use href="#i-rank"/></svg><span>Рейтинг</span></button>
-    <button id="achievementsBtn" aria-label="Достижения"><svg><use href="#i-trophy"/></svg><span>Ачивки</span></button>
+    <button id="achievementsBtn" aria-label="Достижения"><svg><use href="#i-trophy"/></svg><span>Достижения</span></button>
     <button id="referralsBtn" aria-label="Пригласить друга"><svg><use href="#i-friends"/></svg><span>Друзья</span><i id="refDot" class="notification-dot" hidden></i></button>
     <button id="shopBtn"><svg><use href="#i-shop"/></svg><span>Магазин</span></button>
-  </nav>
-  <div class="map-tools"><button id="troopsBtn" aria-label="Войска: открыть арсенал" title="Арсенал войск"><svg><use href="#i-infantry"/></svg><span>Войска</span></button><button id="troopsToggle" aria-pressed="true" aria-label="Показывать войска на карте" title="Показывать войска">3D</button><button class="surface home-button" id="homeBtn" aria-label="К моей базе" title="К моей базе"><svg><use href="#i-target"/></svg></button><div class="zoom-controls surface"><button id="zoomIn" aria-label="Приблизить карту">+</button><button id="zoomOut" aria-label="Отдалить карту">−</button></div><button class="surface globe-button" id="zoomReset" aria-label="Показать весь мир" title="Весь мир"><svg><use href="#i-globe"/></svg></button></div>
+    </div>
+    <details class="menu-settings"><summary>Карта и внешний вид</summary><div class="display-settings">
+<button id="troopsBtn" aria-label="Войска: открыть арсенал" title="Арсенал войск"><svg><use href="#i-infantry"/></svg><span>Войска</span></button><button id="troopsToggle" aria-pressed="true" aria-label="Показывать войска на карте" title="Показывать войска">Войска на карте</button><button class="surface globe-button" id="zoomReset" aria-label="Показать весь мир" title="Весь мир"><svg><use href="#i-globe"/></svg><span>Весь мир</span></button>
   <div class="map-view-switch surface" role="group" aria-label="Вид карты">
     <button id="mapFlat" aria-pressed="false" title="Плоская карта. Перетаскивайте в любую сторону, включая переход через полюса">Карта</button>
     <button id="mapGlobe" aria-pressed="true" title="Глобус. Вращайте в любую сторону; приближение открывает плоскую карту"><svg aria-hidden="true"><use href="#i-globe"/></svg>Глобус</button>
   </div>
+      <button class="surface theme-button" id="themeToggleBtn" aria-label="Сменить тему" title="Светлая / Тёмная тема"><svg id="themeIcon"><use href="#i-sun"/></svg><span>Тема</span></button>
+      <div class="lang-picker-wrap">
+        <button class="surface lang-button" id="langBtn" aria-label="Сменить язык" title="Язык"><span id="langFlag">🇷🇺</span><span id="langCode">RU</span></button>
+        <div id="langDropdown" class="lang-dropdown surface" hidden>
+          <button data-lang="ru">🇷🇺 Русский</button>
+          <button data-lang="en">🇬🇧 English</button>
+          <button data-lang="uz">🇺🇿 O‘zbekcha</button>
+        </div>
+      </div>
+      <button class="surface tutorial-button" id="tutorialBtn" aria-label="Обучение" title="Обучение"><svg><use href="#i-help"/></svg><span>Обучение</span></button>
+      <button class="surface factions-button" id="factionsBtn"><svg><use href="#i-cell"/></svg><span id="factionsLabel">Фракции</span></button>
+    </div></details>
+    <details class="menu-settings"><summary>Общий приказ армии</summary><p class="subtle">Заменяет приказы всем отрядам. Для отдельного бойца используйте «Отряды».</p>
+  <aside class="army-controls surface" id="armyControls" hidden aria-label="Приказы войскам"><span id="armyStatus" role="status">Автономные войска</span><div><button id="armyExpand" title="Общий приказ заменит индивидуальные" aria-label="Автоматический захват территории">⚑ Захватывать</button><button id="armyDefend" title="Общий приказ заменит индивидуальные" aria-label="Вернуться к штабу и защищать его">♜ Защищать</button><button id="armyAttack" title="Общий приказ заменит индивидуальные" aria-label="Указать цель на карте">⌖ Цель армии</button></div></aside>    </details>
+  </section>
+  <section class="floating-card game-panel" data-panel="abilities" id="abilitiesPanel" aria-labelledby="abilitiesTitle" hidden>
+    <div class="panel-heading"><h2 id="abilitiesTitle">Способности</h2><button class="close-button" data-panel-close aria-label="Закрыть способности"><svg><use href="#i-close"/></svg></button></div>
+    <p class="subtle">Усильте войска на время. Выберите способность, чтобы увидеть её действие и стоимость.</p>
+    <div id="abilityBar" class="ability-bar surface" aria-label="Боевые способности. Клавиши от 1 до 4" hidden></div>
+  </section>
+  <div class="map-tools"><button class="surface home-button" id="homeBtn" aria-label="К моей базе" title="К моей базе"><svg><use href="#i-target"/></svg></button><div class="zoom-controls surface"><button id="zoomIn" aria-label="Приблизить карту">+</button><button id="zoomOut" aria-label="Отдалить карту">−</button></div></div>
   <div class="map-readout" aria-hidden="true"><span class="crosshair-mark">⌖</span><span id="mapCoordinates">41.31° N · 69.28° E</span><i></i><span id="mapScale">ГЛОБУС</span></div>
   <div class="map-legend" aria-label="Легенда карты"><span><i class="legend-own"></i>Территория империи</span><span><i class="legend-free"></i>Свободная суша</span></div>
 </main>
@@ -285,19 +298,19 @@
   <button class="close-button" id="closeAuthModalBtn" aria-label="Закрыть окно регистрации"><svg><use href="#i-close"/></svg></button>
   <span class="eyebrow"><span class="status-light" aria-hidden="true"></span> КОМАНДНЫЙ ЦЕНТР</span>
   <h2 id="authModalTitle">Регистрация</h2>
-  <p class="auth-modal-prompt" id="authModalPrompt">Зарегистрироваться через Telegram, или через Google-почту, или через логин-пароль</p>
+  <p class="auth-modal-prompt" id="authModalPrompt">Войдите в аккаунт или начните без регистрации. На сайте и в Telegram доступна одна и та же игра.</p>
 
   <div class="auth-modal-options">
-    <button id="modalTelegramBtn" class="primary-button auth-modal-btn">
+    <button id="modalTelegramBtn" class="primary-button auth-modal-btn" hidden>
       <svg><use href="#i-telegram"/></svg>
       <span>Через Telegram</span>
-      <span aria-hidden="true">↗</span>
     </button>
+    <div id="modalTelegramWidget"></div>
+    <a id="telegramBotLink" class="bot-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть чат бота → нажать «Играть»</a>
 
-    <button id="modalGoogleBtn" class="secondary-button auth-modal-btn">
+    <button id="modalGoogleBtn" class="secondary-button auth-modal-btn" disabled hidden>
       <svg viewBox="0 0 24 24" class="google-icon" width="20" height="20" style="vertical-align: middle; margin-right: 6px;"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/><path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.25C.45 8.17 0 10.03 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/></svg>
-      <span id="modalGoogleLabel">Через Google-почту</span>
-      <span class="soon-label" id="modalGoogleSoon" hidden>скоро</span>
+      <span id="modalGoogleLabel">Через Google</span>
     </button>
 
     <div class="auth-divider"><span>или через логин-пароль</span></div>
@@ -316,7 +329,9 @@
         <button id="credLoginBtn" type="button" class="secondary-button cred-btn">Войти</button>
       </div>
     </form>
-    <div id="modalTelegramWidget"></div>
+    <button id="guestLogin" class="secondary-button auth-modal-btn">Играть без регистрации</button>
+    <p class="auth-notice">Прогресс гостя связан с этим браузером. Для общего прогресса на сайте и в Mini App войдите через один аккаунт Telegram.</p>
+    <div id="devAuth" class="local-login" hidden><input id="devName" maxlength="24" value="Командир" aria-label="Имя командира" autocomplete="off"><button class="secondary-button" id="devLogin">Начать</button></div>
     <p id="modalAuthNotice" class="auth-notice modal-notice" role="status" aria-live="polite"></p>
   </div>
 </dialog>

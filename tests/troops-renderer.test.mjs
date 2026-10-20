@@ -7,16 +7,16 @@ const bundle=await build({entryPoints:[resolve(root,'src/client/troops-3d.js')],
 }}]});
 function setup(options={}){
  const events=new Map(),requests=new Map(),counts=new Map(),paints=[],sizes=[],actorSnapshots=[];
- const canvas=()=>({width:0,height:0,addEventListener(n,f){events.set(n,f);},getContext(){return{clearRect(){},drawImage(){},save(){},restore(){},scale(){},fillRect(){}};}});
+ const canvas=()=>({width:0,height:0,copies:0,removed:false,setAttribute(){},remove(){this.removed=true;},addEventListener(n,f){events.set(n,f);},getContext(){return{clearRect(){},drawImage:()=>{this.copies++;},save(){},restore(){},scale(){},fillRect(){}};}});
  const document={hidden:false,createElement:canvas};
  const context=vm.createContext({document,console,paints,sizes,actorSnapshots,devicePixelRatio:1,loadModel(url){url=url.split('?')[0];counts.set(url,(counts.get(url)||0)+1);return new Promise((resolve,reject)=>requests.set(url,{resolve,reject}));}});
  vm.runInContext(bundle.outputFiles[0].text,context);
- const target=canvas(),engine=context.troopsModule.createTroops3D({canvas:target,...options});
+ const target=canvas();if(options.mounted)target.parentElement={insertBefore(surface){context.mountedSurface=surface;}};const engine=context.troopsModule.createTroops3D({canvas:target,...options});
  const load=id=>{const scene=new Group(),body=new Mesh(new BoxGeometry(),new MeshStandardMaterial());body.name='Body';scene.add(body);requests.get('/assets/troops/'+id+'.glb').resolve({scene,animations:['idle','walk','run','attack','capture','death'].map(name=>new AnimationClip(name,1,[new NumberKeyframeTrack('Body.rotation[x]',[0,.5,1],[0,.3,0])]))});};
  const tick=()=>new Promise(resolve=>setImmediate(resolve));
  const unit=(key,id='protocol-infantry')=>({key,id,type:'infantry',color:'#50e7ff',cell:'base',size:22,phase:.2,offsetX:0,offsetY:0,animation:'walk',azimuth:0});
  const view=units=>({width:800,height:600,zoom:1024,units,projectCell:()=>({x:400,y:300})});
- return{engine,context,document,requests,counts,paints,sizes,actorSnapshots,canvas,load,tick,unit,view,events};
+ return{engine,target,context,document,requests,counts,paints,sizes,actorSnapshots,canvas,load,tick,unit,view,events};
 }
 test('many soldiers share one downloaded model; hidden and offscreen armies stop animating',async()=>{
  const h=setup(),units=[h.unit('a'),h.unit('b'),h.unit('c')];
@@ -54,4 +54,11 @@ test('idle actors keep animating their skeleton while their ground positions sta
 test('real normalized actors grow with the hex footprint instead of hitting the old zoom scale clamp',async()=>{
  const h=setup(),u=h.unit('guard'),view={...h.view([u]),footprintCell:()=>({width:100,height:85})};h.engine.render(0,view);await h.tick();h.load(u.id);await h.tick();h.engine.render(40,view);const small=h.actorSnapshots.at(-1)[0].scale;
  h.engine.render(80,{...view,zoom:8192,footprintCell:()=>({width:500,height:425})});assert.ok(h.actorSnapshots.at(-1)[0].scale>small*3);h.engine.dispose();
+});
+
+test('a DOM-mounted WebGL layer renders without copying full frames to Canvas2D; preview and context loss clean up correctly',async()=>{
+ const h=setup({mounted:true}),u=h.unit('guard');h.engine.render(0,h.view([u]));await h.tick();h.load(u.id);await h.tick();h.engine.render(40,h.view([u]));h.engine.render(80,h.view([u]));
+ assert.equal(h.target.copies,0,'map rendering must not read back the GPU surface every frame');assert.equal(h.context.mountedSurface.hidden,false);
+ const target=h.canvas();h.engine.inspect(target,'protocol','infantry');await h.tick();h.engine.render(120,h.view([]));assert.ok(target.copies>0,'small explicit model previews still receive their image');assert.equal(h.context.mountedSurface.hidden,true);
+ h.engine.close();h.engine.render(160,h.view([u]));assert.equal(h.context.mountedSurface.hidden,false);h.events.get('webglcontextlost')({preventDefault(){}});assert.equal(h.context.mountedSurface.hidden,true);h.engine.dispose();assert.equal(h.context.mountedSurface.removed,true);
 });

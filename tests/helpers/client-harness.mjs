@@ -17,8 +17,8 @@ async function clientSource() {
     const augmented = source.replace(/\ninit\(\);\s*$/, '') + `
       globalThis.clientCheck = {
         ready: init(), refreshState, refreshAuth, draw, frame, openPanel, ownerCells, changeZoom, focusAt, refreshTiles,
-        mapSnapshot: () => ({zoom,mapKind,overview:mapOverview,tiles:tileCache.size,profiles:profiles.size,revision:viewRevision,projection:geometry().globe?'globe':'flat',center:geometry().center}),
-        autoMiniAppLogin, pollWorld, setupTelegram, ensureUnitControls, unitCommandView,
+        mapSnapshot: () => ({zoom,mapKind,overview:mapOverview,tiles:tileCache.size,profiles:profiles.size,revision:viewRevision,mapPaints,mapDirty,mapPaused,projection:geometry().globe?'globe':'flat',center:geometry().center}),
+        autoMiniAppLogin, pollWorld, setupTelegram, ensureUnitControls, unitCommandView, surfaces, paint,
         state: () => ({ account, model, placing, selecting, activePanel, authBusy, connectionErrors })
       };
     `;
@@ -28,7 +28,7 @@ async function clientSource() {
   return bundledSource;
 }
 
-export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1:4173', cookieBlocked = false, storageBlocked = false, launchData = '', session = new Map(), store = new MemoryStore(), network = { offline: false, failures: new Map() } } = {}) {
+export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1:4173', cookieBlocked = false, storageBlocked = false, launchData = '', webApp, session = new Map(), store = new MemoryStore(), network = { offline: false, failures: new Map() } } = {}) {
   const nodes = new Set(), byId = new Map(), contexts = [];
   function context2d() {
     const calls = new Map();
@@ -65,14 +65,16 @@ export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1
     get innerHTML() { return this._html; }
     setAttribute(key, value) { this.attrs.set(key, String(value)); }
     getAttribute(key) { return this.attrs.get(key) ?? null; }
-    addEventListener(name, handler) { this.listeners.set(name, handler); }
+    addEventListener(name, handler) { const previous=this.listeners.get(name);this.listeners.set(name, previous?event=>{previous(event);return handler(event);}:handler); }
     getContext() { return this.context ||= context2d(); }
     getBoundingClientRect() { return { width: 1280, height: 800, left: 0, top: 0, right: 1280, bottom: 800 }; }
     setPointerCapture() {}
     showModal() { this.open = true; }
-    close() { this.open = false; }
+    close() { this.open = false; this.listeners.get('close')?.(); }
     closest(selector) { return matches(this, selector) ? this : this.parent?.closest(selector) || null; }
     matches(selector) { return matches(this, selector); }
+    querySelectorAll(selector) { return [...nodes].filter(node=>node!==this&&this.contains(node)&&matches(node,selector)); }
+    querySelector(selector) { return this.querySelectorAll(selector)[0]||null; }
     contains(node) { return node === this || this.children.some(child => child.contains(node)); }
     appendChild(node) { this.children.push(node); node.parent = this; }
   }
@@ -116,6 +118,7 @@ export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1
     removeItem(key) { if (storageBlocked) throw new Error('storage blocked'); session.delete(key); },
   };
   const globals = { document, fetch: fetchApi, Image: class { complete = false; naturalWidth = 0; }, ResizeObserver: class { observe() {} }, devicePixelRatio: 1,
+    ...(webApp ? { Telegram: { WebApp: webApp } } : {}),
     requestAnimationFrame(callback) { const id = nextHandle++; frames.set(id, callback); return id; }, cancelAnimationFrame: id => frames.delete(id),
     setInterval() {}, setTimeout(callback, ms) { const id = nextHandle++; timers.set(id, { callback, ms }); return id; }, clearTimeout: id => timers.delete(id),
     console, URLSearchParams, TextEncoder, TextDecoder, crypto: webcrypto, atob, btoa, performance, AbortSignal, AbortController,
@@ -127,6 +130,21 @@ export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1
   const sandbox = vm.createContext(globals); sandbox.window = sandbox;
   vm.runInContext(await clientSource(), sandbox, { timeout: 5000 });
   const $ = id => { const node = byId.get(id); assert.ok(node, 'missing element ' + id); return node; };
+  function visible(id) {
+    const target=typeof id==='string'?$(id):id;
+    for(let node=target;node;node=node.parent){
+      if(node.hidden||node.getAttribute('aria-hidden')==='true'||/display\s*:\s*none/.test(node.getAttribute('style')||'')||node.tagName==='dialog'&&!node.open)return false;
+      if(node.tagName==='details'&&node!==target&&!node.open&&!node.children.find(child=>child.tagName==='summary')?.contains(target))return false;
+    }
+    return true;
+  }
+  function click(id, event = {}) {
+    const node = typeof id === 'string' ? $(id) : id;
+    assert.ok(visible(node), (node.id || node.tagName) + ' must be accessible in the current UI');
+    assert.equal(node.disabled, false, (node.id || node.tagName) + ' must be enabled');
+    if(node.tagName==='summary'&&!node.onclick){node.parent.open=!node.parent.open;return;}
+    return node.onclick({ target: node, preventDefault() {}, ...event });
+  }
   await sandbox.clientCheck.ready;
-  return { client: sandbox.clientCheck, $, document, app, store, sandbox, network, requests, details, session, frames, timers, contexts, documentEvents, windowEvents };
+  return { client: sandbox.clientCheck, $, visible, click, document, app, store, sandbox, network, requests, details, session, frames, timers, contexts, documentEvents, windowEvents };
 }

@@ -9,6 +9,8 @@ import { layoutTroops, projectedModelMetrics } from './actor-layout.js';
 
 export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},reducedMotion=false,maxUnits=36 }={}) {
   const surface=document.createElement('canvas'),renderer=new WebGLRenderer({canvas:surface,alpha:true,antialias:false,powerPreference:'low-power'});
+  const mounted=!!canvas.parentElement?.insertBefore;
+  if(mounted){surface.className='troops-layer troops-gpu-layer';surface.setAttribute('aria-hidden','true');surface.hidden=true;canvas.parentElement.insertBefore(surface,canvas);}
   renderer.setPixelRatio(1);renderer.setClearColor(0,0);renderer.outputColorSpace=SRGBColorSpace;renderer.toneMapping=ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;
   const scene=new Scene(),camera=new OrthographicCamera(-500,500,400,-400,.1,10000);
   camera.position.set(0,900,1200);camera.lookAt(0,0,0);
@@ -61,6 +63,7 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
   function size(width,height){const key=width+'x'+height;if(key!==lastSize){renderer.setSize(width,height,false);lastSize=key;}}
   function copy(target){const context=target.getContext('2d');context.clearRect(0,0,target.width,target.height);context.drawImage(surface,0,0,target.width,target.height);}
   function renderPreview(delta){
+    if(mounted)surface.hidden=true;
     if(!preview?.actor?.root)return;
     const {actor,target,mode}=preview;
     for(const value of actors.values()){if(value.root)value.root.visible=value===actor;value.ring.visible=value.dome.visible=false;}
@@ -109,13 +112,14 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
     shotGeometry.setDrawRange(0,shotCount*2);shotGeometry.getAttribute('position').needsUpdate=true;shotGeometry.getAttribute('color').needsUpdate=true;
     const ratio=Math.min(1.25,globalThis.devicePixelRatio||1,Math.sqrt(MAP_LIMITS.troopPixels/Math.max(1,width*height))),w=Math.round(width*ratio),h=Math.round(height*ratio);
     if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
-    size(w,h);renderer.render(scene,camera);copy(canvas);
+    size(w,h);renderer.render(scene,camera);
+    if(mounted){surface.hidden=!visibleCount;canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);}else copy(canvas);
     const hud=canvas.getContext('2d'),sx=canvas.width/width,sy=canvas.height/height;
     hud.save();hud.scale(sx,sy);
     for(const {unit,x,y,span,elevation,headY}of poses){if(!(unit.hp>0))continue;const top=(headY??y-span*.7-elevation*.8)-7,w=Math.max(32,Math.min(70,span*.6));hud.fillStyle='#07120ee6';hud.fillRect(x-w/2,top,w,6);hud.fillStyle=unit.neutral?'#e58554':unit.color;hud.fillRect(x-w/2+1,top+1,(w-2)*Math.max(0,Math.min(1,unit.hp/unit.maxHp)),4);}
     hud.restore();
   }
-  surface.addEventListener('webglcontextlost',event=>{event.preventDefault();lost=true;preview?.fallback();onUnavailable();});
+  surface.addEventListener('webglcontextlost',event=>{event.preventDefault();lost=true;if(mounted)surface.hidden=true;preview?.fallback();onUnavailable();});
   return {
     render,
     needsFrame(){return !disposed&&!lost&&!document.hidden&&!reducedMotion&&(preview?!!preview.actor?.root&&(preview.mode!=='death'||preview.actor.action?.isRunning()):animated&&visibleCount>0);},
@@ -132,7 +136,7 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
     rotate(delta){if(!preview)return;preview.angle+=delta;onReady();},
     close(){if(preview){removeActor(preview.actor.key);preview=null;}lastTime=null;onReady();},
     suspendMap(){if(preview)return;this.clear();trimAssets(3);size(1,1);},
-    clear(){for(const key of [...actors.keys()])removeActor(key);preview=null;animated=false;lastTime=null;canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);},
-    dispose(){this.clear();disposed=true;for(const task of pending.splice(0))task.reject(new Error('Renderer disposed'));library.dispose();shotGeometry.dispose();shots.material.dispose();ringGeometry.dispose();domeGeometry.dispose();renderer.dispose();renderer.forceContextLoss();},
+    clear(){surface.hidden=true;for(const key of [...actors.keys()])removeActor(key);preview=null;animated=false;lastTime=null;canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);},
+    dispose(){this.clear();disposed=true;for(const task of pending.splice(0))task.reject(new Error('Renderer disposed'));library.dispose();shotGeometry.dispose();shots.material.dispose();ringGeometry.dispose();domeGeometry.dispose();renderer.dispose();renderer.forceContextLoss();if(mounted)surface.remove();},
   };
 }
