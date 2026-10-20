@@ -94,7 +94,8 @@
         }
       ],
       "bytes": 732716,
-      "sha256": "74b1aba2db2c8e5fdf526ced59836268df4e6b097a4f488c859ae76a1908b5e8"
+      "sha256": "d292b3d5fcd900475908cb1c231a4dbd0f0419b5e75b25c57176dda9241ed395",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "protocol-air": {
       "file": "/assets/troops/protocol-air.glb",
@@ -142,7 +143,8 @@
         }
       ],
       "bytes": 670000,
-      "sha256": "83f938e0a2eda8e48a35bff369c76656a64ef2c647f3d26243163d138531d6d7"
+      "sha256": "e5228701a96a9706815c10bc8a36f66233940d04c5d1734b18f0806d3958a491",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "protocol-ultimate": {
       "file": "/assets/troops/protocol-ultimate.glb",
@@ -190,7 +192,8 @@
         }
       ],
       "bytes": 823368,
-      "sha256": "b5949e704230938064d10331d160f8836a17e6f19a769cf7d6f76f23f69bbcc9"
+      "sha256": "5717dea67899f11fce9798d98d4c49f6da39ba32b74dd679d64a011dddc4771c",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "vanguard-infantry": {
       "file": "/assets/troops/vanguard-infantry.glb",
@@ -285,7 +288,8 @@
         }
       ],
       "bytes": 545688,
-      "sha256": "6a85848b54a2734d2fcc443d64516e644e015b3b230684628e0a1c31039ad26e"
+      "sha256": "f2523589a2a4000118e043c2641a8ef002035c3094c7df7848a96e15f6f33a46",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "vanguard-air": {
       "file": "/assets/troops/vanguard-air.glb",
@@ -333,7 +337,8 @@
         }
       ],
       "bytes": 602640,
-      "sha256": "6b66ec909598eaddb377a85ab68f8324844c976c3fd74d276a17a1a75814b4bc"
+      "sha256": "36e3b735c9fdd2ea27e853f3237f60be0d64d37696f131ec3be3b866ab359ca1",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "vanguard-ultimate": {
       "file": "/assets/troops/vanguard-ultimate.glb",
@@ -475,7 +480,8 @@
         }
       ],
       "bytes": 600988,
-      "sha256": "3bc8a05ac4cf7f4ec07be4ac0e7e19e10c3fabb793d9827bfbafc4eac02537da"
+      "sha256": "a269ae2c11ff533b47ef1b6691465a0302af0a076979d435dcdcd5551a22158f",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "bloom-air": {
       "file": "/assets/troops/bloom-air.glb",
@@ -523,7 +529,8 @@
         }
       ],
       "bytes": 578460,
-      "sha256": "fb2a4527b9657337423c9f5cbf7e075f57830980d7e6286f56f88b11d38b804f"
+      "sha256": "c3a6b411f558ee6856f739043baa9a615df8186b8ae197a31b07249da16577a0",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "bloom-ultimate": {
       "file": "/assets/troops/bloom-ultimate.glb",
@@ -571,7 +578,8 @@
         }
       ],
       "bytes": 828108,
-      "sha256": "ba6bdfb4de80a205002059fddbc165aeb48aa0cc0c695650f87e52a002cf6bbe"
+      "sha256": "ca681262f3d40f53c4ba61f786a62138d2e4eef80f13a9eaf48a41d1568beb98",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "swarm-infantry": {
       "file": "/assets/troops/swarm-infantry.glb",
@@ -619,7 +627,8 @@
         }
       ],
       "bytes": 677008,
-      "sha256": "34d2207321a885a9a2aee1cd6769f9b3a08b87127231dd54cbae272b20ed2642"
+      "sha256": "d9e6af6d2eb32c3b4b887899289ef6cc344d6e1299b8895846246027a1646aa2",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "swarm-armor": {
       "file": "/assets/troops/swarm-armor.glb",
@@ -667,7 +676,8 @@
         }
       ],
       "bytes": 608496,
-      "sha256": "f13ba84e380f2c523ca8a34d4317568b447d9c13155a62b85b4257f839db0fce"
+      "sha256": "f92e914cf16191e5e17fd23e727cdd8575e03407b73b266dbe4ac5b8cdae0c86",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "swarm-air": {
       "file": "/assets/troops/swarm-air.glb",
@@ -715,7 +725,8 @@
         }
       ],
       "bytes": 563172,
-      "sha256": "3ac56d702503dd6f0fbaeefcf61dc5e0084658736b6ef21dce96cddfc81840cc"
+      "sha256": "7f1e3a10472533b5982cd7c166e4791323b3eba78033b0154ddfb26334b75a79",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "swarm-ultimate": {
       "file": "/assets/troops/swarm-ultimate.glb",
@@ -763,7 +774,8 @@
         }
       ],
       "bytes": 800904,
-      "sha256": "21f5eb89274d69dbb9209c941e575f127fb20f807f84d8e42d13baa5488c9aee"
+      "sha256": "38bdd23c0b5aef4ce07fd76057d895500911939ee5a83f4644337844c3942a91",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "pack-infantry": {
       "file": "/assets/troops/pack-infantry.glb",
@@ -811,7 +823,8 @@
         }
       ],
       "bytes": 630908,
-      "sha256": "25835525ab9347680bbc19f4e6883518dc98a0fc1b50e2e7f586cf580adafc3d"
+      "sha256": "15f8321f79010985a83dfff936c05893ba5973d5a7c8194ae2b3575de1e35d44",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "pack-armor": {
       "file": "/assets/troops/pack-armor.glb",
@@ -859,7 +872,8 @@
         }
       ],
       "bytes": 561788,
-      "sha256": "90fb62590a0c6c88a27df056c60b3f3cfb9f7ebbe3138047760a38b1f160ef4e"
+      "sha256": "7ba6c7fe1dffe2aee0c79a6378647d488691e6d1c72d0395e525381b08b4b921",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "pack-air": {
       "file": "/assets/troops/pack-air.glb",
@@ -907,7 +921,8 @@
         }
       ],
       "bytes": 651936,
-      "sha256": "b14c5cb8117a8ac7a617d8c39b03b4b78ba49a106c8d5c3f6a548f8b48a30f9f"
+      "sha256": "e90ad3441387d864c5b697408b2617736c2574ca4f5b57973e4d79fb832a486d",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     },
     "pack-ultimate": {
       "file": "/assets/troops/pack-ultimate.glb",
@@ -955,7 +970,9 @@
         }
       ],
       "bytes": 708264,
-      "sha256": "393560b050c6c0d8c9053f8a59d6a08ffaa4c7ecaf4f4339ecbe707dd305e8af"
+      "sha256": "67a0686ea5a3efe192a8afbf5d2db2f8a7dc3feecae11d22ab7e45cfbd349359",
+      "idleBehavior": "head scan, breathing/weight shift; turret/weapon readiness; original wing/rotor tracks preserved"
     }
-  }
+  },
+  "displayVersion": "living-v2"
 }

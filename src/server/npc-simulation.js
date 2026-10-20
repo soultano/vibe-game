@@ -25,20 +25,23 @@ export function unitStats(faction,type){
 export function createArmy(player, now) { return {version:1,at:now,credit:0,units:[],events:[],order:{mode:'expand',cell:null}}; }
 
 // Bounded A*: every waypoint is an actual H3 neighbour, including around lakes.
-export async function findRoute(from,to,{type='infantry',baseCell=null,canEnter=()=>true,limit=240}={}) {
+export async function findRoute(from,to,{type='infantry',baseCell=null,canEnter=()=>true,isTraversable=traversable,limit=240,allowPartial=false}={}) {
   if(from===to)return[];
   const open=[from],came=new Map(),g=new Map([[from,0]]),scores=new Map([[from,distance(from,to)]]),closed=new Set();
+  let nearest=from,nearestDistance=distance(from,to);
+  const routeTo=target=>{const route=[];for(let c=target;c!==from;c=came.get(c))route.unshift(c);return route;};
   while(open.length && closed.size<limit){
     open.sort((a,b)=>scores.get(a)-scores.get(b)||a.localeCompare(b));const cell=open.shift();
-    if(cell===to){const route=[];for(let c=to;c!==from;c=came.get(c))route.unshift(c);return route;}
+    if(cell===to)return routeTo(to);
+    const remaining=distance(cell,to);if(remaining<nearestDistance){nearest=cell;nearestDistance=remaining;}
     closed.add(cell);
     for(const next of adjacentCells(cell)){
-      if(closed.has(next)||!traversable(next,type,baseCell)||!await canEnter(next))continue;
+      if(closed.has(next)||!isTraversable(next,type,baseCell)||!await canEnter(next))continue;
       const cost=g.get(cell)+1/(type==='air'?1:landscape(next).speed);
       if(cost>=(g.get(next)??Infinity))continue;
       came.set(next,cell);g.set(next,cost);scores.set(next,cost+distance(next,to));if(!open.includes(next))open.push(next);
     }
-  }return null;
+  }return allowPartial&&closed.size>=limit&&nearest!==from?routeTo(nearest):null;
 }
 function addUnit(army,player,type,index,at){
   const spec=unitStats(player.faction,type);
@@ -57,6 +60,7 @@ function event(army,value){army.events.push(value);army.events=army.events.slice
  * requests are accepted. Every ownership mutation awaits the service transaction. */
 export async function advanceArmies({players,armies,now,owner,locked,claim,terrain=landscape,canTraverse=traversable,neutral=true}){
   const byId=new Map(players.map(p=>[p.id,p]));
+  const headquarters=new Set(players.map(p=>p.baseCell));
   let cursor=Math.max(now-NPC_RULES.maxCatchupMs,Math.min(now,...[...armies.values()].map(a=>a.at)));
   // Long absence holds armies in place; economy still accrues for the full time.
   for(const p of players){const a=armies.get(p.id);if(a.at<cursor){a.at=cursor;for(const u of a.units)if(u.move){u.cell=u.move.to;delete u.move;} }
@@ -72,7 +76,8 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
       for(const unit of [...army.units].sort((a,b)=>a.id.localeCompare(b.id))){
         const spec=unitStats(unit.faction,unit.type);
         if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.cell=player.baseCell;unit.path=[];delete unit.move;unit.targetCell=null;state(unit,'idle',at);}continue;}
-        if(unit.move){if(at<unit.move.endsAt)continue;unit.cell=unit.move.to;delete unit.move;}
+        if(unit.move){if(at<unit.move.endsAt)continue;unit.cell=unit.move.to;delete unit.move;
+          if(unit.activity==='patrol'&&!unit.path.length){unit.patrolStep=(unit.patrolStep||0)+1;unit.waitUntil=at+2000+captureHash(unit.cell,unit.index+unit.patrolStep)%2000;state(unit,'idle',at);}}
         const currentOwner=await owner(unit.cell);
         const enemies=all.filter(other=>other.hp>0&&other.owner!==unit.owner && (other.createdAt||0)<=at && (armies.get(other.owner)?.at||0)<=at
           && !(other.neutral&&unit.neutral)
@@ -80,6 +85,7 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
         const wounded=!unit.neutral && unit.hp<unit.maxHp*.24 && unit.cell!==player.baseCell;
         const target=!wounded && enemies.filter(other=>distance(unit.cell,other.cell)<=spec.range).sort((a,b)=>distance(unit.cell,a.cell)-distance(unit.cell,b.cell)||a.hp-b.hp||a.id.localeCompare(b.id))[0];
         if(target){
+          unit.activity='combat';unit.waitUntil=0;
           state(unit,'attack',at);unit.targetId=target.id;unit.targetCell=target.cell;unit.path=[];
           if(at>=(unit.nextAttackAt||0)){
             const cover=target.type==='air'?0:terrain(target.cell).cover;
@@ -92,18 +98,18 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
           }continue;
         }
         unit.targetId=null;
-        if(unit.neutral){state(unit,'idle',at);continue;}
+        if(unit.neutral){unit.activity='guard';state(unit,'idle',at);continue;}
         // Wounded units return to the HQ; recovery is visible, not a free teleport.
         const retreat=unit.hp<unit.maxHp*.24;
-        if(unit.cell===player.baseCell&&unit.hp<unit.maxHp){unit.hp=Math.min(unit.maxHp,unit.hp+dt*.012);state(unit,'idle',at);if(unit.hp<unit.maxHp*.8)continue;}
+        if(unit.cell===player.baseCell&&unit.hp<unit.maxHp){unit.hp=Math.min(unit.maxHp,unit.hp+dt*.012);unit.activity='recover';state(unit,'idle',at);if(unit.hp<unit.maxHp*.8)continue;}
         const hostile=currentOwner&&currentOwner!==player.id;
         const safeToCapture=!enemies.some(e=>distance(unit.cell,e.cell)<=1);
         const adjacentOwned=(await Promise.all(adjacentCells(unit.cell).map(owner))).includes(player.id);
-        if(!retreat && army.order.mode!=='defend' && currentOwner!==player.id && adjacentOwned && safeToCapture && unit.type!=='air'
+        if(!retreat && player.pixels<stats.cap && !headquarters.has(unit.cell) && army.order.mode!=='defend' && currentOwner!==player.id && adjacentOwned && safeToCapture && unit.type!=='air'
           && (inExpansion(player,unit.cell)||army.order.mode==='attack')
           && (!hostile || ((byId.get(currentOwner)?.shieldUntil||0)<=at && (player.shieldUntil||0)<=at))
           && !await locked(unit.cell,at)){
-          state(unit,'capture',at);unit.targetCell=unit.cell;
+          unit.activity='capture';state(unit,'capture',at);unit.targetCell=unit.cell;
           const sufficient=army.credit>=(hostile?1.5:1);
           if(sufficient&&at-unit.stateAt>=NPC_RULES.captureMs && player.pixels<stats.cap){
             if(await claim(unit.cell,currentOwner,player.id,at)){
@@ -114,21 +120,25 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
         }
         const chase=enemies.filter(other=>distance(unit.cell,other.cell)<=5 && (army.order.mode!=='defend'||distance(other.cell,player.baseCell)<=3))
           .sort((a,b)=>distance(unit.cell,a.cell)-distance(unit.cell,b.cell)||a.hp-b.hp||a.id.localeCompare(b.id))[0];
-        let goal=retreat?player.baseCell:chase?.cell || (army.order.mode==='defend'?player.baseCell:army.order.cell);
+        if(!retreat&&!chase&&(unit.waitUntil||0)>at){state(unit,'idle',at);continue;}
+        unit.blockedGoals=Object.fromEntries(Object.entries(unit.blockedGoals||{}).filter(([,until])=>until>at).slice(-8));
+        let goal=retreat?player.baseCell:chase?.cell || (army.order.mode==='defend'?null:army.order.cell);
+        let patrol=unit.activity==='patrol'&&!!unit.path.length&&!retreat&&!chase;
+        if(goal&&currentOwner===player.id&&goal===unit.cell&&!retreat&&!chase)goal=null;
         if(!goal && unit.path.length)goal=unit.targetCell;
-        if(!goal){
-          const border=(player.borderCells||[player.baseCell]).slice(0,128),candidates=new Set();
+        if(!goal&&army.order.mode!=='defend'&&player.pixels<stats.cap){
+          const border=[...(player.borderCells||[player.baseCell])].sort((a,b)=>distance(unit.cell,a)-distance(unit.cell,b)||a.localeCompare(b)).slice(0,64),candidates=new Set();
           for(const cell of border)for(const n of adjacentCells(cell))candidates.add(n);
           const choices=[];
           for(const c of candidates){
-            if(!canTraverse(c,unit.type,player.baseCell)||!inExpansion(player,c)||await locked(c,at))continue;
+            if(c===unit.cell||headquarters.has(c)||unit.blockedGoals[c]||!canTraverse(c,unit.type,player.baseCell)||!inExpansion(player,c)||await locked(c,at))continue;
             const owned=await owner(c);if(owned===player.id)continue;
             if(owned&&((byId.get(owned)?.shieldUntil||0)>at||(player.shieldUntil||0)>at))continue;
             choices.push(c);
           }
           choices.sort((a,b)=>(reservations.has(a)*5+distance(unit.cell,a))-(reservations.has(b)*5+distance(unit.cell,b))||captureHash(a,player.seed)-captureHash(b,player.seed));
-          goal=choices[0]||player.baseCell;
-          if(goal!==player.baseCell&&neutral&&!(await owner(goal))&&captureHash(goal,97)%4===0){
+          goal=choices[0];
+          if(goal&&neutral&&!(await owner(goal))&&captureHash(goal,97)%4===0){
             const campId=`wild:${goal}`;
             if(!all.some(u=>u.id===campId)&&!army.units.some(u=>u.id===campId)){
               const wild={id:campId,owner:campId,faction:captureHash(goal,11)%2?'swarm':'pack',type:'infantry',index:0,
@@ -136,17 +146,25 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
             }
           }
         }
-        if(goal===unit.cell){unit.path=[];unit.targetCell=null;state(unit,'idle',at);continue;}
+        if(!goal){
+          // Guard duty is real server movement between owned cells. It never
+          // spends capture credit, steps into protected territory or orbits HQ.
+          const near=new Set([player.baseCell,...adjacentCells(unit.cell),...adjacentCells(player.baseCell)]),choices=[];
+          for(const c of near)if(c!==unit.cell&&!unit.blockedGoals[c]&&canTraverse(c,unit.type,player.baseCell)&&!await locked(c,at)&&await owner(c)===player.id)choices.push(c);
+          choices.sort((a,b)=>distance(unit.cell,a)-distance(unit.cell,b)||captureHash(a,(player.seed||0)+(unit.index||0)*41+(unit.patrolStep||0)*97)-captureHash(b,(player.seed||0)+(unit.index||0)*41+(unit.patrolStep||0)*97));
+          goal=choices[0]||player.baseCell;patrol=true;
+        }
+        if(goal===unit.cell){unit.path=[];unit.targetCell=null;unit.activity='guard';state(unit,'idle',at);continue;}
         if(goal!==unit.targetCell||!unit.path.length){
-          const route=await findRoute(unit.cell,goal,{type:unit.type,baseCell:player.baseCell,
-            canEnter:async cell=>canTraverse(cell,unit.type,player.baseCell)&&!await locked(cell,at)});
+          const route=await findRoute(unit.cell,goal,{type:unit.type,baseCell:player.baseCell,isTraversable:canTraverse,allowPartial:!patrol,
+            canEnter:async cell=>!await locked(cell,at)&&(!patrol||await owner(cell)===player.id)});
           unit.path=route||[];unit.targetCell=goal;
         }
         const next=unit.path.shift();
-        if(next && canTraverse(next,unit.type,player.baseCell)){
+        if(next && canTraverse(next,unit.type,player.baseCell) && !await locked(next,at) && (!patrol||await owner(next)===player.id)){
           const speed=spec.speed/(unit.type==='air'?1:terrain(next).speed);
-          unit.move={from:unit.cell,to:next,startedAt:at,endsAt:at+speed};state(unit,retreat?'retreat':'move',at);reservations.add(goal);
-        }else{state(unit,'idle',at);unit.targetCell=null;}
+          unit.activity=retreat?'retreat':patrol?'patrol':'advance';unit.waitUntil=0;unit.move={from:unit.cell,to:next,startedAt:at,endsAt:at+speed};state(unit,retreat?'retreat':'move',at);reservations.add(goal);
+        }else{unit.path=[];unit.activity='guard';unit.blockedGoals[goal]=at+8000;unit.waitUntil=at+1000;state(unit,'idle',at);unit.targetCell=null;}
       }
       army.units=army.units.filter(u=>!u.neutral||u.hp>0||at-u.stateAt<10000).slice(0,16);
       army.at=at;
@@ -160,5 +178,5 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
 export function publicArmy(army,now){
   if(!army)return null;
   return {version:1,at:army.at,order:army.order,events:army.events.filter(e=>now-e.at<15000),
-    units:army.units.map(({path,nextAttackAt,index,...unit})=>({...unit,waypoints:path.slice(0,8)}))};
+    units:army.units.map(({path,nextAttackAt,index,blockedGoals,waitUntil,patrolStep,...unit})=>({...unit,waypoints:path.slice(0,8)}))};
 }

@@ -39,7 +39,7 @@ export function createHeadquarters3D({ onReady = () => {}, onUnavailable = () =>
     load: async id => normalizeHeadquarters((await loader.loadAsync(headquartersFor(id).model)).scene),
     makeStamp(root) {
       const stamp = document.createElement('canvas');
-      stamp.width = stamp.height = 256;
+      stamp.width = stamp.height = 512;
       // Offscreen/hidden tabs do not initiate this renderer, but a network reply
       // may arrive after suspension. Paint once on resume instead of caching blank.
       if (!render(root, stamp)) return null;
@@ -61,7 +61,7 @@ export function createHeadquarters3D({ onReady = () => {}, onUnavailable = () =>
         if (unavailable || document.hidden) { stamps.delete(id); return; }
         const existing = library.getStamp(id);
         if (existing) { entry.canvas = existing; return; }
-        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
         render(root, canvas); canvas.hq3dReady = true; entry.canvas = canvas; onReady(id);
       }).catch(() => {});
     }

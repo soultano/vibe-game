@@ -1,4 +1,6 @@
 import { getFaction } from './config.js';
+export const TROOP_ASSET_VERSION='living-v2';
+export const troopModelUrl=id=>`/assets/troops/${id}.glb?v=${TROOP_ASSET_VERSION}`;
 
 // Existing ability IDs remain stable for stored cooldowns and payment receipts.
 export const TROOP_CLASSES = Object.freeze([
@@ -20,7 +22,7 @@ export function troopFor(faction, type = 'infantry') {
   const [name, description] = catalog[side.id][TROOP_CLASSES.indexOf(role)];
   const id = `${side.id}-${role.id}`;
   return { ...role, id, type: role.id, faction: side.id, color: side.color, name, description,
-    model: `/assets/troops/${id}.glb`, poster: `/assets/troops/${id}.webp` };
+    model: troopModelUrl(id), poster: `/assets/troops/${id}.webp` };
 }
 export function troopForAbility(faction, abilityId) {
   return troopFor(faction, TROOP_CLASSES.find(value => value.abilityId === abilityId)?.id);

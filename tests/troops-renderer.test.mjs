@@ -3,20 +3,20 @@ const root=resolve(import.meta.dirname,'..');
 const bundle=await build({entryPoints:[resolve(root,'src/client/troops-3d.js')],bundle:true,write:false,format:'iife',globalName:'troopsModule',platform:'browser',target:'es2022',plugins:[{name:'gpu-adapter',setup(b){
  b.onResolve({filter:/^three$/},()=>({path:'three',namespace:'adapter'}));
  b.onResolve({filter:/^three\/addons\/loaders\/GLTFLoader\.js$/},()=>({path:'loader',namespace:'adapter'}));
- b.onLoad({filter:/.*/,namespace:'adapter'},({path})=>({resolveDir:root,contents:path==='loader'?'export class GLTFLoader {loadAsync(url){return globalThis.loadModel(url)}}':`export * from ${JSON.stringify(resolve(root,'node_modules/three/build/three.module.js'))}; export class WebGLRenderer{constructor({canvas}){globalThis.gpuCanvas=canvas;}setPixelRatio(){}setClearColor(){}setSize(w,h){globalThis.sizes.push([w,h]);}render(scene){globalThis.paints.push(scene.children.filter(n=>n.isGroup&&n.visible).map(n=>n.rotation.y));}dispose(){}forceContextLoss(){}}`}));
+ b.onLoad({filter:/.*/,namespace:'adapter'},({path})=>({resolveDir:root,contents:path==='loader'?'export class GLTFLoader {loadAsync(url){return globalThis.loadModel(url)}}':`export * from ${JSON.stringify(resolve(root,'node_modules/three/build/three.module.js'))}; export class WebGLRenderer{constructor({canvas}){globalThis.gpuCanvas=canvas;}setPixelRatio(){}setClearColor(){}setSize(w,h){globalThis.sizes.push([w,h]);}render(scene){const models=scene.children.filter(n=>n.isGroup&&n.visible);globalThis.paints.push(models.map(n=>n.rotation.y));globalThis.actorSnapshots.push(models.map(n=>({scale:n.scale.x,x:n.position.x,z:n.position.z,bone:n.getObjectByName('Body')?.rotation.x})));}dispose(){}forceContextLoss(){}}`}));
 }}]});
 function setup(options={}){
- const events=new Map(),requests=new Map(),counts=new Map(),paints=[],sizes=[];
+ const events=new Map(),requests=new Map(),counts=new Map(),paints=[],sizes=[],actorSnapshots=[];
  const canvas=()=>({width:0,height:0,addEventListener(n,f){events.set(n,f);},getContext(){return{clearRect(){},drawImage(){},save(){},restore(){},scale(){},fillRect(){}};}});
  const document={hidden:false,createElement:canvas};
- const context=vm.createContext({document,console,paints,sizes,devicePixelRatio:1,loadModel(url){counts.set(url,(counts.get(url)||0)+1);return new Promise((resolve,reject)=>requests.set(url,{resolve,reject}));}});
+ const context=vm.createContext({document,console,paints,sizes,actorSnapshots,devicePixelRatio:1,loadModel(url){url=url.split('?')[0];counts.set(url,(counts.get(url)||0)+1);return new Promise((resolve,reject)=>requests.set(url,{resolve,reject}));}});
  vm.runInContext(bundle.outputFiles[0].text,context);
  const target=canvas(),engine=context.troopsModule.createTroops3D({canvas:target,...options});
  const load=id=>{const scene=new Group(),body=new Mesh(new BoxGeometry(),new MeshStandardMaterial());body.name='Body';scene.add(body);requests.get('/assets/troops/'+id+'.glb').resolve({scene,animations:['idle','walk','run','attack','capture','death'].map(name=>new AnimationClip(name,1,[new NumberKeyframeTrack('Body.rotation[x]',[0,.5,1],[0,.3,0])]))});};
  const tick=()=>new Promise(resolve=>setImmediate(resolve));
  const unit=(key,id='protocol-infantry')=>({key,id,type:'infantry',color:'#50e7ff',cell:'base',size:22,phase:.2,offsetX:0,offsetY:0,animation:'walk',azimuth:0});
  const view=units=>({width:800,height:600,zoom:1024,units,projectCell:()=>({x:400,y:300})});
- return{engine,context,document,requests,counts,paints,sizes,canvas,load,tick,unit,view,events};
+ return{engine,context,document,requests,counts,paints,sizes,actorSnapshots,canvas,load,tick,unit,view,events};
 }
 test('many soldiers share one downloaded model; hidden and offscreen armies stop animating',async()=>{
  const h=setup(),units=[h.unit('a'),h.unit('b'),h.unit('c')];
@@ -45,4 +45,13 @@ test('reduced motion draws a static pose and never schedules continuous animatio
 
 test('large screens cannot allocate an unbounded army render surface',async()=>{
  const h=setup();h.engine.render(0,{...h.view([]),width:5120,height:2880});const[w,height]=h.sizes.at(-1);assert.ok(w*height<=1605000,`army surface ${w}×${height} exceeds its pixel budget`);h.engine.dispose();
+});
+test('idle actors keep animating their skeleton while their ground positions stay fixed',async()=>{
+ const h=setup(),u={...h.unit('guard'),animation:'idle'},view=h.view([u]);h.engine.render(0,view);await h.tick();h.load(u.id);await h.tick();
+ h.engine.render(40,view);const first=h.actorSnapshots.at(-1)[0];assert.equal(h.engine.needsFrame(),true);h.engine.render(120,view);const next=h.actorSnapshots.at(-1)[0];
+ assert.notEqual(next.bone,first.bone);assert.equal(next.x,first.x);assert.equal(next.z,first.z);h.engine.dispose();
+});
+test('real normalized actors grow with the hex footprint instead of hitting the old zoom scale clamp',async()=>{
+ const h=setup(),u=h.unit('guard'),view={...h.view([u]),footprintCell:()=>({width:100,height:85})};h.engine.render(0,view);await h.tick();h.load(u.id);await h.tick();h.engine.render(40,view);const small=h.actorSnapshots.at(-1)[0].scale;
+ h.engine.render(80,{...view,zoom:8192,footprintCell:()=>({width:500,height:425})});assert.ok(h.actorSnapshots.at(-1)[0].scale>small*3);h.engine.dispose();
 });

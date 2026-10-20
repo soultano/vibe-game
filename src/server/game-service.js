@@ -357,7 +357,7 @@ export class GameService {
         fail(distance(p.baseCell,input.cell)<=Math.max(12,projectedRadius(p)+8),'Цель слишком далеко.');
       }
       p.army??=createArmy(p,now);p.army.order={mode:input.mode,cell:input.mode==='attack'?input.cell:null};
-      for(const u of p.army.units){u.path=[];u.targetCell=null;}
+      for(const u of p.army.units){u.path=[];u.targetCell=null;u.waitUntil=0;u.blockedGoals={};u.activity=input.mode==='defend'?'guard':'advance';}
     });
   }
 

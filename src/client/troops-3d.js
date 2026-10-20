@@ -1,12 +1,12 @@
-import { WebGLRenderer,Scene,OrthographicCamera,HemisphereLight,DirectionalLight,AnimationMixer,LoopOnce,LoopRepeat,Group,BufferGeometry,BufferAttribute,LineSegments,LineBasicMaterial,Color,Mesh,MeshBasicMaterial,RingGeometry,SphereGeometry,DoubleSide,SRGBColorSpace,ACESFilmicToneMapping } from 'three';
+import { WebGLRenderer,Scene,OrthographicCamera,HemisphereLight,DirectionalLight,AnimationMixer,LoopOnce,LoopRepeat,Group,Box3,BufferGeometry,BufferAttribute,LineSegments,LineBasicMaterial,Color,Mesh,MeshBasicMaterial,RingGeometry,SphereGeometry,DoubleSide,SRGBColorSpace,ACESFilmicToneMapping } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { normalizeHeadquarters,disposeHeadquarters } from './model-geometry.js';
 import { createAssetLibrary } from './asset-library.js';
-import { troopFor } from '../shared/troops.js';
+import { troopFor, troopModelUrl } from '../shared/troops.js';
 import { MAP_LIMITS } from '../shared/map-view.js';
+import { layoutTroops, projectedModelMetrics } from './actor-layout.js';
 
-const factorFor=zoom=>Math.max(.75,Math.min(2.2,zoom/1024));
 export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},reducedMotion=false,maxUnits=36 }={}) {
   const surface=document.createElement('canvas'),renderer=new WebGLRenderer({canvas:surface,alpha:true,antialias:false,powerPreference:'low-power'});
   renderer.setPixelRatio(1);renderer.setClearColor(0,0);renderer.outputColorSpace=SRGBColorSpace;renderer.toneMapping=ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;
@@ -22,7 +22,7 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
   function drain(){while(loads<3&&pending.length&&!disposed){const task=pending.shift();if(!wanted(task.id)){task.reject(Object.assign(new Error('Unit left view'),{name:'AbortError'}));continue;}loads++;task.work().then(task.resolve,task.reject).finally(()=>{loads--;drain();});}}
   function trimAssets(maxEntries=6){library.prune({keepIds:new Set([...actors.values()].map(a=>a.id)),maxEntries});}
   const library=createAssetLibrary({
-    load:id=>queueLoad(id,async()=>{const gltf=await loader.loadAsync('/assets/troops/'+id+'.glb');return{scene:gltf.scene,animations:gltf.animations};}),
+    load:id=>queueLoad(id,async()=>{const gltf=await loader.loadAsync(troopModelUrl(id));return{scene:gltf.scene,animations:gltf.animations};}),
     makeStamp:()=>null,disposeAsset:asset=>disposeHeadquarters(asset.scene),onReady:()=>{trimAssets();onReady();},onError:(id,error)=>{if(error.name==='AbortError')return;if(preview?.id===id)preview.fallback();onUnavailable(id);},
   });
   const shotPositions=new Float32Array(maxUnits*6),shotColors=new Float32Array(maxUnits*6);
@@ -43,6 +43,8 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
       const content=clone(asset.scene),normalized=normalizeHeadquarters(content),root=new Group();root.add(normalized);
       const mixer=new AnimationMixer(root);
       root.traverse(node=>{if(node.isMesh)node.frustumCulled=false;});
+      root.updateMatrixWorld(true);actor.bounds=new Box3().setFromObject(root);
+      root.traverse(node=>{if(node.isBone&&/^(Head|neck)$/i.test(node.name))actor.lookBone=node;});
       actor.root=root;actor.mixer=mixer;actor.clips=asset.animations;actor.loading=false;scene.add(root);onReady();
     }).catch(()=>{actor.loading=false;});
     return actor;
@@ -71,36 +73,36 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
     if(disposed||lost||document.hidden)return;
     const delta=lastTime===null?0:Math.min(.08,Math.max(0,(now-lastTime)/1000));lastTime=now;
     if(preview){renderPreview(delta);return;}
-    const {width,height,units,projectCell,zoom}=view;
+    const {width,height,units}=view,poses=layoutTroops(units.slice(0,maxUnits),view);
     animated=false;visibleCount=0;
     camera.left=-width/2;camera.right=width/2;camera.top=height/2;camera.bottom=-height/2;camera.position.set(0,900,1200);camera.lookAt(0,0,0);camera.updateProjectionMatrix();
     const keep=new Set();let shotCount=0;
-    for(const unit of units.slice(0,maxUnits)){
-      const to=projectCell(unit.cell);if(!to)continue;
-      const from=unit.fromCell?projectCell(unit.fromCell):null,progress=unit.progress??1;
-      let x=(from?from.x+(to.x-from.x)*progress:to.x)+unit.offsetX,y=(from?from.y+(to.y-from.y)*progress:to.y)+unit.offsetY;
-      if(x< -100||x>width+100||y< -130||y>height+100)continue;
+    for(const pose of poses){
+      const {unit,x,y,span,from,to,target,heading,elevation}=pose;
       keep.add(unit.key);const actor=actorFor(unit);visibleCount++;
       if(!actor.root)continue;
-      const target=unit.target?projectCell(unit.target):null;
-      const factor=Math.max(.75,Math.min(2.2,zoom/1024)),scale=unit.size*factor/2;
-      const elevation=unit.type==='air'?20*factor:unit.id==='protocol-ultimate'?7*factor:0;
-      actor.root.visible=true;actor.root.position.set(x-width/2,elevation,(y-height/2)/.6);actor.root.scale.setScalar(scale);
-      const heading=target?{x:target.x-x,y:target.y-y}:from?{x:to.x-from.x,y:to.y-from.y}:null;
       if(heading && Math.hypot(heading.x,heading.y)>.01)actor.heading=Math.atan2(heading.x,heading.y/.6);
-      actor.root.rotation.y=actor.heading??Math.PI;
-      play(actor,unit.animation);actor.mixer.update(reducedMotion?0:delta);
-      if(!reducedMotion&&unit.animation!=='idle'&&(unit.animation!=='death'||actor.action?.isRunning()))animated=true;
+      actor.root.rotation.y=actor.heading??0;
+      const metrics=projectedModelMetrics(actor.bounds,actor.root.rotation.y),scale=span/metrics.span;
+      pose.headY=y-elevation*.8-metrics.top*scale;
+      actor.root.visible=true;actor.root.position.set(x-width/2,elevation,(y-height/2)/.6);actor.root.scale.setScalar(scale);
+      play(actor,unit.animation);
+      if(actor.action){const duration=actor.action.getClip().duration,speed=from&&unit.moveDuration?Math.hypot(to.x-from.x,to.y-from.y)/(unit.moveDuration/1000):0;
+        actor.action.timeScale=['walk','run'].includes(unit.animation)&&speed?Math.max(.55,Math.min(2.4,speed*duration/(span*.55))):1;}
+      if(actor.lookBone&&actor.lookOffset)actor.lookBone.rotation.y-=actor.lookOffset;
+      actor.lookOffset=0;actor.mixer.update(reducedMotion?0:delta);
+      if(unit.animation==='idle'&&actor.lookBone&&!reducedMotion){actor.lookOffset=Math.sin(now*.00065+actor.phase*6.28)*.10;actor.lookBone.rotation.y+=actor.lookOffset;}
+      if(!reducedMotion&&(unit.animation!=='death'||actor.action?.isRunning()))animated=true;
       const phase=(now/1250+unit.phase)%1;
       if(target&&unit.animation==='attack'&&phase>.18&&phase<.32&&shotCount<maxUnits){
         const index=shotCount*6,c=new Color(unit.color);
         shotPositions.set([x-width/2,elevation+scale*.8,(y-height/2)/.6,target.x-width/2,3,(target.y-height/2)/.6],index);
         shotColors.set([c.r,c.g,c.b,c.r,c.g,c.b],index);shotCount++;
       }
-      actor.ring.visible=!!unit.capture||unit.ultimate;
-      actor.ring.position.set(x-width/2,.6,(y-height/2)/.6);actor.ring.scale.setScalar(unit.capture?(8+phase*14)*factor:unit.size*(.65+phase*.2)*factor);
-      actor.ring.material.opacity=unit.capture ? .65 : .2;
-      actor.dome.visible=unit.id==='protocol-ultimate';actor.dome.position.copy(actor.root.position);actor.dome.position.y=0;actor.dome.scale.setScalar(unit.size*.8*factor);
+      actor.ring.visible=unit.hp>0||!!unit.capture||unit.ultimate;
+      actor.ring.position.set(x-width/2,.6,(y-height/2)/.6);actor.ring.scale.setScalar(unit.capture?span*(.38+phase*.22):unit.ultimate?span*.6:span*.34);
+      actor.ring.material.opacity=unit.capture ? .65 : .4;
+      actor.dome.visible=unit.id==='protocol-ultimate';actor.dome.position.copy(actor.root.position);actor.dome.position.y=0;actor.dome.scale.setScalar(span*.8);
     }
     for(const key of actors.keys())if(!keep.has(key))removeActor(key);
     trimAssets();
@@ -110,7 +112,7 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
     size(w,h);renderer.render(scene,camera);copy(canvas);
     const hud=canvas.getContext('2d'),sx=canvas.width/width,sy=canvas.height/height;
     hud.save();hud.scale(sx,sy);
-    for(const unit of units.slice(0,maxUnits)){if(!(unit.hp>0))continue;const to=projectCell(unit.cell);if(!to)continue;const from=unit.fromCell?projectCell(unit.fromCell):null,p=unit.progress??1;const x=(from?from.x+(to.x-from.x)*p:to.x)+unit.offsetX,y=(from?from.y+(to.y-from.y)*p:to.y)+unit.offsetY-unit.size*factorFor(zoom)-8;hud.fillStyle='#07120ee6';hud.fillRect(x-15,y,30,5);hud.fillStyle=unit.neutral?'#e58554':unit.color;hud.fillRect(x-14,y+1,28*Math.max(0,Math.min(1,unit.hp/unit.maxHp)),3);}
+    for(const {unit,x,y,span,elevation,headY}of poses){if(!(unit.hp>0))continue;const top=(headY??y-span*.7-elevation*.8)-7,w=Math.max(32,Math.min(70,span*.6));hud.fillStyle='#07120ee6';hud.fillRect(x-w/2,top,w,6);hud.fillStyle=unit.neutral?'#e58554':unit.color;hud.fillRect(x-w/2+1,top+1,(w-2)*Math.max(0,Math.min(1,unit.hp/unit.maxHp)),4);}
     hud.restore();
   }
   surface.addEventListener('webglcontextlost',event=>{event.preventDefault();lost=true;preview?.fallback();onUnavailable();});

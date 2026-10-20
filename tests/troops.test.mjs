@@ -13,7 +13,7 @@ const now=1900000000000,base=latLngToCell(41.31,69.28,8),neighbors=gridDisk(base
 const player={id:'owner',faction:'protocol',baseCell:base,frontier:[base],abilities:{},azimuth:90};
 
 test('twenty distinct faction units use the stable ability IDs and canonical animation set',()=>{
- const ids=new Set();for(const faction of ['protocol','vanguard','bloom','swarm','pack'])for(const role of TROOP_CLASSES){const unit=troopFor(faction,role.id);ids.add(unit.id);assert.equal(troopForAbility(faction,role.abilityId).id,unit.id);assert.match(unit.model,new RegExp(unit.id+'.glb$'));}
+ const ids=new Set();for(const faction of ['protocol','vanguard','bloom','swarm','pack'])for(const role of TROOP_CLASSES){const unit=troopFor(faction,role.id);ids.add(unit.id);assert.equal(troopForAbility(faction,role.abilityId).id,unit.id);assert.match(unit.model,new RegExp(unit.id+'.glb\\?v=living-v2$'));}
  assert.equal(ids.size,20);assert.equal(troopFor('unknown','invalid').id,'protocol-infantry');assert.deepEqual(TROOP_ANIMATIONS,['idle','walk','run','attack','capture','death']);
 });
 test('deployment derives from server effect intervals; no future or expired heavy/air/ultimate spawns',()=>{
@@ -61,7 +61,7 @@ test('all twenty GLBs have real skeletons, moving weighted vertices, portable cl
    const weights=primitive.getAttribute('WEIGHTS_0');if(!weights)continue;
    const values=weights.getArray();for(let i=0;i<values.length;i+=4)assert.ok(Math.abs(values[i]+values[i+1]+values[i+2]+values[i+3]-1)<1e-5,'normalized skin weights');
   }
-  for(const name of ['walk','attack','capture']){
+  for(const name of ['idle','walk','attack','capture']){
    const duration=record.animations.find(a=>a.name===name).duration,a=animatedGeometry(doc,name,0)[0].positions,b=animatedGeometry(doc,name,duration*.25)[0].positions;
    let displacement=0;for(let i=0;i<a.length;i++)displacement=Math.max(displacement,Math.abs(a[i]-b[i]));
    assert.ok(displacement>.001,`${id} ${name} must move actual weighted vertices`);

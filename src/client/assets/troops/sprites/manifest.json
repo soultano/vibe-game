@@ -1,0 +1,355 @@
+{
+  "version": "living-v2",
+  "frames": 8,
+  "tile": 160,
+  "clips": [
+    "idle",
+    "walk",
+    "run",
+    "attack",
+    "capture",
+    "death"
+  ],
+  "models": {
+    "protocol-infantry": {
+      "file": "/assets/troops/sprites/protocol-infantry.webp",
+      "durations": [
+        2,
+        1.066666603088379,
+        0.6666666865348816,
+        3.299999952316284,
+        2,
+        1.5
+      ],
+      "anchorX": 0.4747234950627888,
+      "anchorY": 0.7699144029079676,
+      "head": 0.6899144029079677,
+      "span": 0.79,
+      "bytes": 138664,
+      "sha256": "240dac9ec95be7aaeadc43bea306504f4b25c032f791cad2c463d16c4f628efb"
+    },
+    "protocol-armor": {
+      "file": "/assets/troops/sprites/protocol-armor.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.42175862141752896,
+      "anchorY": 0.7247333281932918,
+      "head": 0.6447333281932919,
+      "span": 0.79,
+      "bytes": 145894,
+      "sha256": "44e2c72b5d9336c050276b31519ea8e445faf37e6af0e7204ea474b1396a9a91"
+    },
+    "protocol-air": {
+      "file": "/assets/troops/sprites/protocol-air.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.49636956053988746,
+      "anchorY": 0.5436760834638898,
+      "head": 0.4636760834638901,
+      "span": 0.79,
+      "bytes": 131040,
+      "sha256": "1e68f4da0af1caae827534a206afdbc850c83f1f09412b83bea889abd27731a2"
+    },
+    "protocol-ultimate": {
+      "file": "/assets/troops/sprites/protocol-ultimate.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.49451730060209387,
+      "anchorY": 0.6720038884292109,
+      "head": 0.4613497700493842,
+      "span": 0.82,
+      "bytes": 177348,
+      "sha256": "13ad70f9039f2a93a6da66802bba2cb776706fe7bf632f0fd1f5d3d438c0d2ee"
+    },
+    "vanguard-infantry": {
+      "file": "/assets/troops/sprites/vanguard-infantry.webp",
+      "durations": [
+        2,
+        1.066666603088379,
+        0.6666666865348816,
+        3.299999952316284,
+        2,
+        1.5
+      ],
+      "anchorX": 0.5669297409022571,
+      "anchorY": 0.741839378319147,
+      "head": 0.6618393783191474,
+      "span": 0.79,
+      "bytes": 129908,
+      "sha256": "5ab91205e4dcf1293be52009731b1a78b9e3fcd6a0a35f2fb502d8b8bdffabe7"
+    },
+    "vanguard-armor": {
+      "file": "/assets/troops/sprites/vanguard-armor.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.4886361567529792,
+      "anchorY": 0.7397969983959815,
+      "head": 0.6597969983959815,
+      "span": 0.79,
+      "bytes": 71394,
+      "sha256": "5fd9e64b45bc219a8b0a66e7f8919e2de0e61a0887071e2f1be81387ea820e2c"
+    },
+    "vanguard-air": {
+      "file": "/assets/troops/sprites/vanguard-air.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.5031500017490227,
+      "anchorY": 0.594665980464779,
+      "head": 0.47805146398523285,
+      "span": 0.82,
+      "bytes": 127614,
+      "sha256": "e3155a0c6778358fb5319c9d72b9a9ff961ff199f6f8da94137e10255109e34b"
+    },
+    "vanguard-ultimate": {
+      "file": "/assets/troops/sprites/vanguard-ultimate.webp",
+      "durations": [
+        2,
+        1.066666603088379,
+        0.6666666865348816,
+        3.299999952316284,
+        2,
+        1.5
+      ],
+      "anchorX": 0.47815861329391496,
+      "anchorY": 0.7492135919887094,
+      "head": 0.6050028663234344,
+      "span": 0.82,
+      "bytes": 137844,
+      "sha256": "9318da26390e2fa400c9481f9559f45044a60d4ec5997bedaa45ffb91b51fd90"
+    },
+    "bloom-infantry": {
+      "file": "/assets/troops/sprites/bloom-infantry.webp",
+      "durations": [
+        2,
+        1.066666603088379,
+        0.6666666865348816,
+        3.299999952316284,
+        2,
+        1.5
+      ],
+      "anchorX": 0.5147708613609763,
+      "anchorY": 0.7204946469366881,
+      "head": 0.6404946469366881,
+      "span": 0.79,
+      "bytes": 169836,
+      "sha256": "a2284ad8f79c85445a649c64a9f8d498763214fe9609038d306096d3436bba02"
+    },
+    "bloom-armor": {
+      "file": "/assets/troops/sprites/bloom-armor.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.48862890799858494,
+      "anchorY": 0.6121155819280475,
+      "head": 0.5321155819280478,
+      "span": 0.7900000000000001,
+      "bytes": 190222,
+      "sha256": "9620995bdf3007b85f49abf0b6d218e191259958de9f872cf7fc3ecc4e12dc77"
+    },
+    "bloom-air": {
+      "file": "/assets/troops/sprites/bloom-air.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.48760885808289567,
+      "anchorY": 0.6851034632279568,
+      "head": 0.5771344999922909,
+      "span": 0.82,
+      "bytes": 141498,
+      "sha256": "2483108f8d712537f91b6a24f99f4b0b285402d73f453acf85228d18bc14667e"
+    },
+    "bloom-ultimate": {
+      "file": "/assets/troops/sprites/bloom-ultimate.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.4866738328515683,
+      "anchorY": 0.6689971357751769,
+      "head": 0.5889971357751771,
+      "span": 0.79,
+      "bytes": 185024,
+      "sha256": "55e9f39430be65bec1474849e5a82565dd117f87f3d2bbbaf3c56ac916a71f10"
+    },
+    "swarm-infantry": {
+      "file": "/assets/troops/sprites/swarm-infantry.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.4496269714435187,
+      "anchorY": 0.6608031814832687,
+      "head": 0.5808031814832687,
+      "span": 0.79,
+      "bytes": 136784,
+      "sha256": "4f730d261cab2bf5996a22003fa456e0614919827b3eaafa8e4ce943802b7bf3"
+    },
+    "swarm-armor": {
+      "file": "/assets/troops/sprites/swarm-armor.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.5074445764278341,
+      "anchorY": 0.6372663024877289,
+      "head": 0.5572663024877291,
+      "span": 0.7900000000000001,
+      "bytes": 192458,
+      "sha256": "867c737f57268607059595f458fc7fb69429e7ec3a67c9f5e0dd79f4cb4a3f81"
+    },
+    "swarm-air": {
+      "file": "/assets/troops/sprites/swarm-air.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.5223459598114097,
+      "anchorY": 0.5493718638850418,
+      "head": 0.3406718592589099,
+      "span": 0.82,
+      "bytes": 135530,
+      "sha256": "002f5d08c2b59cdde78abdc15d17f5e9de6e97412b336d870ed891c457b3c94d"
+    },
+    "swarm-ultimate": {
+      "file": "/assets/troops/sprites/swarm-ultimate.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.5180354966796183,
+      "anchorY": 0.5942956751311195,
+      "head": 0.5142956751311196,
+      "span": 0.7899999999999999,
+      "bytes": 169934,
+      "sha256": "b2755a8b35b0b6da9e125d3939ddd412ff79ec7f03dc5f3269a3a1e413f34ebc"
+    },
+    "pack-infantry": {
+      "file": "/assets/troops/sprites/pack-infantry.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.4969823861237045,
+      "anchorY": 0.5915229848083394,
+      "head": 0.5115229848083395,
+      "span": 0.79,
+      "bytes": 97468,
+      "sha256": "ae97bd174b48e6de5ed5f492fa01bb03198d5a1d57718d216a75e2a62734969d"
+    },
+    "pack-armor": {
+      "file": "/assets/troops/sprites/pack-armor.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.4922544948734481,
+      "anchorY": 0.6374175776966567,
+      "head": 0.5574175776966568,
+      "span": 0.79,
+      "bytes": 144316,
+      "sha256": "de33476ea5e8c4ccff5752f073e42f8c4becfe53ea302ecc116190ee686d540b"
+    },
+    "pack-air": {
+      "file": "/assets/troops/sprites/pack-air.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.497456169211094,
+      "anchorY": 0.6532256012293299,
+      "head": 0.4157680971287996,
+      "span": 0.82,
+      "bytes": 89318,
+      "sha256": "0abba2102711265589ef831116bcfbb849d0444ce50d9987f3bde6bab9293b94"
+    },
+    "pack-ultimate": {
+      "file": "/assets/troops/sprites/pack-ultimate.webp",
+      "durations": [
+        2.4000000953674316,
+        1.2000000476837158,
+        0.6499999761581421,
+        1.399999976158142,
+        2,
+        1.5
+      ],
+      "anchorX": 0.5205359243545598,
+      "anchorY": 0.6068391129203554,
+      "head": 0.5268391129203556,
+      "span": 0.7899999999999999,
+      "bytes": 195016,
+      "sha256": "0377adb6bf4936b3ca9caac66412ca2dd72b3653706ecfb5bd6d4c8856fac6cd"
+    }
+  }
+}

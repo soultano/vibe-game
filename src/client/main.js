@@ -6,7 +6,7 @@ import { skipCost } from "../shared/economy.js";
 import { ABILITIES, factionAbilityName } from "../shared/abilities.js";
 import { troopForAbility, troopFor, TROOP_CLASSES, TROOP_ANIMATIONS } from '../shared/troops.js';
 import { createBattlefieldState } from './battlefield-state.js';
-import { createLandscapeRenderer, terrainLift } from './landscape-renderer.js';
+import { createLandscapeRenderer } from './landscape-renderer.js';
 import { landscape } from '../shared/landscape.js';
 import { DETAIL_ZOOM, MAP_LIMITS, mapDetail } from '../shared/map-view.js';
 import { mapRequest } from './map-requests.js';
@@ -15,6 +15,7 @@ import { createWorldCamera, panWorld, anchorWorld, wrapLongitude } from './world
 import { drawWorldGrid } from './world-grid.js';
 import { BIOMES, CLIMATES } from '../shared/biomes.js';
 import { worldLandAt } from '../shared/world-land.js';
+import { footprintBounds, headquartersLayout, layoutTroops, spriteBounds } from './actor-layout.js';
 import { headquartersFor } from "../shared/headquarters.js";
 import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./telegram.js";
 import { getLang, setLang, t, LANGUAGES } from "./i18n.js";
@@ -68,6 +69,7 @@ for (const f of FACTIONS) {
 const battlefield = createBattlefieldState({ maxUnits: Math.min(window.innerWidth || 1280, screen.width) < 760 ? 24 : 36 });
 const tileConflicts = new Map();
 let troops3D = null, troopsPromise = null, troopsUnavailable = false, troopsEnabled = true, inspectingTroop = null, troopGeneration = 0;
+let troopSprites=null,troopSpritesPromise=null,fallbackVisible=false;
 try { troopsEnabled = localStorage.getItem('pd-troops') !== 'off'; } catch {}
 const animationLabels = { idle: 'Ожидание', walk: 'Шаг', run: 'Бег', attack: 'Атака', capture: 'Захват', death: 'Поражение' };
 function syncBattlefield() {
@@ -76,28 +78,37 @@ function syncBattlefield() {
   battlefield.sync({ player: model?.player, players: [...leaderboard, ...profiles.values()], conflicts: [...tileConflicts.values(), ...(model?.conflicts || [])] }, now);
 }
 async function ensureTroops3D() {
-  if (troopsUnavailable || typeof window.WebGL2RenderingContext === 'undefined') return null;
+  if (troopsUnavailable) return null;
+  if(typeof window.WebGL2RenderingContext === 'undefined'){troopsUnavailable=true;return null;}
   if (!troopsPromise) troopsPromise = import('./troops-3d.js').then(module => {
     troops3D = module.createTroops3D({ canvas: $('troopsCanvas'), reducedMotion, maxUnits: (window.innerWidth || 1280) < 760 ? 24 : 36, onReady: invalidate,
-      onUnavailable(id) { if (!id) { troopsUnavailable = true; $('troopsCanvas').hidden = true; } } });
+      onUnavailable(id) { if (!id||!$('troopsDialog').open) { troopsUnavailable = true;troops3D?.suspendMap(); }invalidate(); } });
     return troops3D;
   }).catch(() => { troopsUnavailable = true; return null; });
   return troopsPromise;
 }
-function drawTroopFallback(units) {
-  const target=$('troopsCanvas'),c=target.getContext('2d');target.hidden=!units.length;target.width=Math.round(cw);target.height=Math.round(ch);c.clearRect(0,0,cw,ch);
-  for(const u of units){const to=project(...cellToLatLng(u.cell)),from=u.fromCell?project(...cellToLatLng(u.fromCell)):to,p=u.progress??1,x=from.x+(to.x-from.x)*p,y=from.y+(to.y-from.y)*p-terrainLift(u.cell,zoom);let img=troopPosters.get(u.id);if(!img){img=new Image();img.src=u.poster;img.onload=invalidate;troopPosters.set(u.id,img);}if(img.complete&&img.naturalWidth)c.drawImage(img,x-18,y-32,36,36);c.fillStyle='#07120e';c.fillRect(x-15,y-37,30,4);c.fillStyle=u.color;c.fillRect(x-14,y-36,28*Math.max(0,u.hp/u.maxHp),2);}
+function troopView(units){return{width:cw,height:ch,zoom,units,footprintCell:cellFootprint,projectCell(cell){try{return project(...cellToLatLng(cell));}catch{return null;}}};}
+function drawTroopFallback(units,now) {
+  const target=$('troopsCanvas');target.hidden=!units.length;fallbackVisible=units.length>0;
+  if(troopsUnavailable&&!troopSpritesPromise)troopSpritesPromise=import('./troops-sprites.js').then(module=>{troopSprites=module.createTroopSprites({onReady:invalidate,reducedMotion});invalidate();return troopSprites;}).catch(()=>null);
+  if(troopSprites){troopSprites.render(now,{...troopView(units),canvas:target,serverNow:serverNow()});return;}
+  const c=target.getContext('2d');target.width=Math.round(cw);target.height=Math.round(ch);c.clearRect(0,0,cw,ch);
+  for(const{unit:u,x,y,span,elevation}of layoutTroops(units,troopView(units))){let img=troopPosters.get(u.id);if(!img){img=new Image();img.src=u.poster;img.onload=invalidate;troopPosters.set(u.id,img);}if(img.complete&&img.naturalWidth)c.drawImage(img,x-span*.7,y-span*1.18-elevation*.8,span*1.4,span*1.4);}
 }
 const troopPosters=new Map();
-function troopsNeedFrame() { return !!troops3D && ($('troopsDialog').open || troopsEnabled && detailedMap()) && troops3D.needsFrame(); }
+function troopsNeedFrame() {
+ if($('troopsDialog').open)return !!troops3D&&!troopsUnavailable&&troops3D.needsFrame();
+ return troopsEnabled&&detailedMap()&&(!troopsUnavailable&&troops3D?troops3D.needsFrame():troopSprites?troopSprites.needsFrame():fallbackVisible&&!reducedMotion);
+}
 function drawTroops(now) {
   const inspecting = $('troopsDialog').open;
-  if (!inspecting && (!troopsEnabled || !detailedMap())) { $('troopsCanvas').hidden = true;if(!troopsMapSuspended){troops3D?.suspendMap();troopsMapSuspended=true;}return; }
+  if (!inspecting && (!troopsEnabled || !detailedMap())) { fallbackVisible=false;troopSprites?.suspend();$('troopsCanvas').hidden = true;if(!troopsMapSuspended){troops3D?.suspendMap();troopsMapSuspended=true;}return; }
   troopsMapSuspended=false;
-  const units = battlefield.units(serverNow(),cell=>{try{const p=project(...cellToLatLng(cell));return p.x>=-120&&p.x<=cw+120&&p.y>=-160&&p.y<=ch+120;}catch{return false;}}).slice(0,mapDetail(zoom).unitLimit);
-  if (!troops3D || troopsUnavailable) { if (!troopsUnavailable && (units.length || inspecting)) ensureTroops3D().then(engine => { if (engine) invalidate(); }); if(!inspecting)drawTroopFallback(units); return; }
+  const units = battlefield.units(serverNow(),cell=>{try{const p=project(...cellToLatLng(cell)),margin=Math.max(160,geometry().size*.018);return p.x>=-margin&&p.x<=cw+margin&&p.y>=-margin*2&&p.y<=ch+margin;}catch{return false;}}).slice(0,mapDetail(zoom).unitLimit);
+  if (!troops3D || troopsUnavailable) { if (!troopsUnavailable && (units.length || inspecting)) ensureTroops3D().then(engine => { if (engine) invalidate(); }); if(!inspecting)drawTroopFallback(units,now); return; }
+  fallbackVisible=false;troopSprites?.suspend();
   $('troopsCanvas').hidden = inspecting ? $('troopsCanvas').hidden : !units.length;
-  troops3D.render(now, { width: cw, height: ch, zoom, units, projectCell(cell) { try { const point=project(...cellToLatLng(cell)); point.y-=terrainLift(cell,zoom); return point; } catch { return null; } } });
+  try{troops3D.render(now,troopView(units));}catch{troopsUnavailable=true;troops3D.dispose();troops3D=null;if(!inspecting)drawTroopFallback(units,now);}
 }
 async function inspectTroop(faction, type = 'infantry') {
   const spec = troopFor(faction, type), generation = ++troopGeneration;
@@ -120,6 +131,29 @@ async function inspectTroop(faction, type = 'infantry') {
 
 function readySprite(sprite) {
   return !!sprite && !!(sprite.hq3dReady || sprite.complete && sprite.naturalWidth);
+}
+function headquartersSpriteBounds(sprite) {
+  return spriteBounds(sprite);
+}
+function cellFootprint(cell){return footprintBounds(project.shape(border(cell)));}
+function headquartersMapLayout(cell, center, sprite) {
+  return headquartersLayout(center,cellFootprint(cell),headquartersSpriteBounds(sprite));
+}
+function drawHeadquarters(cell, center, sprite, layout, color) {
+  const { crop, width, height, groundHeight, left, top } = layout;
+  ctx.save();
+  if (zoom >= 256) {
+    cellPath(cell);
+    ctx.fillStyle = color + "24"; ctx.fill();
+    ctx.strokeStyle = color + "bb"; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  ctx.fillStyle = "#02080c99";
+  ctx.beginPath();
+  ctx.ellipse(center.x, center.y + groundHeight * .13, width * .46, groundHeight * .22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(sprite, crop.x, crop.y, crop.width, crop.height, left, top, width, height);
+  ctx.restore();
 }
 function headquartersDisplaySprite(faction) {
   return headquarters3D?.getCachedStamp(faction) || headquartersSprite(faction);
@@ -185,7 +219,7 @@ async function inspectHeadquarters(faction) {
   });
 }
 function headquartersSprite(faction) {
-  if(!headquartersImages.has(faction)){const image=new Image();image.src=headquartersFor(faction).sprite;image.onload=invalidate;headquartersImages.set(faction,image);}
+  if(!headquartersImages.has(faction)){const image=new Image();image.src=headquartersFor(faction).sprite+'?v=hex-v2';image.onload=invalidate;headquartersImages.set(faction,image);}
   return headquartersImages.get(faction);
 }
 function mapColor(faction) {
@@ -377,7 +411,7 @@ function resetWorldState() {
   neutralKey = "";
   profiles.clear();
   effects.length = 0;
-  battlefield.clear(); tileConflicts.clear(); troops3D?.clear(); inspectingTroop = null; troopGeneration++; $("troopsDialog").close();
+  battlefield.clear(); tileConflicts.clear(); troops3D?.clear();troopSprites?.suspend();fallbackVisible=false; inspectingTroop = null; troopGeneration++; $("troopsDialog").close();
   abilityBursts.length = 0;
   pointers.clear();
   pinch = null;
@@ -550,7 +584,8 @@ function updateUI() {
   $("missionSteps").hidden = !!p;
   $("missionBtn").hidden = !p;
   $("armyControls").hidden = !p;
-  setText("armyStatus",armyTargeting?"Укажите цель на карте":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономный захват · войска под вашим командованием");
+  const armyUnits=p?.army?.units||[];
+  setText("armyStatus",armyTargeting?"Укажите цель на карте":armyUnits.some(u=>u.state==='attack')?"Войска ведут бой":armyUnits.some(u=>u.state==='capture')?"Закрепляемся на территории":armyUnits.some(u=>u.activity==='patrol')?"Патрулируем свою территорию":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономное продвижение к фронтиру");
   $("missionSteps").children[0]?.classList.toggle("current", !account);
   $("missionSteps").children[1]?.classList.toggle("current", !!account && !placing);
   $("missionSteps").children[2]?.classList.toggle("current", placing);
@@ -844,17 +879,18 @@ function drawMap(now) {
   for (const p of visibleBases.values()) {
     if (!p.baseCell) continue;
     const [lat, lng] = cellToLatLng(p.baseCell), pos = project(lat, lng);
-    if (pos.x < -45 || pos.x > cw + 45 || pos.y < -45 || pos.y > ch + 45) continue;
-    const own = p.id === account?.id, color = playerColor(p, p.faction), sprite = detailedMap()?headquartersDisplaySprite(p.faction):null, size = own ? 78 : 60;
+    const margin=Math.max(100,geometry().size*.04);
+    if(pos.x < -margin || pos.x > cw+margin || pos.y < -margin || pos.y > ch+margin)continue;
+    const own = p.id === account?.id, color = playerColor(p, p.faction), sprite = detailedMap()?headquartersDisplaySprite(p.faction):null;
     let labelY = pos.y + 42;
     if (detailedMap() && readySprite(sprite)) {
-      ctx.fillStyle = "#02080c77";
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y + 18, size * 0.38, size * 0.13, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.drawImage(sprite, pos.x - size / 2, pos.y - size * 0.77, size, size);
-      labelY = pos.y + 42;
+      const layout = headquartersMapLayout(p.baseCell, pos, sprite);
+      if (layout.left + layout.width < 0 || layout.left > cw || layout.bottom < 0 || layout.top > ch) continue;
+      drawHeadquarters(p.baseCell, pos, sprite, layout, color);
+      labelY = layout.bottom + 24;
+
     } else {
+      if (pos.x < -45 || pos.x > cw + 45 || pos.y < -45 || pos.y > ch + 45) continue;
       const r = own ? 18 : 14;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
@@ -890,7 +926,7 @@ function drawMap(now) {
     if (readySprite(sprite)) {
       const at = project(...cellToLatLng(cell));
       ctx.globalAlpha = 0.75;
-      ctx.drawImage(sprite, at.x - 35, at.y - 54, 70, 70);
+      drawHeadquarters(cell, at, sprite, headquartersMapLayout(cell, at, sprite), mapColor(selectedFaction));
       ctx.globalAlpha = 1;
     }
   }
