@@ -28,7 +28,7 @@ test('request planning uses summaries far away and only overlapping tile masks u
 test('landscape loads only the world raster far away and no object sprites at regional scale',()=>{
  const requested=[],renderer=createLandscapeRenderer({imageFactory:()=>({complete:false,naturalWidth:0,set src(value){requested.push(value);}})}),canvas=createCanvas(800,500),ctx=canvas.getContext('2d');
  const view=zoom=>{const scale=Math.min(800/360,500/180)*zoom;return{width:800,height:500,zoom,project:(lat,lng)=>({x:400+(lng-69.28)*scale,y:250-(lat-41.31)*scale}),atPoint:(x,y)=>({lat:41.31-(y-250)/scale,lng:69.28+(x-400)/scale})};};
- renderer.draw(ctx,view(1));assert.deepEqual(requested,['/assets/terrain/world-overview.webp']);renderer.draw(ctx,view(32));assert.equal(requested.length,1);renderer.draw(ctx,view(256));assert.ok(requested.length>1);assert.ok(requested.every(p=>!/(pine|oak|peak|crag|boulders|mushrooms)\.webp/.test(p)));renderer.draw(ctx,view(2048));assert.ok(requested.some(p=>/(pine|oak)\.webp/.test(p)));
+ renderer.draw(ctx,view(1));assert.deepEqual(requested,['/assets/terrain/world-overview.webp']);renderer.draw(ctx,view(16));assert.equal(requested.length,1);renderer.draw(ctx,view(32));assert.equal(requested.filter(p=>p.includes('/overview/')).length,2,'regional raster concurrency is bounded');renderer.draw(ctx,view(256));assert.ok(requested.length>1);assert.ok(requested.every(p=>!/(pine|oak|peak|crag|boulders|mushrooms)\.webp/.test(p)));renderer.draw(ctx,view(2048));assert.ok(requested.some(p=>/(pine|oak)\.webp/.test(p)));
 });
 test('the global terrain asset is independently bounded below 80 KB and matches its digest',async()=>{
  const m=JSON.parse(await readFile(new URL('../src/client/assets/terrain/manifest.json',import.meta.url))),bytes=await readFile(new URL('../src/client/assets/terrain/world-overview.webp',import.meta.url));assert.ok(bytes.length<80000);assert.equal(bytes.length,m.overview.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),m.overview.sha256);
@@ -55,4 +55,14 @@ test('detailed tile responses exclude remote component members and offscreen NPC
 
 test('overview badges focus their real map position rather than the screen label offset',async()=>{
  const{hitMapOverview}=await import('../src/client/map-overview.js');const overview=aggregateOverview([mapEntry(player(0))],bounds),project=()=>({x:400,y:250});const hit=hitMapOverview(overview,project,800,500,420,230);assert.ok(hit);assert.ok(Math.abs(hit.lat-41.3111)<.02);assert.ok(Math.abs(hit.lng-69.2797)<.02);
+});
+
+test('regional raster tiles cover only the current bounds and their source matches the unchanged tactical field',async()=>{
+ const{terrainOverviewTiles,OVERVIEW_TERRAIN}=await import('../src/shared/terrain-overview.js');const tiles=terrainOverviewTiles({west:66,east:72,south:39,north:43});assert.ok(tiles.length<=OVERVIEW_TERRAIN.maxVisible);assert.ok(tiles.every(t=>t.east>=66&&t.west<=72&&t.north>=39&&t.south<=43));
+ const m=JSON.parse(await readFile(new URL('../src/client/assets/terrain/manifest.json',import.meta.url)));assert.equal(m.regionalOverview.assets.length,40);let total=0;
+ for(const a of m.regionalOverview.assets){const b=await readFile(new URL('../src/client/assets/terrain/'+a.file,import.meta.url));assert.ok(b.length<25000);assert.equal(createHash('sha256').update(b).digest('hex'),a.sha256);total+=b.length;}assert.ok(total<1000000);
+});
+test('leaving the regional view stops its queued image downloads',()=>{
+ const images=[],requested=[],renderer=createLandscapeRenderer({imageFactory:()=>{const image={complete:false,naturalWidth:0,set src(v){requested.push(v);}};images.push(image);return image;}}),ctx=createCanvas(800,500).getContext('2d');const view=zoom=>{const scale=2.2*zoom;return{width:800,height:500,zoom,project:(lat,lng)=>({x:400+(lng-69.28)*scale,y:250-(lat-41.31)*scale}),atPoint:(x,y)=>({lat:41.31-(y-250)/scale,lng:69.28+(x-400)/scale})};};
+ renderer.draw(ctx,view(32));assert.equal(requested.filter(p=>p.includes('/overview/')).length,2);renderer.draw(ctx,view(1));for(const image of images)image.onload?.();assert.equal(requested.filter(p=>p.includes('/overview/')).length,2);
 });

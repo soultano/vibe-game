@@ -1,5 +1,6 @@
 import { latLngToCell, cellToLatLng, cellToBoundary, gridDisk, gridDistance } from 'h3-js';
 import { mapDetail, MAP_LIMITS } from '../shared/map-view.js';
+import { OVERVIEW_TERRAIN, terrainOverviewTiles } from '../shared/terrain-overview.js';
 import { landscape } from '../shared/landscape.js';
 const colors={grass:'#52713b',forest:'#2d5141',rock:'#7b8169',mountain:'#737b71',sand:'#ad9658',water:'#1c6579'};
 const textures={mountain:'rock',grass:'grass',forest:'forest',rock:'rock',sand:'sand',water:'water'};
@@ -11,9 +12,36 @@ export function createLandscapeRenderer({onReady=()=>{},imageFactory=()=>new Ima
   if(assets?.has(name)){images.set(name,assets.get(name));return assets.get(name);}
   const image=imageFactory();images.set(name,image);image.onload=onReady;image.src='/assets/terrain/'+name+'.webp';return image;
  }
+ const regional=new Map();let regionalWanted=new Set(),regionalPending=[],regionalLoads=0,regionalEnabled=false;
+ function pumpRegional(){
+  if(!regionalEnabled||globalThis.document?.hidden)return;
+  while(regionalLoads<OVERVIEW_TERRAIN.concurrency&&regionalPending.length){
+   const key=regionalPending.shift(),entry=regional.get(key);if(!regionalWanted.has(key)||!entry||entry.started)continue;
+   entry.started=true;entry.loading=true;regionalLoads++;
+   const finish=error=>{entry.loading=false;entry.failedAt=error?Date.now():0;regionalLoads--;onReady();pumpRegional();};
+   entry.image.onload=()=>finish(false);entry.image.onerror=()=>finish(true);entry.image.src='/assets/terrain/overview/'+key+'.webp';
+  }
+ }
+ function drawRaster(ctx,project,width,height,atPoint,zoom){
+  const world=getImage('world-overview');ctx.save();ctx.imageSmoothingEnabled=true;
+  if(world?.complete&&world.naturalWidth){const a=project(90,-180),b=project(-90,180);ctx.drawImage(world,a.x,a.y,b.x-a.x,b.y-a.y);}
+  regionalEnabled=zoom>=32;
+  const nw=atPoint(0,0),se=atPoint(width,height),tiles=regionalEnabled?terrainOverviewTiles({west:nw.lng,east:se.lng,south:se.lat,north:nw.lat}):[];
+  regionalWanted=new Set(tiles.map(t=>t.key));regionalPending=[];
+  for(const tile of tiles){
+   let entry=regional.get(tile.key);
+   if(!entry){entry={image:assets?.get('overview/'+tile.key)||imageFactory(),started:false,loading:false,failedAt:0};regional.set(tile.key,entry);}
+   const image=entry.image;
+   if(image?.complete&&image.naturalWidth){const a=project(tile.north,tile.west),b=project(tile.south,tile.east);ctx.drawImage(image,a.x-.25,a.y-.25,b.x-a.x+.5,b.y-a.y+.5);}
+   else if(!entry.loading&&(!entry.failedAt||Date.now()-entry.failedAt>=10000)){entry.started=false;regionalPending.push(tile.key);}
+  }
+  for(const [key,entry]of regional)if(regional.size>OVERVIEW_TERRAIN.maxCached&&!regionalWanted.has(key)&&!entry.loading)regional.delete(key);
+  pumpRegional();ctx.restore();
+ }
  function pattern(ctx,name){let values=patterns.get(ctx);if(!values){values=new Map();patterns.set(ctx,values);}const image=getImage(name);if(!image?.complete||!image.naturalWidth)return null;if(!values.has(name))values.set(name,ctx.createPattern(image,'repeat'));return values.get(name);}
  function draw(ctx,{width,height,zoom,project,atPoint,baseCells=[],roads=[]}){
-  if(zoom<8){const world=getImage('world-overview');if(world?.complete&&world.naturalWidth){const a=project(90,-180),b=project(-90,180);ctx.save();ctx.imageSmoothingEnabled=true;ctx.drawImage(world,a.x,a.y,b.x-a.x,b.y-a.y);ctx.restore();}return;}
+  if(zoom<128){cells=[];key='';drawRaster(ctx,project,width,height,atPoint,zoom);return;}
+  regionalEnabled=false;regionalWanted.clear();regionalPending=[];
   const policy=mapDetail(zoom);let res=policy.terrainResolution;
   const center=atPoint(width/2,height/2);let cell,radius;
   // Choose a coarser field instead of truncating coverage on wide viewports.

@@ -118,6 +118,7 @@ async function checkWorker() {
     assert.equal(terrainManifest.assets.length,12);
     for(const asset of terrainManifest.assets){const path='/assets/terrain/'+asset.file,response=await call(path);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/webp');assert.deepEqual(Buffer.from(await response.arrayBuffer()),await readFile(join(project,'dist/client',path)));}
     const worldOverview=await call('/assets/terrain/world-overview.webp');assert.equal(worldOverview.status,200);assert.ok((await worldOverview.arrayBuffer()).byteLength<80000);
+    for(const asset of terrainManifest.regionalOverview?.assets||[]){const response=await call('/assets/terrain/'+asset.file);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/webp');assert.deepEqual(Buffer.from(await response.arrayBuffer()),await readFile(join(project,'dist/client/assets/terrain',asset.file)));}
     const release=await (await call('/release.json')).json();assert.match(release.release,/^[0-9a-f]{16}$/);assert.ok(release.features.includes('server-npc'));
     for (const name of await readdir(join(project, 'dist/client/chunks'))) {
       const response = await call('/chunks/' + name); assert.equal(response.status, 200);
