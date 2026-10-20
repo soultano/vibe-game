@@ -58,7 +58,9 @@ export async function indexPlayer(tx, player) {
   const old = row.entries[player.id];
   if (old && old.baseCell === entry.baseCell && old.radiusRings === entry.radiusRings
     && old.name===entry.name && old.faction===entry.faction && old.level===entry.level && old.pixels===entry.pixels && old.color===entry.color
-    && old.customLink===entry.customLink && old.customLinkTitle===entry.customLinkTitle && at-(old.summaryAt||0)<10000) return;
+    && old.customLink===entry.customLink && old.customLinkTitle===entry.customLinkTitle
+    && old.battlesFought===entry.battlesFought && old.battlesWon===entry.battlesWon && old.unitsDefeated===entry.unitsDefeated
+    && at-(old.summaryAt||0)<10000) return;
   row.entries[player.id] = entry;
   await tx.put(key, row);
   tx.spatialMetadata?.set(key, row);

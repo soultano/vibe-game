@@ -20,7 +20,7 @@ test('HQ guards occupy distinct fixed formation slots, and moving units interpol
 });
 test('newer tile army snapshots cannot be overwritten by an older own-state response',()=>{
  const unit={id:'u',owner:'p',faction:'pack',type:'infantry',cell,hp:100,maxHp:100,state:'idle'},old={id:'p',baseCell:cell,army:{at,units:[unit]}},latest={...old,army:{at:at+2000,units:[{...unit,state:'capture'}]}};
- const state=createBattlefieldState();state.sync({player:old,players:[latest]},at+2000);assert.equal(state.units(at+2500)[0].animation,'capture');
+ const state=createBattlefieldState();state.sync({player:old,players:[latest]},at+2000);assert.equal(state.units(at+2500)[0].state,'capture');assert.equal(state.units(at+2500)[0].animation,'idle');
 });
 test('finished waypoints stop foot skating but retain the authoritative destination',()=>{
  const state=createBattlefieldState(),move={from:cell,to:cell,startedAt:at,endsAt:at+1000};state.sync({player:{id:'p',baseCell:cell,army:{at,units:[{id:'u',owner:'p',faction:'pack',type:'infantry',cell,hp:100,maxHp:100,state:'move',move}]}}},at);
@@ -28,7 +28,7 @@ test('finished waypoints stop foot skating but retain the authoritative destinat
 });
 test('a partial own tile snapshot preserves offscreen squad selection and the full roster',()=>{
  const unit=id=>({id,owner:'p',faction:'pack',type:'infantry',cell,hp:100,maxHp:100,state:'idle'}),full={id:'p',baseCell:cell,army:{at,units:[unit('one'),unit('two')]}},partial={id:'p',baseCell:cell,army:{at:at+500,units:[{...unit('one'),state:'capture'}]}},state=createBattlefieldState();
- state.select('two');state.sync({player:full,players:[partial]},at+500);assert.equal(state.units(at+600).length,2);assert.equal(state.units(at+600)[0].key,'two');assert.equal(state.units(at+600).find(u=>u.key==='one').animation,'capture');
+ state.select('two');state.sync({player:full,players:[partial]},at+500);assert.equal(state.units(at+600).length,2);assert.equal(state.units(at+600)[0].key,'two');assert.equal(state.units(at+600).find(u=>u.key==='one').state,'capture');assert.equal(state.units(at+600).find(u=>u.key==='one').animation,'idle');
  const removed={...full,army:{at:at+1000,units:[unit('one')]}};state.sync({player:removed,players:[partial]},at+1000);assert.equal(state.units(at+1100).length,1);
 });
 test('a unit leaving the viewport remains visible while its actual starting cell is still on screen',()=>{

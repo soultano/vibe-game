@@ -1,6 +1,6 @@
 import { troopFor } from '../shared/troops.js';
 export function unitSeed(key) { let value=2166136261;for(const c of key)value=Math.imul(value^c.charCodeAt(0),16777619);return(value>>>0)/4294967296; }
-const modes={idle:'idle',move:'walk',retreat:'run',attack:'attack',capture:'capture',death:'death'};
+const modes={idle:'idle',move:'walk',retreat:'run',attack:'attack',capture:'idle',death:'death'};
 // This adapter only interpolates persisted server NPC positions. It neither
 // invents patrols nor predicts damage, victories, or ownership changes.
 export function createBattlefieldState({maxUnits=36}={}){
@@ -32,6 +32,7 @@ export function createBattlefieldState({maxUnits=36}={}){
      progress,moveDuration:move?move.endsAt-move.startedAt:0,animation:fresh&&!completed?modes[u.state]||'idle':u.hp<=0?'death':'idle',
      phase:unitSeed(u.id),offsetX:((unitSeed(u.id+':x')-.5)*9),offsetY:((unitSeed(u.id+':y')-.5)*7),
      target:target?.move?.to||target?.cell||null,hp:u.hp,maxHp:u.maxHp,neutral:!!u.neutral,
+     activity:u.activity,lastDamage:u.lastDamage||null,
      capture:fresh&&u.state==='capture',ultimate:u.type==='ultimate',azimuth:0,
      state:u.state,stateAt:u.stateAt,at:u.at,order:u.order||null,waypoints:u.waypoints||[],routePartial:!!u.routePartial,
     };

@@ -4,7 +4,7 @@ import { createClientHarness } from '../tests/helpers/client-harness.mjs';
 const { client, $, click, document, app, network, requests } = await createClientHarness();
 await client.ready;
 assert.equal($('mapLoading').hidden,true);assert.equal($('resourceBar').hidden,true);assert.equal($('authCard').hidden,false);assert.equal($('sectorNav').disabled,true);
-assert.equal($('modalGoogleBtn').disabled,true);assert.equal($('modalGoogleBtn').hidden,true);
+assert.equal(document.getElementById('modalGoogleBtn'),null);assert.equal(document.getElementById('credAuthForm'),null);
 client.draw(performance.now());
 await click('openAuthModalBtn');await click('guestLogin');assert.equal(client.state().account.provider,'guest');assert.equal($('spawnCard').hidden,false);
 assert.equal($('gameNav').hidden,true);assert.equal($('abilityBar').hidden,true);client.openPanel('ranking');assert.equal($('spawnCard').hidden,false,'placing the first headquarters takes priority');await client.refreshState(true);assert.equal($('spawnCard').hidden,false);

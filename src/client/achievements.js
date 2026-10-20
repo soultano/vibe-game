@@ -112,6 +112,13 @@ export const ACHIEVEMENTS = [
 
   // Social / Referrals
   {
+    id: 'promotion_link', category: 'social', icon: '🔗', points: 15, target: 1,
+    title: { ru: 'Открытый канал', en: 'Open Channel', uz: 'Ochiq kanal' },
+    desc: { ru: 'Добавить свою ссылку в профиль', en: 'Add your link to your profile', uz: 'Profilingizga havola qo‘shing' },
+    progress: (p) => p?.achievements?.includes('promotion_link') || p?.customLink ? 1 : 0,
+    check: (p) => !!(p?.achievements?.includes('promotion_link') || p?.customLink),
+  },
+  {
     id: 'ref_1', category: 'social', icon: '🤝', points: 15, target: 1,
     title: { ru: 'Первый соратник', en: 'First Comrade', uz: 'Birinchi safdosh' },
     desc: { ru: 'Пригласить 1 друга в игру', en: 'Invite 1 friend to the game', uz: 'O‘yinga 1 ta do‘stingizni taklif qiling' },

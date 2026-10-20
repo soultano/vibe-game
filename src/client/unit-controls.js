@@ -2,6 +2,7 @@ import {layoutTroops} from './actor-layout.js';
 import {groupTarget,createTargetGuide} from './unit-targets.js';
 import {UNIT_GROUP_LIMIT} from '../shared/unit-orders.js';
 import {createUnitGestures} from './unit-gestures.js';
+import {captureProgress, troopPurpose, healthExplanation} from '../shared/conquest.js';
 const MODES={move:'Идти',attack:'Атаковать',capture:'Захватить',hold:'Удерживать'};
 const COLORS={move:'#8cf3c2',attack:'#ff9b88',capture:'#f0d17b',hold:'#a8cdf2'};
 const REASONS={shield:'Цель защищена щитом.',headquarters:'Штабы нельзя захватывать.',air:'Авиация не захватывает землю.',cap:'Достигнут лимит территории.',locked:'Клетка временно заблокирована.',border:'Потеряна связь с вашей территорией.',terrain:'Цель стала непроходимой.',route:'Проходимый маршрут не найден.',ownership:'Владелец клетки изменился.'};
@@ -63,6 +64,17 @@ export function createUnitControls({$,getPlayer,getUnits,getView,send,notify,inv
   const escort=multiple&&group.some(u=>u.type==='air')&&group.some(u=>u.type!=='air');
   const status=busy?'Передаём общий приказ…':groupSelecting?'Добавляйте или убирайте бойцов касанием. Затем нажмите нужную команду.':!unit?'Выберите бойца. Удержание включает выбор нескольких.':unit.hp<=0?'Отряд погиб · ожидает возрождения':targetMode?hint||({move:'Зелёные гексы — доступные цели. Нажмите на нужный.',attack:'Красные — противник, зелёные — движение с атакой. Серые недоступны.',capture:escort?'Золотые — захват наземными бойцами. Авиация прикроет цель.':'Золотые — доступный захват рядом с вашей границей. Выберите гекс.'}[targetMode]):multiple?orders.length?`С приказом: ${orders.length}/${group.length} · достигли цели: ${complete}${orders.some(u=>u.order.status==='blocked')?' · '+(REASONS[orders.find(u=>u.order.status==='blocked').order.reason]||'Есть блокировка'):''}`:'Группа готова. Выберите команду.':order?`${STATUSES[order.status]||'Приказ принят'}${order.reason?' · '+(REASONS[order.reason]||'Укажите другую цель'):''}`:'Автономный отряд · ждёт вашего приказа';
   setText('unitOrderStatus',status);
+  const clock=getView().now??Date.now();
+  const temporary=unit&&(unit.type!=='infantry'||Number(unit.key.split(':').at(-1))>=3);
+  setText('unitPurpose',unit?troopPurpose(unit.type)+(temporary?' Подкрепление покинет карту после таймера способности.':''):'Пехота и тяжёлые отряды занимают территорию. Авиация прикрывает захват.');
+  setText('unitHealthReason',unit?healthExplanation(unit,clock):'');
+  if(unit&&!busy&&!targetMode&&!groupSelecting&&!multiple){
+    const progress=captureProgress(unit,clock);
+    if(progress!==null)setText('unitOrderStatus',`Разворачивает точку контроля · ${Math.min(99,Math.floor(progress*100))}%`);
+    else if(unit.activity==='waiting-capture')setText('unitOrderStatus','Готов к захвату · ожидает следующую ячейку по скорости штаба. Энергия и HP не списываются.');
+    else if(!order&&unit.activity==='advance')setText('unitOrderStatus','Идёт к свободному гексу, чтобы занять его и увеличить доход.');
+    else if(order?.mode==='capture'&&order.status==='complete')setText('unitOrderStatus','Гекс занят и окрашен в цвет базы. Территория и доход обновлены.');
+  }
   const goals=new Set(orders.map(u=>u.order.cell).filter(Boolean));
   setText('unitRouteInfo',goals.size===1?`${multiple?'Общая цель':MODES[order?.mode]} · ${getView().cellLabel([...goals][0])}${group.some(u=>u.routePartial)?' · ближайший участок пути':''}`:goals.size?`Целей: ${goals.size} · показаны ближайшие участки маршрутов`:'Выберите действие, затем гекс на карте');
   for(const mode of ['move','attack','capture','hold','auto','focus']){
@@ -70,6 +82,8 @@ export function createUnitControls({$,getPlayer,getUnits,getView,send,notify,inv
    if(['move','attack','capture'].includes(mode))button.setAttribute('aria-pressed',String(targetMode===mode));
   }
   $('unit-capture').title=escort?'Наземные бойцы захватят гекс, авиация прикроет цель':unit?.type==='air'?'Авиация не захватывает землю':'Захват соседнего с вашей территорией гекса';
+  $('unit-move').title='Дойти до гекса и остановиться. Эта команда не захватывает землю.';
+  $('unit-attack').title='Идти к цели и сражаться с противником. Для занятия земли выберите «Захватить».';
   $('worldCanvas').classList.toggle('unit-targeting',!!targetMode);$('unitPanel').classList.toggle('targeting',!!targetMode);
  }
  function reset(){const changed=opened||selected.size||targetMode;generation++;selected.clear();targetMode=null;hint='';groupSelecting=false;opened=false;busy=false;rosterKey='';guide.clear();gestures.cancel();onSelect([]);$('unitPanel').hidden=true;$('armyControls').hidden=!getPlayer();$('worldCanvas').classList.remove('unit-targeting');if(changed)onChange();}

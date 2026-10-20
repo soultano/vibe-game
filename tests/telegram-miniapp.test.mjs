@@ -86,13 +86,13 @@ test('Mini App and legacy Telegram widget use the same provider identity and bas
   assert.equal((await store.list('account:')).length, 1);
 });
 
-test('Google explicit disabled flag hides the provider and blocks OAuth routes even with credentials', async () => {
+test('Google routes remain removed even with old OAuth configuration', async () => {
   const settings = { ...env, GOOGLE_CLIENT_ID: 'client.google', GOOGLE_CLIENT_SECRET: 'synthetic-test-secret', GOOGLE_REDIRECT_URI: `${origin}/api/auth/google/callback` };
   const store = new MemoryStore();
   const providers = await handleAuth(req('/api/auth/providers'), settings, store);
   assert.equal((await providers.json()).google.enabled, false);
-  assert.equal((await handleAuth(req('/api/auth/google/start?fingerprint=google-device-123'), settings, store)).status, 503);
-  assert.equal((await handleAuth(req('/api/auth/google/callback?code=x&state=x'), settings, store)).status, 503);
+  assert.equal((await handleAuth(req('/api/auth/google/start?fingerprint=google-device-123'), settings, store)).status, 410);
+  assert.equal((await handleAuth(req('/api/auth/google/callback?code=x&state=x'), settings, store)).status, 410);
   assert.equal((await store.list('oauth:')).length, 0);
 });
 

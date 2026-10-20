@@ -260,38 +260,24 @@ test('credentials registration and login create isolated accounts and verify pas
   assert.ok(loginData.sessionToken);
 });
 
-test('custom domains 01node.uz and www.01node.uz are allowed for registration and login with email', async () => {
-  const store = new MemoryStore();
-  const env = { APP_ORIGIN: 'https://vibe-game-ten.vercel.app' };
-
+test('custom domains allow Telegram login and reject email registration', async () => {
+  const token = '123456:custom-domain-test-token';
+  const env = { APP_ORIGIN: 'https://vibe-game-ten.vercel.app', TELEGRAM_BOT_TOKEN: token, TELEGRAM_BOT_USERNAME: 'DominionTestBot' };
   for (const origin of ['https://www.01node.uz', 'https://01node.uz', 'https://vibe-game-ten.vercel.app']) {
-    const challengeRes = await handleAuth(new Request(`${origin}/api/auth/me`), env, store);
-    const challengeData = await challengeRes.json();
-    const cookie = challengeRes.headers.getSetCookie().find(c => c.startsWith('pd_login=') || c.startsWith('__Host-pd_login='))?.split(';')[0];
-    const csrf = challengeData.csrfToken;
-
-    const emailUser = `commander_${Math.random().toString(36).slice(2, 7)}@gmail.com`;
-    const regRes = await handleAuth(new Request(`${origin}/api/auth/credentials/register`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        origin,
-        cookie,
-        'x-csrf-token': csrf
-      },
-      body: JSON.stringify({
-        username: emailUser,
-        password: 'securePassWord123!',
-        fingerprint: 'device-custom-domain-123'
-      })
-    }), env, store);
-
-    assert.equal(regRes.status, 200, `Origin ${origin} registration must succeed with 200`);
-    const regData = await regRes.json();
-    assert.ok(regData.sessionToken);
+    const store = new MemoryStore();
+    const challenge = await (await handleAuth(new Request(origin + '/api/auth/me'), env, store)).json();
+    const telegram = { id: 88776655, first_name: 'Commander', auth_date: Math.floor(Date.now()/1000) };
+    const data = Object.keys(telegram).sort().map(key => `${key}=${telegram[key]}`).join('\n');
+    const secret = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+    const key = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    telegram.hash = Buffer.from(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data))).toString('hex');
+    const response = await handleAuth(new Request(origin + '/api/auth/telegram', { method: 'POST', headers: { origin, 'content-type': 'application/json', 'x-login-token': challenge.loginToken, 'x-csrf-token': challenge.csrfToken }, body: JSON.stringify({ telegram, fingerprint: 'custom-domain-device' }) }), env, store);
+    assert.equal(response.status, 200, origin);
+    assert.equal((await response.json()).account.provider, 'telegram');
+    const removed = await handleAuth(new Request(origin + '/api/auth/credentials/register', { method: 'POST' }), env, store);
+    assert.equal(removed.status, 410);
   }
 });
-
 
 test('Grand Clan Hall in Central Europe occupies 40 hexes and is protected against base placement', async () => {
   const { CLAN_HALL_CENTER_COORDS, CLAN_HALL_CENTER_CELL, CLAN_HALL_CELLS, isClanHallCell, isClanHallCenter } = await import('../src/shared/clan-hall.js');

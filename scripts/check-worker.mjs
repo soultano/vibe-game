@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { latLngToCell, cellToParent } from 'h3-js';
+import { createHash, createHmac } from 'node:crypto';
 
 const project = resolve(import.meta.dirname, '..');
 const bundlePath = join(project, 'dist/server/index.js');
@@ -65,7 +66,8 @@ async function checkWorker() {
     const DB = sqliteD1(db);
     const worker = (await import(pathToFileURL(bundlePath).href)).default;
     const origin = 'https://worker-check.example';
-    const env = { DB, APP_ORIGIN: origin, LOCAL_DEV: true };
+    const botToken = '123456:worker-synthetic-telegram-token';
+    const env = { DB, APP_ORIGIN: origin, LOCAL_DEV: true, TELEGRAM_BOT_TOKEN: botToken, TELEGRAM_BOT_USERNAME: 'DominionTestBot' };
     const call = (path, options) => worker.fetch(new Request(`${origin}${path}`, options), env);
     const home = await call('/');
     assert.equal(home.status, 200); assert.match(home.headers.get('content-type'), /^text\/html/);
@@ -166,7 +168,12 @@ async function checkWorker() {
     assert.ok(DB.counts.statements > 0 && DB.counts.bound > 0 && DB.counts.batches > 0, 'the emitted Worker must exercise actual prepared SQL and transaction bindings');
     assert.equal(db.prepare('SELECT count(*) AS count FROM records WHERE key LIKE ?').get('login:%').count, 1);
     const guest=await call('/api/auth/guest',{method:'POST',headers:{'content-type':'application/json',origin,'x-login-token':me.loginToken,'x-csrf-token':me.csrfToken},body:JSON.stringify({name:'Web player',fingerprint:'worker-guest-device'})});
-    assert.equal(guest.status,200);const identity=await guest.json();assert.equal(identity.account.provider,'guest');
+    assert.equal(guest.status,410);
+    const telegram={id:88776655,first_name:'Web player',auth_date:Math.floor(Date.now()/1000)};
+    const check=Object.keys(telegram).sort().map(key=>`${key}=${telegram[key]}`).join('\n');
+    telegram.hash=createHmac('sha256',createHash('sha256').update(botToken).digest()).update(check).digest('hex');
+    const login=await call('/api/auth/telegram',{method:'POST',headers:{'content-type':'application/json',origin,'x-login-token':me.loginToken,'x-csrf-token':me.csrfToken},body:JSON.stringify({telegram,fingerprint:'worker-telegram-device'})});
+    assert.equal(login.status,200);const identity=await login.json();assert.equal(identity.account.provider,'telegram');
     const writeHeaders={'content-type':'application/json',origin,authorization:'Bearer '+identity.sessionToken,'x-csrf-token':identity.csrfToken};
     const base=await call('/api/base',{method:'POST',headers:writeHeaders,body:JSON.stringify({cell:baseCell,faction:'protocol'})});assert.equal(base.status,200);const baseState=await base.json();assert.equal(baseState.player.army.units.length,3);
     const order=await call('/api/army/order',{method:'POST',headers:writeHeaders,body:JSON.stringify({mode:'defend'})});assert.equal(order.status,200);assert.equal((await order.json()).player.army.order.mode,'defend');

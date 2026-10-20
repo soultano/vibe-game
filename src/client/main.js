@@ -26,6 +26,8 @@ import { drawClanHallHexes, hitClanHall } from "./clan-hall-renderer.js";
 import { createSurfaces } from './surfaces.js';
 import { createTelegramShell } from './telegram-shell.js';
 import { createMapPreview } from './map-preview.js';
+import { profileStats, profileTooltip, promotionLink } from './player-profile.js';
+import { drawConquestSites, drawDamageIndicators } from './conquest-view.js';
 const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), displayCtx = canvas.getContext("2d", { alpha: false });
 let ctx = displayCtx;
 const mapLayer = document.createElement("canvas"), mapCtx = mapLayer.getContext("2d", { alpha: false });
@@ -39,6 +41,7 @@ let abilityBusy = null, pendingAbilityReset = null, pinch = null, gestureMoved =
 let headquarters3D = null, headquarters3DPromise = null, modelsUnavailable = false, inspectedFaction = "protocol", inlineModelFaction = null;
 const telegramLaunchData = readTelegramInitData(location, window.Telegram?.WebApp);
 let armyTargeting = false;
+let captureFeedback = { at: 0, gained: 0 };
 let viewRevision=0,mapRequestController=null,mapKind='tiles',lastMapRequest=null,mapOverview=null,troopsMapSuspended=false;
 const overviewCache=new Map();
 function cameraChanged(){$('mapTooltip').hidden=true;viewRevision++;mapRequestController?.abort();mapKind=mapDetail(zoom).detailed?'tiles':'overview';lastMapRequest=null;}
@@ -90,7 +93,7 @@ async function ensureUnitControls(){
  }).catch(()=>{unitControlsPromise=null;toast('Не удалось загрузить управление отрядами. Повторите.',true);return null;});
  return unitControlsPromise;
 }
-function unitCommandView(){const center=atPoint(cw/2,ch/2);return{...troopView(battlefield.units(serverNow())),detailed:detailedMap(),revision:viewRevision,centerCell:latLngToCell(center.lat,center.lng,8),targetData:{player:model?.player,owners:ownerCells(),profiles,tiles:tileCache,now:serverNow()},shapeCell:cell=>project.shape(border(cell)),cellLabel:cell=>{const[lat,lng]=cellToLatLng(cell);return `${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;}};}
+function unitCommandView(){const center=atPoint(cw/2,ch/2);return{...troopView(battlefield.units(serverNow())),now:serverNow(),detailed:detailedMap(),revision:viewRevision,centerCell:latLngToCell(center.lat,center.lng,8),targetData:{player:model?.player,owners:ownerCells(),profiles,tiles:tileCache,now:serverNow()},shapeCell:cell=>project.shape(border(cell)),cellLabel:cell=>{const[lat,lng]=cellToLatLng(cell);return `${lat.toFixed(3)}°, ${lng.toFixed(3)}°`;}};}
 try { troopsEnabled = localStorage.getItem('pd-troops') !== 'off'; } catch {}
 const animationLabels = { idle: 'Ожидание', walk: 'Шаг', run: 'Бег', attack: 'Атака', capture: 'Захват', death: 'Поражение' };
 function syncBattlefield() {
@@ -453,6 +456,10 @@ function resetWorldState() {
   $("abilityDialog").close();
   events.length = 0;
   seenEvents.clear();
+  captureFeedback = { at: 0, gained: 0 };
+  setText('conquestNotice', '');
+  unlockedAchievements.clear();
+  achievementsInitialized = false;
   $("eventLog").innerHTML = '<p class="empty-state">Здесь появятся события вашей базы.</p>';
   $("placementHint").hidden = true;
   $("selectionBar").hidden = true;
@@ -520,11 +527,10 @@ async function autoMiniAppLogin() {
 }
 function setAuthBusy(busy) {
   authBusy = busy;
-  for (const id of ['telegramLogin', 'modalTelegramBtn', 'guestLogin', 'credRegisterBtn', 'credLoginBtn']) {
+  for (const id of ['telegramLogin', 'modalTelegramBtn', 'guestLogin']) {
     $(id).disabled = busy;
     $(id).setAttribute('aria-busy', String(busy));
   }
-  $('modalGoogleBtn').disabled = busy || !providers.google?.enabled;
 }
 function setAuthNotice(message) {
   setText('authNotice', message);
@@ -533,14 +539,13 @@ function setAuthNotice(message) {
 async function initAuth() {
   providers = await api("/api/auth/providers");
   await refreshAuth();
-  $('modalGoogleBtn').hidden = !providers.google?.enabled;
-  $('modalGoogleBtn').disabled = !providers.google?.enabled;
   $('modalTelegramBtn').hidden = !providers.telegram?.enabled;
   $("telegramLogin").hidden = !providers.telegram?.enabled || !telegramLaunchData;
   $("devAuth").hidden = !providers.development;
+  $('guestLogin').hidden = !providers.guest?.enabled;
   $('telegramBotLink').hidden = !providers.telegram?.enabled;
   $('telegramBotLink').href = telegramLink(providers.telegram?.botUsername, false) || '#';
-  setAuthNotice(telegramLaunchData ? 'Входим через Telegram…' : 'Войдите или играйте без регистрации прямо здесь.');
+  setAuthNotice(telegramLaunchData ? 'Входим через Telegram…' : providers.telegram?.enabled ? 'Войдите через Telegram — прогресс общий с Mini App.' : 'Вход через Telegram временно недоступен. Попробуйте позже.');
   await autoMiniAppLogin();
 }
 function acceptModel(next) {
@@ -552,6 +557,16 @@ function acceptModel(next) {
   model = next;
   syncBattlefield();
   if (next.player && prior?.level && prior.level !== next.player.level) appendEvent(`База достигла уровня ${next.player.level}.`, `level:${next.player.level}`);
+  if (next.player && prior?.id === next.player.id && next.player.pixels > prior.pixels) {
+    const gained = next.player.pixels - prior.pixels;
+    captureFeedback = { at: serverNow(), gained };
+    const message = `Захвачено +${fmt(gained)} ячеек · всего ${fmt(next.player.pixels)} · доход ${next.player.netPerHour >= 0 ? '+' : ''}${next.player.netPerHour.toFixed(1)} ⚡/ч`;
+    appendEvent(message, `capture:${next.serverTime}`);
+    setText('conquestNotice', message);
+  }
+  for (const event of next.player?.army?.events || []) if (event.kind === 'damage') {
+    appendEvent(`Отряд получил −${event.damage} HP: ${event.sourceName}.`, `damage:${event.unitId}:${event.at}`);
+  }
   for (const conflict of next.conflicts || []) {
     const status = conflict.status === "shielded" ? "Границу защищает щит." : conflict.status === "active" ? "На границе идёт борьба за ячейки." : "На границе установилось равновесие.";
     appendEvent(status, `conflict:${conflict.id || conflict.attackerId || ""}:${conflict.status}`);
@@ -601,10 +616,21 @@ async function refreshLeaderboard() {
   leaderboard = result.players || [];
   $("rankings").innerHTML = leaderboard.slice(0, 10).map((p, i) => {
     const f = getFaction(p.faction);
-    return `<div class="ranking ${p.id === account?.id ? "you" : ""}"><span class="ranking-position">${i + 1}</span><span class="ranking-symbol"><img src="${f.logo}" alt="${f.name}"></span><span class="ranking-name">${escape(p.name)}<small>${p.id === account?.id ? "Вы · " : ""}${p.level} уровень</small></span><span class="ranking-score">${fmt(p.pixels)}<small>ячеек</small></span></div>`;
+    return `<div class="ranking ${p.id === account?.id ? "you" : ""}"><span class="ranking-position">${i + 1}</span><span class="ranking-symbol"><img src="${f.logo}" alt="${f.name}"></span><div class="ranking-name"><button class="ranking-profile" data-player-profile="${escape(p.id)}" aria-label="Статистика ${escape(p.name)}">${escape(p.name)}</button><small>${p.id === account?.id ? "Вы · " : ""}${p.level} уровень · ${fmt(p.battlesFought)} схваток</small>${promotionLink(p)}</div><span class="ranking-score">${fmt(p.pixels)}<small>ячеек</small></span></div>`;
   }).join("") || '<p class="empty-state">Станьте первым командиром.</p>';
   invalidate();
 }
+function showPlayerProfile(player) {
+  if (!player) return;
+  setText('publicPlayerName', player.name);
+  setText('publicPlayerFaction', getFaction(player.faction).name);
+  $('publicPlayerBody').innerHTML = profileStats(player) + promotionLink(player);
+  showDialog('publicPlayerDialog');
+}
+$('rankings').onclick = event => {
+  const button = event.target.closest('[data-player-profile]');
+  if (button) showPlayerProfile(playerById(button.dataset.playerProfile));
+};
 function updateUI() {
   const p = model?.player, now = serverNow(), f = getFaction(p?.faction || selectedFaction);
   $("resourceBar").hidden = !p;
@@ -628,6 +654,7 @@ function updateUI() {
   if(p&&!unitControls)ensureUnitControls();
   unitControls?.update();
   const armyUnits=p?.army?.units||[];
+  setText('conquestTotals', p ? `${fmt(p.pixels)} ячеек · доход ${p.netPerHour >= 0 ? '+' : ''}${p.netPerHour.toFixed(1)} ⚡/ч` : '');
   setText("armyStatus",armyTargeting?"Укажите цель на карте":armyUnits.some(u=>u.state==='attack')?"Войска ведут бой":armyUnits.some(u=>u.state==='capture')?"Закрепляемся на территории":armyUnits.some(u=>u.activity==='regroup')?"Перегруппировка на своей территории":armyUnits.some(u=>u.activity==='patrol')?"Патрулируем свою территорию":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономное продвижение к фронтиру");
   $("missionSteps").children[0]?.classList.toggle("current", !account);
   $("missionSteps").children[1]?.classList.toggle("current", !!account && !placing);
@@ -638,6 +665,7 @@ function updateUI() {
   $("income").classList.toggle("negative", p?.netPerHour < 0);
   setText("storageInfo", p ? fmt(p.storage) : "—");
   setText("territory", fmt(p?.pixels));
+  setText('territoryUnits', p && now - captureFeedback.at < 8000 ? `ячеек (+${fmt(captureFeedback.gained)})` : 'ячеек');
   setText("capInfo", p ? fmt(p.cap) : "—");
   setText("crystals", fmt(p?.crystals));
   setText("sectorAngle", `${Math.round(p?.sectorAngle || 36)}°`);
@@ -1009,6 +1037,11 @@ function draw(now) {
   }
   drawAbilityBursts(now);
   drawTroops(now);
+  if (detailedMap() && !mapPaused) {
+    const view = unitCommandView(), units = view.units;
+    drawConquestSites(ctx, units.filter(unit => unit.capture), view, serverNow());
+    drawDamageIndicators(ctx, units, view, serverNow());
+  }
   if(detailedMap()&&unitControls?.isOpen())unitControls.draw(ctx,unitCommandView());
 }
 
@@ -1134,11 +1167,7 @@ canvas.addEventListener("pointermove", (e) => {
       $("mapTooltip").innerHTML = html;
     } else if (known) {
       const pCol = playerColor(known, known.faction);
-      let html = `<div class="tooltip-header"><span style="color:${pCol}">●</span> <b>${escape(known.name)}</b> <small>(${escape(getFaction(known.faction).name)})</small></div>`;
-      if (known.customLink) {
-        const linkTitle = known.customLinkTitle || 'Канал / Сайт';
-        html += `<a href="${escape(known.customLink)}" target="_blank" rel="noopener noreferrer" class="tooltip-social-link">🔗 ${escape(linkTitle)} ↗</a>`;
-      }
+      const html = `<div class="tooltip-header"><span style="color:${pCol}">●</span> <small>${escape(getFaction(known.faction).name)}</small></div>${profileTooltip(known)}`;
       $("mapTooltip").innerHTML = html;
     } else {
       const ground=landscape(cell);
@@ -1233,8 +1262,10 @@ canvas.addEventListener("pointerup", async (e) => {
   } else if (!detailedMap()) {
     const hit=hitMapOverview(mapOverview,project,cw,ch,point.x,point.y);
     focusAt(hit?.lat??p.lat,hit?.lng??p.lng,hit&&hit.players>1?Math.min(2048,zoom*8):2048);
-  } else if(model?.player){
-    await (await ensureUnitControls())?.click({x:point.x,y:point.y,cell,additive:!!e.shiftKey});
+  } else {
+    const owner = playerById(ownerCells().get(cell));
+    if (owner && owner.baseCell === cell && owner.id !== account?.id && !unitControls?.state().targetMode) { showPlayerProfile(owner); return; }
+    if (model?.player) await (await ensureUnitControls())?.click({x:point.x,y:point.y,cell,additive:!!e.shiftKey});
   }
 });
 canvas.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
@@ -1416,62 +1447,6 @@ if ($("modalTelegramBtn")) $("modalTelegramBtn").onclick = () => {
   setText('modalAuthNotice', 'Подтвердите вход в виджете Telegram. Игра продолжится в этом окне.');
 };
 
-if ($("modalGoogleBtn")) $("modalGoogleBtn").onclick = async (e) => {
-  e.preventDefault();
-  if (providers.google?.enabled) {
-    location.href = "/api/auth/google/start?fingerprint=" + encodeURIComponent(await fingerprint());
-  }
-};
-
-async function submitCredentials(isRegister) {
-  if (authBusy) return;
-  const username = $("credUsername").value.trim();
-  const password = $("credPassword").value;
-  if (!username) {
-    setText("modalAuthNotice", "Введите имя командира или Google-почту");
-    $("credUsername").focus();
-    return;
-  }
-  if (!password) {
-    setText("modalAuthNotice", "Введите пароль");
-    $("credPassword").focus();
-    return;
-  }
-  if (isRegister && username.length < 3) {
-    setText("modalAuthNotice", "Логин или email должен быть от 3 символов");
-    return;
-  }
-  if (isRegister && password.length < 6) {
-    setText("modalAuthNotice", "Пароль должен быть от 6 символов");
-    return;
-  }
-
-  setAuthBusy(true);
-  setText("modalAuthNotice", isRegister ? "Создаём аккаунт..." : "Входим...");
-
-  try {
-    const path = isRegister ? "/api/auth/credentials/register" : "/api/auth/credentials/login";
-    const result = await api(path, { username, password, fingerprint: await fingerprint() });
-    if (result?.sessionToken) {
-      saveSession(result.sessionToken);
-    }
-    await refreshAuth();
-    toast(isRegister ? "Добро пожаловать на службу, Командир!" : "С возвращением на базу!");
-  } catch (err) {
-    const msg = err.message || "Ошибка входа";
-    setText("modalAuthNotice", msg);
-    toast(msg, true);
-  } finally {
-    setAuthBusy(false);
-  }
-}
-
-if ($("credRegisterBtn")) $("credRegisterBtn").onclick = () => submitCredentials(true);
-if ($("credLoginBtn")) $("credLoginBtn").onclick = () => submitCredentials(false);
-if ($("credAuthForm")) $("credAuthForm").onsubmit = (e) => {
-  e.preventDefault();
-  submitCredentials(true);
-};
 $("logoutBtn").onclick = async () => {
   const result = await action("/api/auth/logout", {});
   if (!result) return;
@@ -1577,7 +1552,7 @@ function updateAbilities() {
     button.style.setProperty("--cooldown-progress", `${Math.round(elapsed * 100)}%`);
     label.textContent = abilityBusy === definition.id ? "…" : active ? `+${definition.bonus * 100}% · ${abilityTime(state.activeUntil - now)}` : cooling ? abilityTime(state.readyAt - now) : `+${definition.bonus * 100}%`;
     const name = factionAbilityName(p?.faction || selectedFaction, definition.id);
-    button.title = `${name} · +${definition.bonus * 100}% к захвату на ${effectTime(definition.durationMs)}`;
+    button.title = `${name} · +${definition.bonus * 100}% к захвату на ${effectTime(definition.durationMs)}. ${unit.type === 'air' ? 'Прикрывает наземные отряды; землю не занимает.' : 'Занимает гексы автоматически или по команде «Захватить».'}`;
     button.setAttribute("aria-label", `${name}. ${label.textContent}${cooling ? ". Повторить за " + definition.resetCrystalCost + " кристаллов" : ". Запустить"}`);
   }
   if (pendingAbilityReset && $("abilityDialog").open) {
@@ -1605,6 +1580,10 @@ async function useAbility(id, resetCooldown = false) {
   try {
     const result = await action("/api/abilities/use", { abilityId: id, resetCooldown, requestId: crypto.randomUUID() }, `${factionAbilityName(model.player.faction, id)}: захват +${definition.bonus * 100}%.`);
     if (result) {
+      const type = troopForAbility(result.player.faction, id).type;
+      const deployed = (result.player.army?.units || []).filter(unit => !unit.neutral && unit.type === type && unit.hp > 0).map(unit => unit.id);
+      const controls = await ensureUnitControls();
+      if (controls && deployed.length) controls.selectMany(deployed);
       if (!reducedMotion) abilityBursts.push({ id, at: performance.now(), cell: result.player.baseCell, faction: result.player.faction, azimuth: result.player.azimuth });
       invalidate();
       pendingAbilityReset = null;
@@ -1669,6 +1648,11 @@ $("profileButton").onclick = () => {
   $("authCard").hidden = true;
   $("spawnCard").hidden = !!model?.player || placing;
   $("accountPanel").hidden = wasOpen;
+  if (!wasOpen && model?.player) {
+    $('customLinkInput').value = model.player.customLink || '';
+    $('customLinkTitleInput').value = model.player.customLinkTitle || '';
+    $('customColorPicker').value = model.player.color || getFaction(model.player.faction).color;
+  }
   $("profileButton").setAttribute("aria-expanded", String(!wasOpen));
   surfaces.sync();
 };
@@ -1922,9 +1906,10 @@ function initCustomization() {
   if ($("customLinkTitleInput") && p?.customLinkTitle) $("customLinkTitleInput").value = p.customLinkTitle;
 
   if ($("saveCustomizationBtn")) $("saveCustomizationBtn").onclick = async () => {
-    const color = selectedCustomColor;
+    const color = $('customColorPicker').value || selectedCustomColor;
     const customLink = $("customLinkInput")?.value.trim() || '';
     const customLinkTitle = $("customLinkTitleInput")?.value.trim() || '';
+    const firstPromotion = !!customLink && !model?.player?.customLink && !model?.player?.achievements?.includes('promotion_link');
 
     try {
       $("saveCustomizationBtn").disabled = true;
@@ -1932,8 +1917,9 @@ function initCustomization() {
         color,
         customLink,
         customLinkTitle,
-      }, t('saved_ok'));
+      }, firstPromotion ? undefined : t('saved_ok'));
       if (res?.player) acceptModel({ ...model, player: res.player });
+      if (res) await refreshLeaderboard();
       invalidate();
     } catch (e) {
       toast(e.message, true);

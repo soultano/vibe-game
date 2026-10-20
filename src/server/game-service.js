@@ -14,6 +14,7 @@ export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
 import { isClanHallCell } from '../shared/clan-hall.js';
 import { UNIT_GROUP_LIMIT, groupOrderMode } from '../shared/unit-orders.js';
+import { playerProfile, promotionUrl } from '../shared/player-profile.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -764,7 +765,13 @@ export class GameService {
   }
 
   async updateCustomization(accountId, { color, customLink, customLinkTitle } = {}) {
-    return this.action(accountId, (p, tx, now) => {
+    const result = await this.action(accountId, (p, tx, now) => {
+      const awardLink = () => {
+        p.achievements ??= [];
+        if (!p.achievements.includes('promotion_link')) p.achievements.push('promotion_link');
+        p.promotionLinkedAt ??= now;
+      };
+      if (promotionUrl(p.customLink)) awardLink();
       if (typeof color === 'string') {
         const trimmed = color.trim();
         fail(/^#[0-9a-fA-F]{6}$/.test(trimmed), 'Некорректный цвет (формат #RRGGBB).');
@@ -778,19 +785,20 @@ export class GameService {
           fail(typeof customLink === 'string', 'Некорректная ссылка.');
           const trimmed = customLink.trim();
           fail(trimmed.length <= 256, 'Ссылка слишком длинная (до 256 символов).');
-          try {
-            const parsed = new URL(trimmed);
-            fail(['http:', 'https:'].includes(parsed.protocol), 'Ссылка должна начинаться с https:// или http://');
-            p.customLink = trimmed;
+          const normalized = promotionUrl(trimmed);
+          fail(normalized, 'Укажите одну ссылку http:// или https:// без логина и пароля в адресе.');
+          {
+            p.customLink = normalized;
+            awardLink();
             if (typeof customLinkTitle === 'string') {
               p.customLinkTitle = customLinkTitle.trim().slice(0, 64) || null;
             }
-          } catch (e) {
-            fail(false, 'Некорректный URL адрес ссылки.');
           }
         }
       }
     });
+    this.mapEntriesCache = null;
+    return result;
   }
 
   async claimReferralEnergy(accountId) {
@@ -838,19 +846,11 @@ export class GameService {
       for (const id of ownerIds) {
         const player = await tx.get(`player:${id}`);
         if (player) profiles.push({
-          id: player.id,
-          name: player.name,
-          faction: player.faction,
-          level: player.level,
-          pixels: player.pixels,
-          baseCell: player.baseCell,
+          ...playerProfile(player),
           shieldUntil: player.shieldUntil ?? 0,
           troops: troopDeployment(player, now),
           frontier: (player.borderCells ?? [player.baseCell]).slice(0, 8),
           army: player.army?publicArmy({...player.army,units:player.army.units.filter(u=>inView(u.cell)||inView(u.move?.from)||inView(u.move?.to))},now):null,
-          color: player.color ?? null,
-          customLink: player.customLink ?? null,
-          customLinkTitle: player.customLinkTitle ?? null,
         });
       }
       return { serverTime: now, seasonId: this.config.seasonId, tiles, conflicts:conflicts.filter(c=>(c.fronts||[]).some(f=>inView(f.aCell)||inView(f.bCell))), players: profiles };
@@ -888,8 +888,7 @@ export class GameService {
 
   async leaderboard() {
     const entries=await this.mapEntries();
-    return {serverTime:this.clock(),seasonId:this.config.seasonId,players:entries.map(p=>({id:p.id,name:p.name||'Штаб',faction:p.faction||'protocol',level:p.level||1,pixels:p.pixels||1,baseCell:p.baseCell,
-      color:p.color||null,customLink:p.customLink||null,customLinkTitle:p.customLinkTitle||null})).sort((a,b)=>b.level-a.level||b.pixels-a.pixels||a.id.localeCompare(b.id)).slice(0,100)};
+    return {serverTime:this.clock(),seasonId:this.config.seasonId,players:entries.map(playerProfile).sort((a,b)=>b.level-a.level||b.pixels-a.pixels||a.id.localeCompare(b.id)).slice(0,100)};
   }
 
   shop() { return { items: CATALOG, energyDailyCapHours: PAID_ENERGY_HOURS_PER_DAY, transfers: false, secondBaseEnabled: false }; }

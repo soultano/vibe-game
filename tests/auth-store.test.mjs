@@ -167,80 +167,33 @@ test('Telegram verifies HMAC, time, integer identity, replay and CSRF', async ()
   assert.equal((await store.list('account:')).length, 1);
 });
 
-function b64(value) { return Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url'); }
-async function googleHarness(store) {
-  const pair = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: Uint8Array.of(1, 0, 1), hash: 'SHA-256' }, true, ['sign', 'verify']);
-  const kid = crypto.randomUUID();
-  const jwk = { ...await crypto.subtle.exportKey('jwk', pair.publicKey), kid, alg: 'RS256', use: 'sig' };
-  const env = { APP_ORIGIN: productionOrigin, GOOGLE_CLIENT_ID: 'client.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'private-google-secret', GOOGLE_REDIRECT_URI: `${productionOrigin}/api/auth/google/callback` };
-  let tokenRequests = 0, overrideClaims = {};
-  env.AUTH_FETCH = async (url, options) => {
-    if (url.includes('/certs')) return new Response(JSON.stringify({ keys: [jwk] }), { headers: { 'cache-control': 'max-age=10' } });
-    assert.equal(url, 'https://oauth2.googleapis.com/token');
-    tokenRequests++;
-    const submitted = new URLSearchParams(options.body);
-    assert.equal(submitted.get('client_secret'), env.GOOGLE_CLIENT_SECRET);
-    assert.ok(submitted.get('code_verifier').length >= 43);
-    const claims = { iss: 'https://accounts.google.com', aud: env.GOOGLE_CLIENT_ID, sub: 'google-subject-123', name: 'Google Player', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, nonce: (await store.list('test-nonce:'))[0]?.value.nonce, ...overrideClaims };
-    const prefix = `${b64({ alg: 'RS256', kid })}.${b64(claims)}`;
-    const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, new TextEncoder().encode(prefix));
-    return new Response(JSON.stringify({ id_token: `${prefix}.${Buffer.from(signature).toString('base64url')}` }));
-  };
-  return { env, get tokenRequests() { return tokenRequests; }, claims(value) { overrideClaims = value; } };
-}
-async function googleBegin(store, env) {
-  const response = await handleAuth(request(`/api/auth/google/start?fingerprint=${fingerprint}`, { origin: productionOrigin }), env, store);
-  assert.equal(response.status, 303);
-  const target = new URL(response.headers.get('location'));
-  const state = target.searchParams.get('state');
-  const [stored] = await store.list('oauth:');
-  assert.equal(typeof stored.value.verifier, 'object', 'PKCE verifier is encrypted at rest');
-  await store.atomic({ puts: [{ key: 'test-nonce:current', value: { nonce: target.searchParams.get('nonce') } }] });
-  return { response, state, cookie: cookieValue(response, 'pd_oauth'), record: stored };
-}
-test('Google OAuth binds browser state, uses PKCE and signed nonce token, consumes state once', async () => {
+test('production exposes only Telegram even when Google and password settings exist', async () => {
   const store = new MemoryStore();
-  const harness = await googleHarness(store);
-  const start = await googleBegin(store, harness.env);
-  const callback = `/api/auth/google/callback?state=${start.state}&code=server-code`;
-  assert.equal((await handleAuth(request(callback, { origin: productionOrigin, cookie: 'pd_oauth=wrong' }), harness.env, store)).status, 401);
-  assert.equal(harness.tokenRequests, 0);
-  const success = await handleAuth(request(callback, { origin: productionOrigin, cookie: start.cookie }), harness.env, store);
-  assert.equal(success.status, 303);
-  assert.equal(success.headers.get('location'), '/');
-  assert.equal(harness.tokenRequests, 1);
-  const account = await getAuthContext(request('/api/auth/me', { origin: productionOrigin, cookie: cookieValue(success, 'pd_session') }), harness.env, store);
-  assert.equal(account.account.provider, 'google');
-  assert.equal((await handleAuth(request(callback, { origin: productionOrigin, cookie: start.cookie }), harness.env, store)).status, 401);
-  assert.equal(harness.tokenRequests, 1);
-});
-
-test('Google rejects expired OAuth state and signed tokens with wrong audience or nonce', async () => {
-  const store = new MemoryStore();
-  const harness = await googleHarness(store);
-  const expired = await googleBegin(store, harness.env);
-  await store.atomic({ puts: [{ key: expired.record.key, value: { ...expired.record.value, expiresAt: Date.now() - 1 } }] });
-  assert.equal((await handleAuth(request(`/api/auth/google/callback?state=${expired.state}&code=test`, { origin: productionOrigin, cookie: expired.cookie }), harness.env, store)).status, 401);
-  assert.equal(harness.tokenRequests, 0);
-  for (const invalidClaims of [{ aud: 'attacker-client' }, { nonce: 'forged-nonce' }, { exp: Math.floor(Date.now() / 1000) - 1 }]) {
-    // Remove the deliberately expired state so the helper can inspect the new record.
-    await store.atomic({ deletes: (await store.list('oauth:')).map(value => value.key) });
-    const start = await googleBegin(store, harness.env);
-    harness.claims(invalidClaims);
-    const response = await handleAuth(request(`/api/auth/google/callback?state=${start.state}&code=test`, { origin: productionOrigin, cookie: start.cookie }), harness.env, store);
-    assert.equal(response.status, 401);
+  let fetched = false;
+  const env = { ...telegramEnv, GOOGLE_AUTH_ENABLED: true, GOOGLE_CLIENT_ID: 'legacy-client', GOOGLE_CLIENT_SECRET: 'legacy-secret', GOOGLE_REDIRECT_URI: productionOrigin + '/api/auth/google/callback', AUTH_FETCH: async () => { fetched = true; throw new Error('must not fetch'); } };
+  const providers = await (await handleAuth(request('/api/auth/providers', { origin: productionOrigin }), env, store)).json();
+  assert.equal(providers.telegram.enabled, true);
+  assert.equal(providers.google.enabled, false);
+  assert.equal(providers.credentials.enabled, false);
+  assert.equal(providers.guest.enabled, false);
+  for (const path of ['/api/auth/google/start', '/api/auth/google/callback']) assert.equal((await handleAuth(request(path, { origin: productionOrigin }), env, store)).status, 410);
+  for (const path of ['/api/auth/credentials/register', '/api/auth/credentials/login', '/api/auth/guest']) {
+    const proof = await challenge(store, env, productionOrigin);
+    assert.equal((await handleAuth(request(path, { method: 'POST', body: { username: 'old@gmail.com', password: 'old-password', fingerprint }, origin: productionOrigin, ...proof }), env, store)).status, 410);
   }
+  assert.equal(fetched, false);
   assert.equal((await store.list('account:')).length, 0);
+  assert.equal((await store.list('oauth:')).length, 0);
 });
 
-test('production web guest uses CSRF and a random session; a fingerprint cannot recover another guest',async()=>{
- const store=new MemoryStore(),env={APP_ORIGIN:productionOrigin};
- const denied=await handleAuth(request('/api/auth/guest',{method:'POST',origin:productionOrigin,body:{name:'Guest',fingerprint}}),env,store);assert.equal(denied.status,403);
- const firstChallenge=await challenge(store,env,productionOrigin);
- const response=await handleAuth(request('/api/auth/guest',{method:'POST',origin:productionOrigin,body:{name:'Guest',fingerprint},...firstChallenge}),env,store);assert.equal(response.status,200);
+test('local development guest uses CSRF and a random session; a fingerprint cannot recover another guest',async()=>{
+ const store=new MemoryStore(),env={LOCAL_DEV:true};
+ const denied=await handleAuth(request('/api/auth/guest',{method:'POST',origin:localOrigin,body:{name:'Guest',fingerprint}}),env,store);assert.equal(denied.status,403);
+ const firstChallenge=await challenge(store,env,localOrigin);
+ const response=await handleAuth(request('/api/auth/guest',{method:'POST',origin:localOrigin,body:{name:'Guest',fingerprint},...firstChallenge}),env,store);assert.equal(response.status,200);
  const first=await response.json(),sessionCookie=cookieValue(response,'pd_session');assert.equal(first.account.provider,'guest');assert.ok(sessionCookie);assert.match(response.headers.get('set-cookie'),/HttpOnly/);
- const current=await getAuthContext(request('/api/auth/me',{origin:productionOrigin,cookie:sessionCookie}),env,store);assert.equal(current.account.id,first.account.id);
- const secondChallenge=await challenge(store,env,productionOrigin),other=await handleAuth(request('/api/auth/guest',{method:'POST',origin:productionOrigin,body:{name:'Guest',fingerprint},...secondChallenge}),env,store);
+ const current=await getAuthContext(request('/api/auth/me',{origin:localOrigin,cookie:sessionCookie}),env,store);assert.equal(current.account.id,first.account.id);
+ const secondChallenge=await challenge(store,env,localOrigin),other=await handleAuth(request('/api/auth/guest',{method:'POST',origin:localOrigin,body:{name:'Guest',fingerprint},...secondChallenge}),env,store);
  assert.notEqual((await other.json()).account.id,first.account.id,'device signals never authenticate a guest');
- const forged=await handleAuth(request('/api/auth/guest',{method:'POST',origin:'https://attacker.example',body:{fingerprint},...firstChallenge}),env,store);assert.equal(forged.status,403);
+ const forged=await handleAuth(request('/api/auth/guest',{method:'POST',origin:localOrigin,headers:{origin:'https://attacker.example'},body:{fingerprint},...firstChallenge}),env,store);assert.equal(forged.status,403);
 });

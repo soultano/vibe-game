@@ -166,7 +166,7 @@ export async function getAuthContext(req, env, store) {
 
 export async function requireAuth(req, env, store, { write = false } = {}) {
   const context = await getAuthContext(req, env, store);
-  if (!context) fail(401, 'Сначала войдите через Google или Telegram');
+  if (!context) fail(401, 'Сначала войдите через Telegram');
   if (write) {
     checkOrigin(req, env);
     if (!equal(req.headers.get('x-csrf-token'), context.csrfToken)) fail(403, 'Неверный CSRF-токен');
@@ -462,7 +462,7 @@ export async function handleAuth(req, env, store) {
   const path = new URL(req.url).pathname;
   if (!path.startsWith('/api/auth/')) return null;
   try {
-    if (req.method === 'GET' && path === '/api/auth/providers') return json({ google: { enabled: googleEnabled(env), url: '/api/auth/google/start' }, telegram: { enabled: telegramEnabled(env), botUsername: telegramEnabled(env) ? telegramUsername(env) : null }, development: isLocalDevelopment(req, env), credentials: { enabled: true } });
+    if (req.method === 'GET' && path === '/api/auth/providers') return json({ google: { enabled: false }, telegram: { enabled: telegramEnabled(env), botUsername: telegramEnabled(env) ? telegramUsername(env) : null }, development: isLocalDevelopment(req, env), credentials: { enabled: false }, guest: { enabled: isLocalDevelopment(req, env) } });
     if (req.method === 'GET' && path === '/api/auth/me') {
       const current = await getAuthContext(req, env, store);
       if (current) return json({ account: publicAccount(current.account), csrfToken: current.csrfToken });
@@ -471,8 +471,7 @@ export async function handleAuth(req, env, store) {
       await store.atomic({ puts: [{ key: `login:${await digest(token)}`, value: { csrfToken, expiresAt: Date.now() + CHALLENGE_MS } }] });
       return json({ account: null, csrfToken, loginToken: token }, 200, { 'set-cookie': cookie(req, env, 'pd_login', token, CHALLENGE_MS / 1000) });
     }
-    if (req.method === 'GET' && path === '/api/auth/google/start') return await googleStart(req, env, store);
-    if (req.method === 'GET' && path === '/api/auth/google/callback') return await googleCallback(req, env, store);
+    if (path.startsWith('/api/auth/google/')) return json({ error: 'Вход доступен только через Telegram.' }, 410);
     if (req.method !== 'POST') return json({ error: 'Маршрут авторизации не найден' }, 404);
     if (path === '/api/auth/logout') {
       await requireAuth(req, env, store, { write: true });
@@ -481,6 +480,7 @@ export async function handleAuth(req, env, store) {
       return json({ ok: true }, 200, { 'set-cookie': cookie(req, env, 'pd_session', '', 0) });
     }
     if (!['/api/auth/guest', '/api/auth/dev', '/api/auth/telegram', '/api/auth/telegram/miniapp', '/api/auth/credentials/register', '/api/auth/credentials/login'].includes(path)) return json({ error: 'Маршрут авторизации не найден' }, 404);
+    if ((path === '/api/auth/guest' || path.startsWith('/api/auth/credentials/')) && !isLocalDevelopment(req, env)) return json({ error: 'Вход доступен только через Telegram.' }, 410);
     if (path === '/api/auth/dev' && !isLocalDevelopment(req, env)) return json({ error: 'Локальный тестовый вход отключён' }, 404);
     await preloginCsrf(req, env, store);
     await throttle(req, env, store);

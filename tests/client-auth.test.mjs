@@ -13,6 +13,12 @@ function launch(overrides = {}) {
   return new URLSearchParams({ ...fields, hash: createHmac('sha256', secret).update(check).digest('hex') }).toString();
 }
 const options = () => ({ env, origin: 'https://game.example', cookieBlocked: true, launchData: launch() });
+function widgetUser() {
+  const payload = { id: 88776655, first_name: 'Командир', auth_date: Math.floor(Date.now() / 1000) };
+  const check = Object.keys(payload).sort().map(key => `${key}=${payload[key]}`).join('\n');
+  payload.hash = createHmac('sha256', createHash('sha256').update(token).digest()).update(check).digest('hex');
+  return payload;
+}
 async function placeBase(h) {
   const faction = h.document.querySelectorAll('[data-faction]').find(node => node.dataset.faction === 'swarm');
   await h.click('factionPicker', { target: faction });
@@ -77,7 +83,7 @@ test('ordinary browser opens Telegram login in the current game window and share
   assert.equal(h.visible('telegramLogin'), false);
   assert.equal(h.visible('guestLogin'), false, 'login choices must be inside the registration modal');
   await h.click('openAuthModalBtn');
-  assert.equal(h.visible('guestLogin'), true);
+  assert.equal(h.visible('guestLogin'), false, 'production login must use Telegram');
   assert.equal(h.visible('modalTelegramBtn'), true);
   assert.equal(h.visible('telegramBotLink'), true);
   assert.equal(h.$('telegramBotLink').href, 'https://t.me/DominionTestBot');
@@ -86,10 +92,7 @@ test('ordinary browser opens Telegram login in the current game window and share
   assert.equal(h.$('modalTelegramWidget').children.length, 1);
   await h.click('modalTelegramBtn');
   assert.equal(h.$('modalTelegramWidget').children.length, 1);
-  const payload = { id: 88776655, first_name: 'Командир', auth_date: Math.floor(Date.now() / 1000) };
-  const check = Object.keys(payload).sort().map(key => `${key}=${payload[key]}`).join('\n');
-  payload.hash = createHmac('sha256', createHash('sha256').update(token).digest()).update(check).digest('hex');
-  await h.sandbox.onTelegramAuth(payload);
+  await h.sandbox.onTelegramAuth(widgetUser());
   assert.equal(h.client.state().account.provider, 'telegram');
   assert.equal(h.$('authModal').open, false);
   await placeBase(h);
@@ -100,13 +103,12 @@ test('ordinary browser opens Telegram login in the current game window and share
   assert.equal(mini.visible('spawnCard'), false, 'the same account must resume its existing base');
 });
 
-test('website can play without any Telegram configuration and can retry a failed guest login', async () => {
+test('local development can retry a failed guest login without Telegram', async () => {
   const network = { failures: new Map([['/api/auth/guest', 1]]) };
-  const h = await createClientHarness({ env: { LOCAL_DEV: false }, cookieBlocked: true, network });
+  const h = await createClientHarness({ cookieBlocked: true, network });
   await h.click('openAuthModalBtn');
   assert.equal(h.visible('modalTelegramBtn'), false);
-  assert.equal(h.visible('modalGoogleBtn'), false);
-  assert.equal(h.$('modalGoogleBtn').disabled, true);
+  assert.equal(h.document.getElementById('modalGoogleBtn'), null);
   await h.click('guestLogin');
   assert.equal(h.client.state().account, null);
   assert.equal(h.$('authModal').open, true);
@@ -118,7 +120,7 @@ test('website can play without any Telegram configuration and can retry a failed
   assert.equal(h.visible('spawnCard'), true);
 });
 
-test('Telegram widget failure leaves website guest play and widget retry accessible', async () => {
+test('Telegram widget failure leaves its fallback and login retry accessible', async () => {
   const h = await createClientHarness({ ...options(), launchData: '' });
   await h.click('openAuthModalBtn');
   await h.click('modalTelegramBtn');
@@ -127,8 +129,10 @@ test('Telegram widget failure leaves website guest play and widget retry accessi
   assert.match(h.$('modalAuthNotice').textContent, /ещё раз/);
   await h.click('modalTelegramBtn');
   assert.equal(h.$('modalTelegramWidget').children.length, 1);
-  await h.click('guestLogin');
-  assert.equal(h.client.state().account.provider, 'guest');
+  assert.equal(h.visible('telegramBotLink'), true);
+  assert.equal(h.visible('guestLogin'), false);
+  await h.sandbox.onTelegramAuth(widgetUser());
+  assert.equal(h.client.state().account.provider, 'telegram');
 });
 
 test('website and Mini App expose the same base, panels, abilities and army commands', async t => {
@@ -142,7 +146,8 @@ test('website and Mini App expose the same base, panels, abilities and army comm
       if (platform === 'website') {
         assert.equal(h.sandbox.Telegram, undefined);
         await h.click('openAuthModalBtn');
-        await h.click('guestLogin');
+        await h.click('modalTelegramBtn');
+        await h.sandbox.onTelegramAuth(widgetUser());
       }
       if (webApp) assert.deepEqual(sdkCalls, ['ready', 'expand']);
       await placeBase(h);
@@ -218,25 +223,19 @@ test('idle canvas stops scheduling frames; ordinary hover reuses the ownership i
   assert.equal(h.frames.size, 0);
 });
 
-test('registration modal opens from welcome card with single registration button and authenticates via credentials', async () => {
-  const h = await createClientHarness({ ...options(), launchData: '' });
-  assert.equal(h.$('authCard').hidden, false);
-  assert.ok(h.$('openAuthModalBtn'), 'openAuthModalBtn must exist in authCard');
-  
-  // Open modal
+test('production login offers only Telegram and retries a failed website login', async () => {
+  const network = { failures: new Map([['/api/auth/telegram', 1]]) };
+  const h = await createClientHarness({ ...options(), launchData: '', network });
   await h.click('openAuthModalBtn');
+  for (const id of ['modalGoogleBtn', 'credUsername', 'credPassword', 'credAuthForm']) assert.equal(h.document.getElementById(id), null);
+  assert.equal(h.visible('guestLogin'), false);
+  await h.click('modalTelegramBtn');
+  await h.sandbox.onTelegramAuth(widgetUser());
+  assert.equal(h.client.state().account, null);
   assert.equal(h.$('authModal').open, true);
-
-  // Fill credentials and register
-  h.$('credUsername').value = 'Commandant99';
-  h.$('credPassword').value = 'strongPassWord123';
-  await h.click('credRegisterBtn');
-
-  // Verify successful authentication
-  assert.ok(h.client.state().account);
-  assert.equal(h.client.state().account.name, 'Commandant99');
-  assert.equal(h.client.state().account.provider, 'credentials');
+  assert.equal(h.$('modalTelegramBtn').disabled, false);
+  await h.sandbox.onTelegramAuth(widgetUser());
+  assert.equal(h.client.state().account.provider, 'telegram');
   assert.equal(h.$('authModal').open, false);
-  assert.equal(h.$('authCard').hidden, true);
-  assert.equal(h.$('spawnCard').hidden, false);
+  assert.equal(h.visible('spawnCard'), true);
 });

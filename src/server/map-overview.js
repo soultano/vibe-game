@@ -1,11 +1,11 @@
 import {cellToLatLng,cellToParent} from 'h3-js';
 import {FACTIONS} from '../shared/config.js';
 import {validBounds,insideBounds,MAP_LIMITS} from '../shared/map-view.js';
+import {playerProfile} from '../shared/player-profile.js';
 const factionIds=new Set(FACTIONS.map(f=>f.id));
 export function mapEntry(player,at=player.tLast||player.createdAt||0){
  const units=(player.army?.units||[]).filter(u=>!u.neutral&&u.hp>0),front=units.find(u=>u.state==='attack'||u.state==='capture')||units.find(u=>u.move)||units[0];
- return {id:player.id,baseCell:player.baseCell,name:player.name,faction:player.faction,level:player.level,pixels:Math.floor(player.pixels),color:player.color||null,
-  customLink:player.customLink||null,customLinkTitle:player.customLinkTitle||null,
+ return {...playerProfile(player),
   units:units.length,armyCell:front?.move?.to||front?.cell||player.baseCell,fighting:units.some(u=>u.state==='attack'),summaryAt:at};
 }
 function group(entries,bounds,res,army){

@@ -4,8 +4,9 @@ import { captureMultiplierAt } from '../shared/abilities.js';
 import { troopDeployment } from '../shared/troops.js';
 import { sectorAllows, captureHash } from '../shared/geography.js';
 import { adjacentCells, landscape, traversable } from '../shared/landscape.js';
+import { CAPTURE_DEPLOY_MS } from '../shared/conquest.js';
 
-export const NPC_RULES = Object.freeze({ stepMs:500, maxCatchupMs:60000, captureMs:3000, respawnMs:18000,
+export const NPC_RULES = Object.freeze({ stepMs:500, maxCatchupMs:60000, captureMs:CAPTURE_DEPLOY_MS, respawnMs:18000,
   classes:{ infantry:{hp:100,damage:16,range:1,speed:3300,cooldown:1000},
     armor:{hp:420,damage:40,range:2,speed:5200,cooldown:1500},
     air:{hp:260,damage:55,range:3,speed:2100,cooldown:1400},
@@ -61,7 +62,7 @@ function event(army,value){army.events.push(value);army.events=army.events.slice
 // order (or auto) is issued; move/attack never silently capture another cell.
 async function followUnitOrder({unit,player,army,at,dt,stats,currentOwner,byId,headquarters,owner,locked,claim,terrain,canTraverse}){
   const order=unit.order,goal=order.cell;
-  const hold=(status,reason=null)=>{order.status=status;order.reason=reason;unit.path=[];unit.targetCell=goal;unit.activity='hold';state(unit,'idle',at);};
+  const hold=(status,reason=null)=>{order.status=status;order.reason=reason;unit.path=[];unit.targetCell=goal;unit.activity=status==='waiting-credit'?'waiting-capture':'hold';state(unit,'idle',at);};
   if(unit.cell===player.baseCell&&unit.hp<unit.maxHp)unit.hp=Math.min(unit.maxHp,unit.hp+dt*.012);
   if(order.status==='blocked'){hold('blocked',order.reason);return;}
   if(order.mode==='hold'){hold('complete');return;}
@@ -117,7 +118,7 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
       const reservations=new Set(army.units.filter(u=>u.hp>0).map(u=>u.targetCell).filter(Boolean));
       for(const unit of [...army.units].sort((a,b)=>a.id.localeCompare(b.id))){
         const spec=unitStats(unit.faction,unit.type);
-        if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.cell=player.baseCell;unit.path=[];delete unit.move;delete unit.order;unit.targetCell=null;state(unit,'idle',at);}continue;}
+        if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.life=(unit.life||0)+1;unit.cell=player.baseCell;unit.path=[];delete unit.move;delete unit.order;delete unit.lastDamage;unit.targetCell=null;state(unit,'idle',at);}continue;}
         if(unit.move){if(at<unit.move.endsAt)continue;unit.cell=unit.move.to;delete unit.move;
           if(unit.activity==='patrol'&&!unit.path.length){unit.patrolStep=(unit.patrolStep||0)+1;unit.waitUntil=at+2000+captureHash(unit.cell,unit.index+unit.patrolStep)%2000;state(unit,'idle',at);}}
         const currentOwner=await owner(unit.cell);
@@ -135,10 +136,27 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
             const cover=target.type==='air'?0:terrain(target.cell).cover;
             const shield=all.some(ally=>ally.owner===target.owner&&ally.hp>0&&ally.faction==='protocol'&&ally.type==='ultimate'&&distance(ally.cell,target.cell)<=2)?.7:1;
             const damage=Math.max(1,Math.round(spec.damage*(1-cover)*shield*(unit.neutral?.65:1)));
+            const encounter=[`${unit.id}@${unit.life||0}`,`${target.id}@${target.life||0}`].sort().join('|');
+            for(const ownerId of new Set([unit.owner,target.owner])) {
+              const combatant=byId.get(ownerId),combatArmy=armies.get(ownerId);
+              if(!combatant||!combatArmy)continue;
+              combatArmy.encounters??=[];
+              if(!combatArmy.encounters.includes(encounter)){
+                combatArmy.encounters.push(encounter);combatArmy.encounters=combatArmy.encounters.slice(-128);
+                combatant.battlesFought=(combatant.battlesFought||0)+1;
+              }
+            }
+            const sourceName=unit.neutral?'Нейтральный защитник':byId.get(unit.owner)?.name||'Вражеский отряд';
+            target.lastDamage={at,amount:Math.min(target.hp,damage),sourceId:unit.id,sourceOwner:unit.owner,sourceName};
             target.hp=Math.max(0,target.hp-damage);unit.nextAttackAt=at+spec.cooldown;
             if(unit.faction==='bloom')unit.hp=Math.min(unit.maxHp,unit.hp+damage*.15);
             event(army,{kind:'hit',at,unitId:unit.id,targetId:target.id,cell:target.cell,damage});
-            if(!target.hp){target.path=[];delete target.move;state(target,'death',at);event(army,{kind:'death',at,unitId:target.id,cell:target.cell});}
+            const victimArmy=armies.get(target.owner);
+            if(victimArmy)event(victimArmy,{kind:'damage',at,unitId:target.id,sourceId:unit.id,sourceName,cell:target.cell,damage:target.lastDamage.amount});
+            if(!target.hp){
+              const attacker=byId.get(unit.owner);if(attacker)attacker.unitsDefeated=(attacker.unitsDefeated||0)+1;
+              target.path=[];delete target.move;state(target,'death',at);event(army,{kind:'death',at,unitId:target.id,cell:target.cell});
+            }
           }continue;
         }
         unit.targetId=null;
@@ -154,8 +172,10 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
           && (inExpansion(player,unit.cell)||army.order.mode==='attack')
           && (!hostile || ((byId.get(currentOwner)?.shieldUntil||0)<=at && (player.shieldUntil||0)<=at))
           && !await locked(unit.cell,at)){
-          unit.activity='capture';state(unit,'capture',at);unit.targetCell=unit.cell;
           const sufficient=army.credit>=(hostile?1.5:1);
+          unit.targetCell=unit.cell;
+          if(!sufficient){unit.activity='waiting-capture';state(unit,'idle',at);continue;}
+          unit.activity='capture';state(unit,'capture',at);
           if(sufficient&&at-unit.stateAt>=NPC_RULES.captureMs && player.pixels<stats.cap){
             if(await claim(unit.cell,currentOwner,player.id,at)){
               army.credit-=hostile?1.5:1;event(army,{kind:'capture',at,unitId:unit.id,cell:unit.cell,previous:currentOwner});
@@ -167,11 +187,14 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
           .sort((a,b)=>distance(unit.cell,a.cell)-distance(unit.cell,b.cell)||a.hp-b.hp||a.id.localeCompare(b.id))[0];
         if(!retreat&&!chase&&(unit.waitUntil||0)>at){state(unit,'idle',at);continue;}
         unit.blockedGoals=Object.fromEntries(Object.entries(unit.blockedGoals||{}).filter(([,until])=>until>at).slice(-8));
-        let goal=retreat?player.baseCell:chase?.cell || (army.order.mode==='defend'?null:army.order.cell);
+        const escort=unit.type==='air'&&army.order.mode!=='defend'&&!retreat&&!chase;
+        const ground=escort?army.units.filter(ally=>!ally.neutral&&ally.type!=='air'&&ally.hp>0)
+          .sort((a,b)=>(b.state==='capture'||b.activity==='waiting-capture')-(a.state==='capture'||a.activity==='waiting-capture')||distance(unit.cell,a.move?.to||a.cell)-distance(unit.cell,b.move?.to||b.cell)||a.id.localeCompare(b.id))[0]:null;
+        let goal=retreat?player.baseCell:chase?.cell || (army.order.mode==='defend'?null:army.order.cell) || (ground?.targetCell||ground?.move?.to||ground?.cell);
         let patrol=unit.activity==='patrol'&&!!unit.path.length&&!retreat&&!chase,regroup=unit.activity==='regroup'&&!!unit.path.length&&!retreat&&!chase;
         if(goal&&currentOwner===player.id&&goal===unit.cell&&!retreat&&!chase)goal=null;
         if(!goal && unit.path.length)goal=unit.targetCell;
-        if(!goal&&army.order.mode!=='defend'&&player.pixels<stats.cap){
+        if(!goal&&unit.type!=='air'&&army.order.mode!=='defend'&&player.pixels<stats.cap){
           const border=[...(player.borderCells||[player.baseCell])].sort((a,b)=>distance(unit.cell,a)-distance(unit.cell,b)||a.localeCompare(b)),candidates=new Set();
           const start=(unit.frontierCursor||0)%Math.max(1,border.length),batch=Array.from({length:Math.min(64,border.length)},(_,i)=>border[(start+i)%border.length]);
           unit.frontierCursor=(start+batch.length)%Math.max(1,border.length);
@@ -201,7 +224,7 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
           choices.sort((a,b)=>distance(unit.cell,a)-distance(unit.cell,b)||captureHash(a,(player.seed||0)+(unit.index||0)*41+(unit.patrolStep||0)*97)-captureHash(b,(player.seed||0)+(unit.index||0)*41+(unit.patrolStep||0)*97));
           goal=choices[0]||player.baseCell;regroup=currentOwner!==player.id;patrol=!regroup;
         }
-        if(goal===unit.cell){unit.path=[];unit.targetCell=null;unit.activity='guard';state(unit,'idle',at);continue;}
+        if(goal===unit.cell){unit.path=[];unit.targetCell=null;unit.activity=escort?'escort':'guard';state(unit,'idle',at);continue;}
         if(goal!==unit.targetCell||!unit.path.length){
           const route=await findRoute(unit.cell,goal,{type:unit.type,baseCell:player.baseCell,isTraversable:canTraverse,allowPartial:!patrol,
             canEnter:async cell=>!await locked(cell,at)&&(!patrol||await owner(cell)===player.id)});
@@ -210,7 +233,7 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
         const next=unit.path.shift();
         if(next && canTraverse(next,unit.type,player.baseCell) && !await locked(next,at) && (!patrol||await owner(next)===player.id)){
           const speed=spec.speed/(unit.type==='air'?1:terrain(next).speed);
-          unit.activity=retreat?'retreat':patrol?'patrol':regroup?'regroup':'advance';unit.waitUntil=0;unit.move={from:unit.cell,to:next,startedAt:at,endsAt:at+speed};state(unit,retreat?'retreat':'move',at);reservations.add(goal);
+          unit.activity=retreat?'retreat':patrol?'patrol':regroup?'regroup':escort?'escort':'advance';unit.waitUntil=0;unit.move={from:unit.cell,to:next,startedAt:at,endsAt:at+speed};state(unit,retreat?'retreat':'move',at);reservations.add(goal);
         }else{unit.path=[];unit.activity='guard';unit.blockedGoals[goal]=at+8000;unit.waitUntil=at+1000;state(unit,'idle',at);unit.targetCell=null;}
       }
       army.units=army.units.filter(u=>!u.neutral||u.hp>0||at-u.stateAt<10000).slice(0,16);
