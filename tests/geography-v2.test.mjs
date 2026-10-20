@@ -13,7 +13,8 @@ test('playable region accepts inland Tashkent and excludes water, Antarctica and
   assert.equal(cellIsLand(base), true);
   assert.equal(validatePlayableCell(base), true);
   assert.equal(cellIsLand(latLngToCell(0, -140, 8)), false);
-  assert.equal(cellIsLand(latLngToCell(-80, 0, 8)), false);
+  assert.equal(cellIsLand(latLngToCell(-80, 0, 8)), true, 'Antarctica is visible land in the geographic world');
+  assert.equal(validatePlayableCell(latLngToCell(-80, 0, 8)), false, 'the playable war region remains limited');
   assert.equal(validatePlayableCell(latLngToCell(51.5, -0.1, 8)), false);
   assert.equal(CONFIG.REGION.radiusKm, 1000);
   assert.equal(terrainForCell(base).approximate, true);

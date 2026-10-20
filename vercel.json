@@ -5,6 +5,7 @@
   "headers": [
     { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] },
     { "source": "/main.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] },
+    { "source": "/terrain-worker.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] },
     { "source": "/styles.css", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] },
     { "source": "/release.json", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
   ],

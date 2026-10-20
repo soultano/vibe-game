@@ -6,6 +6,7 @@ import {
 import worldMask from '../../data/world-mask.json' with { type: 'json' };
 import { CONFIG } from './config.js';
 import { deriveLevel } from './economy.js';
+import { worldLandAt } from './world-land.js';
 
 export { latLngToCell, cellToLatLng, cellToBoundary, isValidCell, gridDisk };
 export const coordinates = cellToLatLng;
@@ -23,10 +24,7 @@ export function normalizeAzimuth(value) {
 }
 
 function maskLand(lat, lng) {
-  if (lat < -60 || lat > 90) return false;
-  const x = Math.min(worldMask.width - 1, Math.max(0, Math.floor((normalizeAzimuth(lng + 180)) / 360 * worldMask.width)));
-  const y = Math.min(worldMask.height - 1, Math.max(0, Math.floor((90 - lat) / 180 * worldMask.height)));
-  return Boolean(worldMask.land[y * worldMask.width + x]);
+  return worldLandAt(lat,lng,worldMask.land);
 }
 
 export function cellIsLand(cell) {

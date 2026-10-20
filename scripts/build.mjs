@@ -28,11 +28,11 @@ async function optimizeArtwork() {
 await cp('src/client/assets/models','dist/client/assets/models',{recursive:true});
 await cp('src/client/assets/troops','dist/client/assets/troops',{recursive:true});
 await cp('src/client/assets/terrain','dist/client/assets/terrain',{recursive:true});
-await build({entryPoints:['src/client/main.js'],outdir:'dist/client',chunkNames:'chunks/[name]-[hash]',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'none'});
-const release=createHash('sha256').update(await readFile('dist/client/main.js')).update(await readFile('dist/client/styles.css')).digest('hex').slice(0,16);
+await build({entryPoints:['src/client/main.js','src/client/terrain-worker.js'],outdir:'dist/client',chunkNames:'chunks/[name]-[hash]',bundle:true,splitting:true,format:'esm',platform:'browser',target:'es2022',minify:true,legalComments:'none'});
+const release=createHash('sha256').update(await readFile('dist/client/main.js')).update(await readFile('dist/client/styles.css')).update(await readFile('dist/client/terrain-worker.js')).digest('hex').slice(0,16);
 const html=(await readFile('dist/client/index.html','utf8')).replace('/main.js',`/main.js?v=${release}`).replace('/styles.css',`/styles.css?v=${release}`);
 await writeFile('dist/client/index.html',html);
-await writeFile('dist/client/release.json',JSON.stringify({release,features:['web-play','server-npc','fantasy-landscape','lod-overview','viewport-streaming']}));
+await writeFile('dist/client/release.json',JSON.stringify({release,features:['web-play','server-npc','fantasy-landscape','lod-overview','viewport-streaming','globe-map','continuous-world','terrain-pyramid','climate-biomes']}));
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.webp':'image/webp','.svg':'image/svg+xml','.glb':'model/gltf-binary'};
 const assets={};
 async function walk(dir,prefix=''){for(const name of await readdir(dir)){const p=dir+'/'+name,key=prefix+'/'+name;if((await stat(p)).isDirectory())await walk(p,key);else {const bytes=await readFile(p);const etag='"'+createHash('sha256').update(bytes).digest('hex').slice(0,24)+'"';

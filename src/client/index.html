@@ -176,7 +176,11 @@
     <button id="shopBtn"><svg><use href="#i-shop"/></svg><span>Магазин</span></button>
   </nav>
   <div class="map-tools"><button id="troopsBtn" aria-label="Войска: открыть арсенал" title="Арсенал войск"><svg><use href="#i-infantry"/></svg><span>Войска</span></button><button id="troopsToggle" aria-pressed="true" aria-label="Показывать войска на карте" title="Показывать войска">3D</button><button class="surface home-button" id="homeBtn" aria-label="К моей базе" title="К моей базе"><svg><use href="#i-target"/></svg></button><div class="zoom-controls surface"><button id="zoomIn" aria-label="Приблизить карту">+</button><button id="zoomOut" aria-label="Отдалить карту">−</button></div><button class="surface globe-button" id="zoomReset" aria-label="Показать весь мир" title="Весь мир"><svg><use href="#i-globe"/></svg></button></div>
-  <div class="map-readout" aria-hidden="true"><span class="crosshair-mark">⌖</span><span id="mapCoordinates">41.31° N · 69.28° E</span><i></i><span id="mapScale">ОБЗОР МИРА</span></div>
+  <div class="map-view-switch surface" role="group" aria-label="Вид карты">
+    <button id="mapFlat" aria-pressed="false" title="Плоская карта. Перетаскивайте в любую сторону, включая переход через полюса">Карта</button>
+    <button id="mapGlobe" aria-pressed="true" title="Глобус. Вращайте в любую сторону; приближение открывает плоскую карту"><svg aria-hidden="true"><use href="#i-globe"/></svg>Глобус</button>
+  </div>
+  <div class="map-readout" aria-hidden="true"><span class="crosshair-mark">⌖</span><span id="mapCoordinates">41.31° N · 69.28° E</span><i></i><span id="mapScale">ГЛОБУС</span></div>
   <div class="map-legend" aria-label="Легенда карты"><span><i class="legend-own"></i>Территория империи</span><span><i class="legend-free"></i>Свободная суша</span></div>
 </main>
 

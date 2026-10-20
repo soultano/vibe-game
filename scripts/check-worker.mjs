@@ -99,6 +99,17 @@ async function checkWorker() {
     assert.ok(lazyModule, 'Three.js must load on demand in a separate chunk');
     // Includes the existing H3 geographic engine; Three.js stays in the chunk.
     assert.ok(Buffer.byteLength(main) < 600000, 'initial client must stay under 600 KB');
+    const initialModules=new Set();
+    async function staticModuleBytes(path,source){
+      if(initialModules.has(path))return 0;initialModules.add(path);let bytes=Buffer.byteLength(source);
+      for(const match of source.matchAll(/\b(?:from\s*|import\s*)["'](\.\/[^"']+)["']/g)){
+        const dependency=new URL(match[1],origin+path).pathname,response=await call(dependency);assert.equal(response.status,200);
+        bytes+=await staticModuleBytes(dependency,await response.text());
+      }
+      return bytes;
+    }
+    assert.ok(await staticModuleBytes('/main.js',main)<625000,'the complete static module graph, including shared chunks, must fit 625 KB');
+    const terrainWorker=await call('/terrain-worker.js');assert.equal(terrainWorker.status,200);assert.match(terrainWorker.headers.get('content-type'),/javascript/);
     const chunk = await call(lazyModule.slice(1));
     assert.equal(chunk.status, 200); assert.match(chunk.headers.get('content-type'), /javascript/);
     const armyModule = main.match(/import\("(\.\/chunks\/troops-3d-[^"]+\.js)"\)/)?.[1];

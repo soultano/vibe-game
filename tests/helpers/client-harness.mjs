@@ -17,7 +17,7 @@ async function clientSource() {
     const augmented = source.replace(/\ninit\(\);\s*$/, '') + `
       globalThis.clientCheck = {
         ready: init(), refreshState, refreshAuth, draw, frame, openPanel, ownerCells, changeZoom, focusAt, refreshTiles,
-        mapSnapshot: () => ({zoom,mapKind,overview:mapOverview,tiles:tileCache.size,profiles:profiles.size,revision:viewRevision}),
+        mapSnapshot: () => ({zoom,mapKind,overview:mapOverview,tiles:tileCache.size,profiles:profiles.size,revision:viewRevision,projection:geometry().globe?'globe':'flat',center:geometry().center}),
         autoMiniAppLogin, pollWorld, setupTelegram,
         state: () => ({ account, model, placing, selecting, activePanel, authBusy, connectionErrors })
       };

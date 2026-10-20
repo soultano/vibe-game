@@ -1,8 +1,8 @@
 import {getFaction} from '../shared/config.js';
 function mergeVisible(groups,project,width,height){
- const bins=new Map();for(const g of groups||[]){const p=project(g.lat,g.lng);if(p.x< -60||p.y< -60||p.x>width+60||p.y>height+60)continue;const key=Math.floor(p.x/52)+':'+Math.floor(p.y/52);let a=bins.get(key);
+ const bins=new Map();for(const g of groups||[])for(const p of(project.points?project.points(g.lat,g.lng):[project(g.lat,g.lng)])){if(p.visible===false||p.x< -60||p.y< -60||p.x>width+60||p.y>height+60)continue;const key=Math.floor(p.x/52)+':'+Math.floor(p.y/52);let a=bins.get(key);
   if(!a){a={x:0,y:0,lat:0,lng:0,weight:0,players:0,pixels:0,units:0,battles:0,factions:{},sample:g.sample};bins.set(key,a);}else a.sample=null;
-  a.x+=p.x*g.players;a.y+=p.y*g.players;a.lat+=g.lat*g.players;a.lng+=g.lng*g.players;a.weight+=g.players;a.players+=g.players;a.pixels+=g.pixels;a.units+=g.units;a.battles+=g.battles;
+  a.x+=p.x*g.players;a.y+=p.y*g.players;a.lat+=g.lat*g.players;const reference=a.weight?a.lng/a.weight:g.lng,delta=((g.lng-reference+540)%360)-180;a.lng+=(reference+delta)*g.players;a.weight+=g.players;a.players+=g.players;a.pixels+=g.pixels;a.units+=g.units;a.battles+=g.battles;
   for(const[id,count]of Object.entries(g.factions))a.factions[id]=(a.factions[id]||0)+count;
  }return [...bins.values()].map(g=>({...g,x:g.x/g.weight,y:g.y/g.weight,lat:g.lat/g.weight,lng:g.lng/g.weight}));
 }

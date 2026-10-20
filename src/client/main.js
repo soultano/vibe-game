@@ -11,6 +11,10 @@ import { landscape } from '../shared/landscape.js';
 import { DETAIL_ZOOM, MAP_LIMITS, mapDetail } from '../shared/map-view.js';
 import { mapRequest } from './map-requests.js';
 import { drawMapOverview, hitMapOverview } from './map-overview.js';
+import { createWorldCamera, panWorld, anchorWorld, wrapLongitude } from './world-camera.js';
+import { drawWorldGrid } from './world-grid.js';
+import { BIOMES, CLIMATES } from '../shared/biomes.js';
+import { worldLandAt } from '../shared/world-land.js';
 import { headquartersFor } from "../shared/headquarters.js";
 import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./telegram.js";
 import { getLang, setLang, t, LANGUAGES } from "./i18n.js";
@@ -21,7 +25,7 @@ let ctx = displayCtx;
 const mapLayer = document.createElement("canvas"), mapCtx = mapLayer.getContext("2d", { alpha: false });
 const nf = new Intl.NumberFormat("ru-RU"), fmt = (n) => nf.format(Math.floor(Number(n) || 0)), escape = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 let account = null, csrfToken = "", providers = {}, model = null, leaderboard = [], selectedFaction = "protocol", placing = false, selecting = false, selectedCells = /* @__PURE__ */ new Set();
-let cw = 0, ch = 0, dpr = 1, zoom = 1, panX = 0, panY = 0, drag = null, moved = false, mouse = null, serverOffset = 0, tilesBusy = false, pollBusy = false, connectionErrors = 0;
+let cw = 0, ch = 0, dpr = 1, zoom = 1, cameraLat = CONFIG.REGION.center.lat, cameraLng = CONFIG.REGION.center.lng, mapMode = 'auto', drag = null, moved = false, mouse = null, serverOffset = 0, tilesBusy = false, pollBusy = false, connectionErrors = 0;
 let lastRender = 0, lastDetails = 0, dirty = true, toastTimer, sound = false, audio, autoCentered = false, stopped = false, authGeneration = 0, deviceFingerprintSeed = "", activePanel = null, welcomeDismissed = false;
 const profiles = /* @__PURE__ */ new Map(), tileCache = /* @__PURE__ */ new Map(), cellCache = /* @__PURE__ */ new Map(), boundaryCache = /* @__PURE__ */ new Map(), effects = [], events = [], seenEvents = /* @__PURE__ */ new Set(), emblems = /* @__PURE__ */ new Map();
 const headquartersImages = /* @__PURE__ */ new Map(), abilityBursts = [], pointers = /* @__PURE__ */ new Map();
@@ -36,6 +40,7 @@ function detailedMap(){return zoom>=DETAIL_ZOOM&&mapKind==='tiles';}
 const landscapeView = createLandscapeRenderer({ onReady: invalidate });
 let sessionToken = '', loginToken = '', authBusy = false, launchExpired = false, lastLeaderboard = 0;
 let frameHandle = null, tileTimer, pollTimer, neutralKey = '', drawingGeometry = null, ownership = new Map(), ownershipDirty = true;
+let cameraCache=null,cameraCacheInput=null;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
 function invalidate() { dirty = true; requestFrame(); }
 function requestFrame() { if (frameHandle === null && !document.hidden) frameHandle = requestAnimationFrame(frame); }
@@ -51,7 +56,7 @@ terrain.width = 360;
 terrain.height = 180;
 const tctx = terrain.getContext("2d");
 const terrainPixels=tctx.createImageData(360,180);
-for(let i=0;i<worldMask.land.length;i++)if(worldMask.land[i]){const at=i*4;terrainPixels.data[at]=23;terrainPixels.data[at+1]=43;terrainPixels.data[at+2]=55;terrainPixels.data[at+3]=255;}
+for(let i=0;i<worldMask.land.length;i++)if(worldLandAt(89.5-Math.floor(i/360),i%360-179.5,worldMask.land)){const at=i*4;terrainPixels.data[at]=23;terrainPixels.data[at+1]=43;terrainPixels.data[at+2]=55;terrainPixels.data[at+3]=255;}
 tctx.putImageData(terrainPixels,0,0);
 
 for (const f of FACTIONS) {
@@ -89,7 +94,7 @@ function drawTroops(now) {
   const inspecting = $('troopsDialog').open;
   if (!inspecting && (!troopsEnabled || !detailedMap())) { $('troopsCanvas').hidden = true;if(!troopsMapSuspended){troops3D?.suspendMap();troopsMapSuspended=true;}return; }
   troopsMapSuspended=false;
-  const units = battlefield.units(serverNow(),cell=>{try{const p=project(...cellToLatLng(cell));return p.x>=-120&&p.x<=cw+120&&p.y>=-160&&p.y<=ch+120;}catch{return false;}});
+  const units = battlefield.units(serverNow(),cell=>{try{const p=project(...cellToLatLng(cell));return p.x>=-120&&p.x<=cw+120&&p.y>=-160&&p.y<=ch+120;}catch{return false;}}).slice(0,mapDetail(zoom).unitLimit);
   if (!troops3D || troopsUnavailable) { if (!troopsUnavailable && (units.length || inspecting)) ensureTroops3D().then(engine => { if (engine) invalidate(); }); if(!inspecting)drawTroopFallback(units); return; }
   $('troopsCanvas').hidden = inspecting ? $('troopsCanvas').hidden : !units.length;
   troops3D.render(now, { width: cw, height: ch, zoom, units, projectCell(cell) { try { const point=project(...cellToLatLng(cell)); point.y-=terrainLift(cell,zoom); return point; } catch { return null; } } });
@@ -603,30 +608,40 @@ function updateUI() {
 
 }
 function geometry() {
-  const size = Math.min(cw / 360, ch / 180) * zoom;
-  return { size, ox: (cw - 360 * size) / 2 + panX, oy: (ch - 180 * size) / 2 + panY };
+  const old=cameraCacheInput;
+  if(!old||old.width!==cw||old.height!==ch||old.zoom!==zoom||old.lat!==cameraLat||old.lng!==cameraLng||old.mode!==mapMode){
+    cameraCacheInput={width:cw,height:ch,zoom,lat:cameraLat,lng:cameraLng,mode:mapMode};cameraCache=createWorldCamera(cameraCacheInput);
+  }
+  return cameraCache;
 }
 function project(lat, lng) {
-  const g = drawingGeometry || geometry();
-  return { x: g.ox + (lng + 180) * g.size, y: g.oy + (90 - lat) * g.size };
+  return (drawingGeometry || geometry()).project(lat,lng);
 }
+project.points=(lat,lng)=>(drawingGeometry||geometry()).project.points(lat,lng);
+project.shape=shape=>(drawingGeometry||geometry()).project.shape(shape);
+project.rasterPatches=bounds=>(drawingGeometry||geometry()).rasterPatches(bounds);
+project.requestView=()=>(drawingGeometry||geometry()).requestView();
 function atPoint(px, py) {
-  const g = geometry();
-  return { lat: Math.max(-85, Math.min(85, 90 - (py - g.oy) / g.size)), lng: Math.max(-179.999, Math.min(179.999, (px - g.ox) / g.size - 180)) };
+  return (drawingGeometry || geometry()).atPoint(px,py);
 }
 function clampPan() {
-  const g = geometry(), mx = Math.max(0, (360 * g.size - cw) / 2), my = Math.max(0, (180 * g.size - ch) / 2);
-  panX = Math.max(-mx, Math.min(mx, panX));
-  panY = Math.max(-my, Math.min(my, panY));
-  if (zoom === 1) panX = panY = 0;
+  cameraLat=wrapLongitude(cameraLat);cameraLng=wrapLongitude(cameraLng);
+}
+function moveCamera(camera,dx,dy){
+  const next=panWorld(camera,dx,dy);cameraLat=next.lat;cameraLng=next.lng;
+}
+function anchorCamera(world,x,y){
+  const next=anchorWorld({width:cw,height:ch,zoom,lat:cameraLat,lng:cameraLng,mode:mapMode},world,x,y);
+  cameraLat=next.lat;cameraLng=next.lng;
+}
+function setMapMode(mode){
+  if(mode==='globe'){mapMode='auto';zoom=1;}else mapMode='flat';
+  cameraChanged();invalidate();lastDetails=0;scheduleTiles();
 }
 function changeZoom(next, px = cw / 2, py = ch / 2) {
   const before = atPoint(px, py);
   zoom = Math.min(8192, Math.max(1, next));
-  const after = project(before.lat, before.lng);
-  panX += px - after.x;
-  panY += py - after.y;
-  clampPan();
+  anchorCamera(before,px,py);
   cameraChanged();
   invalidate();
   lastDetails = 0;
@@ -634,10 +649,7 @@ function changeZoom(next, px = cw / 2, py = ch / 2) {
 }
 function focusAt(lat, lng, nextZoom = 384) {
   zoom = nextZoom;
-  panX = panY = 0;
-  const point = project(lat, lng);
-  panX = cw / 2 - point.x;
-  panY = ch / 2 - point.y;
+  cameraLat=lat;cameraLng=lng;
   clampPan();
   cameraChanged();
   invalidate();
@@ -681,8 +693,7 @@ function border(cell) {
 function cellPath(cell) {
   const ring = border(cell);
   ctx.beginPath();
-  ring.forEach(([lat, lng], i) => {
-    const p = project(lat, lng);
+  project.shape(ring).forEach((p, i) => {
     i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
   });
   ctx.closePath();
@@ -764,26 +775,14 @@ function drawMap(now) {
   ctx.fillRect(0, 0, cw, ch);
   const g = geometry();
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(terrain, g.ox, g.oy, 360 * g.size, 180 * g.size);
-  landscapeView.draw(ctx,{width:cw,height:ch,zoom,project,atPoint,baseCells:[...profiles.values(),model?.player].filter(Boolean).map(p=>p.baseCell),roads:[...profiles.values(),model?.player].filter(Boolean).flatMap(p=>(p.army?.units||[]).flatMap(u=>[u.cell,...(u.waypoints||[])]))});
+  if(!g.globe)for(const p of g.rasterPatches()){ctx.save();ctx.translate(p.x,p.y+(p.flipY?p.height:0));ctx.scale(1,p.flipY?-1:1);ctx.drawImage(terrain,0,0,p.width,p.height);ctx.restore();}
+  landscapeView.draw(ctx,{width:cw,height:ch,zoom:detailedMap()?zoom:Math.min(767,zoom),project,atPoint,camera:g,moving:!!(drag||pinch),fallback:terrain,baseCells:[...profiles.values(),model?.player].filter(Boolean).map(p=>p.baseCell),roads:[...profiles.values(),model?.player].filter(Boolean).flatMap(p=>(p.army?.units||[]).flatMap(u=>[u.cell,...(u.waypoints||[])]))});
   // Tactical latitude/longitude grid stays on the cached map layer.
-  if (zoom < 12) {
-    ctx.strokeStyle = "#51748a18";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let lng = -180; lng <= 180; lng += 30) {
-      const a = project(85, lng), b = project(-85, lng);
-      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-    }
-    for (let lat = -60; lat <= 60; lat += 30) {
-      const a = project(lat, -180), b = project(lat, 180);
-      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-    }
-    ctx.stroke();
-  }
+  if (zoom < 12) drawWorldGrid(ctx,g);
   const center = atPoint(cw / 2, ch / 2);
   setText("mapCoordinates", `${Math.abs(center.lat).toFixed(2)}° ${center.lat >= 0 ? 'N' : 'S'} · ${Math.abs(center.lng).toFixed(2)}° ${center.lng >= 0 ? 'E' : 'W'}`);
-  setText("mapScale", zoom < 16 ? "ОБЗОР МИРА" : !detailedMap() ? "СТРАТЕГИЧЕСКИЙ ОБЗОР" : "ТАКТИЧЕСКИЙ РЕЖИМ");
+  setText("mapScale", g.globe ? "ГЛОБУС · ВРАЩАЙТЕ В ЛЮБУЮ СТОРОНУ" : zoom < 16 ? "КАРТА БЕЗ ГРАНИЦ" : !detailedMap() ? "СТРАТЕГИЧЕСКИЙ ОБЗОР" : "ТАКТИЧЕСКИЙ РЕЖИМ");
+  $('mapFlat').setAttribute('aria-pressed',String(!g.globe));$('mapGlobe').setAttribute('aria-pressed',String(g.globe));
   neutralDetail(now);
   if (detailedMap()) {
     ctx.strokeStyle = "#b6c49c18";
@@ -925,7 +924,7 @@ function draw(now) {
 
 async function refreshTiles(force=false) {
   if(tilesBusy||stopped||document.hidden||drag||pinch)return;
-  const request=mapRequest({zoom,nw:atPoint(0,0),se:atPoint(cw,ch)});if(!request)return;
+  const request=mapRequest({zoom,view:geometry().requestView()});if(!request)return;
   const cadence=request.kind==='overview'?10000:1000;
   if(!force&&lastMapRequest?.key===request.key&&Date.now()-lastMapRequest.at<cadence)return;
   const generation=authGeneration,id=account?.id,revision=viewRevision,controller=new AbortController();
@@ -984,7 +983,7 @@ canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 1) {
-    drag = { x: e.clientX, y: e.clientY, panX, panY };
+    drag = { x: e.clientX, y: e.clientY, camera:geometry() };
     moved = false;
     gestureMoved = false;
     pinch = null;
@@ -1002,10 +1001,7 @@ canvas.addEventListener("pointermove", (e) => {
   if (pinch && pointers.size >= 2) {
     const [a, b] = [...pointers.values()], rect = canvas.getBoundingClientRect(), x = (a.x + b.x) / 2 - rect.left, y = (a.y + b.y) / 2 - rect.top;
     zoom = Math.max(1, Math.min(8192, pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance));
-    const anchor = project(pinch.world.lat, pinch.world.lng);
-    panX += x - anchor.x;
-    panY += y - anchor.y;
-    clampPan();
+    anchorCamera(pinch.world,x,y);
     cameraChanged();
     invalidate();
     lastDetails = 0;
@@ -1016,9 +1012,7 @@ canvas.addEventListener("pointermove", (e) => {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (Math.hypot(dx, dy) > 5) moved = true;
     if (moved) {
-      panX = drag.panX + dx;
-      panY = drag.panY + dy;
-      clampPan();
+      moveCamera(drag.camera,dx,dy);
       cameraChanged();
       invalidate();
       lastDetails = 0;
@@ -1039,8 +1033,8 @@ canvas.addEventListener("pointermove", (e) => {
       }
       $("mapTooltip").innerHTML = html;
     } else {
-      const ground=landscape(cell),names={grass:'Луг',forest:'Лес · укрытие, замедление',rock:'Скалы · укрытие',mountain:'Горы · медленный проход',sand:'Песчаный берег',water:'Вода · проходима авиацией'};
-      $("mapTooltip").innerHTML = (owner ? escape(t('occupied_cell')) : escape(names[ground.type])) + `<small class="terrain-tooltip">Высота: ${ground.elevation} · ${ground.water?'Наземным отрядам нужен обход':'Скорость: '+Math.round(ground.speed*100)+'%'}</small>`;
+      const ground=landscape(cell);
+      $("mapTooltip").innerHTML = (owner ? escape(t('occupied_cell')) : escape(BIOMES[ground.type].name)) + `<small class="terrain-tooltip">${escape(CLIMATES[ground.climate].name)} · ${ground.temperature}°C (игровой климат)<br>Высота: ${ground.elevation} · ${ground.water?'Наземным отрядам нужен обход':'Скорость: '+Math.round(ground.speed*100)+'%'}</small>`;
     }
     $("mapTooltip").style.left = `${Math.max(8, Math.min(cw - 280, mouse.x + 12))}px`;
     $("mapTooltip").style.top = `${Math.max(35, mouse.y - 48)}px`;
@@ -1055,15 +1049,18 @@ canvas.addEventListener("pointerup", async (e) => {
   drag = null;
   if (pointers.size) {
     const remaining = [...pointers.values()][0];
-    drag = { x: remaining.x, y: remaining.y, panX, panY };
+    drag = { x: remaining.x, y: remaining.y, camera:geometry() };
     moved = true;
     return;
   }
   if (didMove) {
+    invalidate();
     refreshTiles();
     return;
   }
-  const point = pointFor(e), p = atPoint(point.x, point.y), cell = latLngToCell(p.lat, p.lng, 8);
+  const point = pointFor(e), p = atPoint(point.x, point.y);
+  if(!p.valid)return;
+  const cell = latLngToCell(p.lat, p.lng, 8);
   if (armyTargeting && model?.player) {
     if(!detailedMap()){focusAt(p.lat,p.lng,2048);return;}
     armyTargeting=false;const result=await action("/api/army/order",{mode:"attack",cell},"Приказ передан войскам.");updateUI();return;
@@ -1123,15 +1120,19 @@ canvas.addEventListener("pointercancel", () => {
   drag = null;
   moved = true;
   gestureMoved = true;
+  invalidate();scheduleTiles();
 });
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
+  if(!e.ctrlKey&&(e.deltaMode===0&&(Math.abs(e.deltaX)>1||Math.abs(e.deltaY)<40))){moveCamera(geometry(),-e.deltaX,-e.deltaY);cameraChanged();invalidate();lastDetails=0;scheduleTiles();return;}
   const p = pointFor(e);
   changeZoom(zoom * (e.deltaY < 0 ? 1.3 : 1 / 1.3), p.x, p.y);
 }, { passive: false });
 $("zoomIn").onclick = () => changeZoom(zoom * 2);
 $("zoomOut").onclick = () => changeZoom(zoom / 2);
 $("zoomReset").onclick = () => changeZoom(1);
+$("mapFlat").onclick = () => setMapMode('flat');
+$("mapGlobe").onclick = () => setMapMode('globe');
 $("homeBtn").onclick = home;
 $("startBtn").onclick = beginPlacement;
 $("cancelPlacement").onclick = () => {
@@ -1446,6 +1447,10 @@ window.addEventListener("keydown", (e) => {
   if (/^[1-4]$/.test(e.key) && !e.repeat && model?.player) useAbility(ABILITIES[Number(e.key) - 1].id);
   if (e.key === "+" || e.key === "=") changeZoom(zoom * 2);
   if (e.key === "-") changeZoom(zoom / 2);
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+    e.preventDefault();moveCamera(geometry(),e.key==='ArrowLeft'?100:e.key==='ArrowRight'?-100:0,e.key==='ArrowUp'?100:e.key==='ArrowDown'?-100:0);
+    cameraChanged();invalidate();lastDetails=0;scheduleTiles();
+  }
   if (e.key === "Escape") {
     closePanels();
     closeAccount();
