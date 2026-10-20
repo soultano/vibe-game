@@ -1313,6 +1313,9 @@ $("telegramLogin").onclick = () => {
 function openAuthModal() {
   setText("modalAuthNotice", "");
   $("authModal")?.showModal();
+  if (providers.telegram?.enabled) {
+    window.openTelegramWidget("modalTelegramWidget");
+  }
 }
 function closeAuthModal() {
   $("authModal")?.close();
@@ -1325,18 +1328,17 @@ if ($("modalTelegramBtn")) $("modalTelegramBtn").onclick = () => {
     closeAuthModal();
     return autoMiniAppLogin();
   }
-  const url = telegramLink(providers.telegram?.botUsername);
-  if (!url) {
-    if (providers.telegram?.enabled) {
-      window.openTelegramWidget("modalTelegramWidget");
-    } else {
-      setText("modalAuthNotice", "Telegram-бот настраивается. Зарегистрируйтесь по логину и паролю.");
-    }
-    return;
-  }
+  const botUser = providers.telegram?.botUsername || 'nodenoden_bot';
+  // Use direct bot link without broken ?startapp parameter that causes "bot url invalid"
+  const url = `https://t.me/${botUser}`;
   const webApp = window.Telegram?.WebApp;
-  if (webApp?.initData && webApp.openTelegramLink) webApp.openTelegramLink(url);
-  else location.assign(url);
+  if (webApp?.initData && webApp.openTelegramLink) {
+    webApp.openTelegramLink(url);
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.openTelegramWidget("modalTelegramWidget");
+    setText("modalAuthNotice", "Открываем бота в Telegram... Либо подтвердите вход через виджет ниже:");
+  }
 };
 
 if ($("modalGoogleBtn")) $("modalGoogleBtn").onclick = async (e) => {
@@ -1344,7 +1346,10 @@ if ($("modalGoogleBtn")) $("modalGoogleBtn").onclick = async (e) => {
   if (providers.google?.enabled) {
     location.href = "/api/auth/google/start?fingerprint=" + encodeURIComponent(await fingerprint());
   } else {
-    setText("modalAuthNotice", "Google-вход настраивается. Войдите через Telegram или по логину и паролю.");
+    $("credUsername").value = "";
+    $("credUsername").placeholder = "Ваша_почта@gmail.com";
+    $("credUsername").focus();
+    setText("modalAuthNotice", "Введите вашу Google-почту (@gmail.com) и пароль для быстрой регистрации:");
   }
 };
 
@@ -1352,7 +1357,7 @@ async function submitCredentials(isRegister) {
   const username = $("credUsername").value.trim();
   const password = $("credPassword").value;
   if (!username) {
-    setText("modalAuthNotice", "Введите имя командира");
+    setText("modalAuthNotice", "Введите имя командира или Google-почту");
     $("credUsername").focus();
     return;
   }
@@ -1362,7 +1367,7 @@ async function submitCredentials(isRegister) {
     return;
   }
   if (isRegister && username.length < 3) {
-    setText("modalAuthNotice", "Логин должен быть от 3 символов");
+    setText("modalAuthNotice", "Логин или email должен быть от 3 символов");
     return;
   }
   if (isRegister && password.length < 6) {
@@ -1372,7 +1377,7 @@ async function submitCredentials(isRegister) {
 
   const btn = isRegister ? $("credRegisterBtn") : $("credLoginBtn");
   btn.disabled = true;
-  setText("modalAuthNotice", isRegister ? "Создаём аккаунт командира..." : "Входим...");
+  setText("modalAuthNotice", isRegister ? "Создаём аккаунт..." : "Входим...");
 
   try {
     const path = isRegister ? "/api/auth/credentials/register" : "/api/auth/credentials/login";

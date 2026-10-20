@@ -259,3 +259,35 @@ test('credentials registration and login create isolated accounts and verify pas
   assert.equal(loginData.account.name, 'TestCommander');
   assert.ok(loginData.sessionToken);
 });
+
+test('custom domains 01node.uz and www.01node.uz are allowed for registration and login with email', async () => {
+  const store = new MemoryStore();
+  const env = { APP_ORIGIN: 'https://vibe-game-ten.vercel.app' };
+
+  for (const origin of ['https://www.01node.uz', 'https://01node.uz', 'https://vibe-game-ten.vercel.app']) {
+    const challengeRes = await handleAuth(new Request(`${origin}/api/auth/me`), env, store);
+    const challengeData = await challengeRes.json();
+    const cookie = challengeRes.headers.getSetCookie().find(c => c.startsWith('pd_login=') || c.startsWith('__Host-pd_login='))?.split(';')[0];
+    const csrf = challengeData.csrfToken;
+
+    const emailUser = `commander_${Math.random().toString(36).slice(2, 7)}@gmail.com`;
+    const regRes = await handleAuth(new Request(`${origin}/api/auth/credentials/register`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin,
+        cookie,
+        'x-csrf-token': csrf
+      },
+      body: JSON.stringify({
+        username: emailUser,
+        password: 'securePassWord123!',
+        fingerprint: 'device-custom-domain-123'
+      })
+    }), env, store);
+
+    assert.equal(regRes.status, 200, `Origin ${origin} registration must succeed with 200`);
+    const regData = await regRes.json();
+    assert.ok(regData.sessionToken);
+  }
+});

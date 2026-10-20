@@ -55,25 +55,46 @@ function cookies(req) {
 export function isLocalDevelopment(req, env) {
   return (env.LOCAL_DEV === true || env.LOCAL_DEV === 'true') && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(req.url).hostname);
 }
+function isAllowedOrigin(origin, env) {
+  if (!origin || typeof origin !== 'string') return false;
+  try {
+    const url = new URL(origin);
+    if (url.protocol === 'http:' && (isLocalDevelopment({ url: origin }, env) || ['localhost', '127.0.0.1'].includes(url.hostname))) {
+      return true;
+    }
+    if (url.protocol !== 'https:') return false;
+    if (url.hostname.endsWith('.vercel.app')) return true;
+    if (url.hostname === '01node.uz' || url.hostname === 'www.01node.uz') return true;
+    if (env.APP_ORIGIN) {
+      const configured = new URL(env.APP_ORIGIN);
+      if (configured.origin === url.origin || configured.hostname === url.hostname) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function appOrigin(req, env) {
   const reqUrl = new URL(req.url);
-  if (isLocalDevelopment(req, env) && !env.APP_ORIGIN) return reqUrl.origin;
-  try {
-    const configured = env.APP_ORIGIN ? new URL(env.APP_ORIGIN) : null;
-    if (configured && configured.origin === reqUrl.origin) return configured.origin;
-    if (reqUrl.protocol === 'https:' && (reqUrl.hostname.endsWith('.vercel.app') || (configured && reqUrl.hostname === configured.hostname))) {
-      return reqUrl.origin;
-    }
-    if (configured) {
-      if (configured.protocol !== 'https:' && !isLocalDevelopment(req, env)) fail(503, 'Для авторизации нужен HTTPS');
-      if (configured.origin !== reqUrl.origin) fail(403, 'Неверный адрес приложения');
-      return configured.origin;
-    }
-    fail(503, 'Авторизация ещё не настроена: нужен APP_ORIGIN');
-  } catch (error) {
-    if (error.status) throw error;
-    fail(503, 'Авторизация ещё не настроена: нужен APP_ORIGIN');
+  const originHeader = req.headers.get('origin');
+  if (originHeader && isAllowedOrigin(originHeader, env)) {
+    return originHeader;
   }
+  if (reqUrl.protocol === 'https:' && (reqUrl.hostname.endsWith('.vercel.app') || ['01node.uz', 'www.01node.uz'].includes(reqUrl.hostname))) {
+    return reqUrl.origin;
+  }
+  if (env.APP_ORIGIN) {
+    try {
+      const configured = new URL(env.APP_ORIGIN);
+      if (reqUrl.protocol === 'https:' && (configured.origin === reqUrl.origin || configured.hostname === reqUrl.hostname)) {
+        return reqUrl.origin;
+      }
+      return configured.origin;
+    } catch {}
+  }
+  if (isLocalDevelopment(req, env)) return reqUrl.origin;
+  fail(503, 'Авторизация ещё не настроена: нужен APP_ORIGIN');
 }
 function cookie(req, env, name, value, seconds) {
   const secure = !isLocalDevelopment(req, env) || new URL(req.url).protocol === 'https:';
@@ -82,7 +103,7 @@ function cookie(req, env, name, value, seconds) {
 function cookieName(req, env, name) { return isLocalDevelopment(req, env) && new URL(req.url).protocol === 'http:' ? name : `__Host-${name}`; }
 function checkOrigin(req, env) {
   const origin = req.headers.get('origin');
-  if (!origin || origin !== appOrigin(req, env)) fail(403, 'Запрос отклонён: неверный Origin');
+  if (!origin || !isAllowedOrigin(origin, env)) fail(403, 'Запрос отклонён: неверный Origin');
 }
 async function readBody(req) {
   const type = req.headers.get('content-type') || '';
@@ -377,20 +398,21 @@ async function telegramMiniAppLogin(req, env, store, body) {
 async function credentialsRegister(req, env, store, body) {
   const username = typeof body.username === 'string' ? body.username.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
-  if (!username || username.length < 3 || username.length > 30) fail(400, 'Логин должен содержать от 3 до 30 символов');
-  if (!/^[\p{L}\p{N}_-]{3,30}$/u.test(username)) fail(400, 'Логин может содержать только буквы, цифры, дефис и подчеркивание');
+  if (!username || username.length < 3 || username.length > 64) fail(400, 'Логин или email должен содержать от 3 до 64 символов');
+  if (!/^[\p{L}\p{N}_@.-]{3,64}$/u.test(username)) fail(400, 'Логин или email может содержать буквы, цифры, точку, @, дефис и подчеркивание');
   if (!password || password.length < 6 || password.length > 128) fail(400, 'Пароль должен содержать от 6 до 128 символов');
 
   const fingerprint = await fingerprintHash(body.fingerprint);
   const normalized = username.toLowerCase();
   const identityKey = `identity:credentials:${normalized}`;
   const existing = await store.get(identityKey);
-  if (existing) fail(409, 'Командир с таким логином уже существует');
+  if (existing) fail(409, 'Аккаунт с таким логином или email уже существует');
 
   const salt = randomToken(16);
   const passwordHash = await digest(`${salt}:${password}`);
   const id = randomToken(18);
-  const account = { id, name: username, provider: 'credentials', createdAt: Date.now(), fingerprintHash: fingerprint };
+  const displayNameStr = username.includes('@') ? username.split('@')[0] : username;
+  const account = { id, name: displayName(displayNameStr, 'Командир'), provider: 'credentials', email: username.includes('@') ? normalized : undefined, createdAt: Date.now(), fingerprintHash: fingerprint };
 
   const checks = [{ key: identityKey, version: null }, { key: `account:${id}`, version: null }];
   const puts = [
