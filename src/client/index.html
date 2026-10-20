@@ -99,14 +99,17 @@
     <h1 id="welcomeTitle">МАЛЕНЬКАЯ БАЗА.<br><em>БОЛЬШАЯ ИМПЕРИЯ.</em></h1>
     <p class="card-description">Захватывайте землю. Усиливайте штаб.<br>Оставьте свой след на карте мира.</p>
     <div class="welcome-emblems" id="factionPreview" aria-label="Посмотреть фракции"></div>
-    <button id="guestLogin" class="primary-button auth-button">Играть на сайте</button>
-    <button id="telegramLogin" class="primary-button auth-button" hidden><svg><use href="#i-telegram"/></svg><span>Войти через Telegram</span><span aria-hidden="true">↗</span></button>
-    <button id="browserTelegramLogin" class="text-button" hidden>Войти через Telegram в этом окне</button>
-    <button id="googleLogin" class="secondary-button auth-button" disabled hidden>Google <span class="soon-label">скоро</span></button>
-    <div id="telegramWidget"></div>
-    <div id="devAuth" class="local-login" hidden><input id="devName" maxlength="24" value="Командир" aria-label="Имя командира" autocomplete="off"><button class="secondary-button" id="devLogin">Начать</button></div>
+    <button id="openAuthModalBtn" class="primary-button auth-button"><span>Регистрация</span><span aria-hidden="true">↗</span></button>
+    <div id="legacyAuthControls" style="display: none;" aria-hidden="true">
+      <button id="guestLogin" class="primary-button auth-button" hidden>Играть на сайте</button>
+      <button id="telegramLogin" class="primary-button auth-button" hidden><svg><use href="#i-telegram"/></svg><span>Войти через Telegram</span><span aria-hidden="true">↗</span></button>
+      <button id="browserTelegramLogin" class="text-button" hidden>Войти через Telegram в этом окне</button>
+      <button id="googleLogin" class="secondary-button auth-button" disabled hidden>Google <span class="soon-label">скоро</span></button>
+      <div id="telegramWidget"></div>
+      <div id="devAuth" class="local-login" hidden><input id="devName" maxlength="24" value="Командир" aria-label="Имя командира" autocomplete="off"><button class="secondary-button" id="devLogin">Начать</button></div>
+      <a id="telegramBotLink" class="bot-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть чат бота → нажать «Играть»</a>
+    </div>
     <p id="authNotice" class="auth-notice" role="status" aria-live="polite"></p>
-    <a id="telegramBotLink" class="bot-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть чат бота → нажать «Играть»</a>
   </section>
 
   <section class="floating-card welcome-card" id="spawnCard" aria-labelledby="spawnTitle" hidden>
@@ -277,6 +280,46 @@
 <dialog id="shopDialog"><button class="close-button" data-close="shopDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button><span class="eyebrow">Для новых возможностей</span><h2>Магазин</h2><p id="shopNotice" class="card-description"></p><div id="shopItems" class="shop-items"></div><button id="billingBtn" class="secondary-button" hidden>Управление подпиской</button><button id="cancelSubscriptionBtn" class="text-button" hidden>Отключить продление VIP</button></dialog>
 <dialog id="abandonDialog"><button class="close-button" data-close="abandonDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button><h2>Освободить ячейки?</h2><p class="card-description">Выбранные ячейки станут свободными. Захватить их снова можно будет через 12 часов. За день можно освободить до 15% территории, с перерывом 6 часов.</p><button id="confirmAbandon" class="primary-button">Освободить ячейки</button></dialog>
 <dialog id="cancelBillingDialog"><button class="close-button" data-close="cancelBillingDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button><h2>Отключить продление VIP?</h2><p class="card-description">VIP останется доступен до конца оплаченного периода. Новых списаний не будет.</p><button id="confirmCancelBilling" class="primary-button">Отключить продление</button></dialog>
+<!-- Auth Modal Dialog -->
+<dialog id="authModal" class="floating-card auth-modal-dialog">
+  <button class="close-button" id="closeAuthModalBtn" aria-label="Закрыть окно регистрации"><svg><use href="#i-close"/></svg></button>
+  <span class="eyebrow"><span class="status-light" aria-hidden="true"></span> КОМАНДНЫЙ ЦЕНТР</span>
+  <h2 id="authModalTitle">Регистрация</h2>
+  <p class="auth-modal-prompt" id="authModalPrompt">Зарегистрироваться через Telegram, или через Google-почту, или через логин-пароль</p>
+
+  <div class="auth-modal-options">
+    <button id="modalTelegramBtn" class="primary-button auth-modal-btn">
+      <svg><use href="#i-telegram"/></svg>
+      <span>Через Telegram</span>
+      <span aria-hidden="true">↗</span>
+    </button>
+
+    <button id="modalGoogleBtn" class="secondary-button auth-modal-btn">
+      <svg viewBox="0 0 24 24" class="google-icon" width="20" height="20" style="vertical-align: middle; margin-right: 6px;"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/><path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.14-1.55.38-2.27V6.58H1.25C.45 8.17 0 10.03 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/></svg>
+      <span id="modalGoogleLabel">Через Google-почту</span>
+      <span class="soon-label" id="modalGoogleSoon" hidden>скоро</span>
+    </button>
+
+    <div class="auth-divider"><span>или через логин-пароль</span></div>
+
+    <form id="credAuthForm" class="credentials-form" onsubmit="return false;">
+      <div class="form-field">
+        <label for="credUsername">Логин командира</label>
+        <input type="text" id="credUsername" placeholder="Имя командира (от 3 симв.)" autocomplete="username" minlength="3" maxlength="30">
+      </div>
+      <div class="form-field">
+        <label for="credPassword">Пароль</label>
+        <input type="password" id="credPassword" placeholder="Пароль (от 6 симв.)" autocomplete="current-password" minlength="6" maxlength="128">
+      </div>
+      <div class="cred-actions">
+        <button id="credRegisterBtn" type="button" class="primary-button cred-btn">Зарегистрироваться</button>
+        <button id="credLoginBtn" type="button" class="secondary-button cred-btn">Войти</button>
+      </div>
+    </form>
+    <div id="modalTelegramWidget"></div>
+    <p id="modalAuthNotice" class="auth-notice modal-notice" role="status" aria-live="polite"></p>
+  </div>
+</dialog>
 <script type="module" src="/main.js"></script>
 </body>
 </html>

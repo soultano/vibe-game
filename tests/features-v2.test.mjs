@@ -4,6 +4,7 @@ import { latLngToCell, gridDisk, gridRing, gridDistance } from 'h3-js';
 import { GameService } from '../src/server/game-service.js';
 import { MemoryStore } from '../src/server/store.js';
 import { resolveCombat } from '../src/shared/combat.js';
+import { handleAuth } from '../src/server/auth.js';
 
 const BASE_A = latLngToCell(41.3111, 69.2797, 8);
 const BASE_B = gridDisk(BASE_A, 5)[10];
@@ -169,4 +170,92 @@ test('combat cell conquest increments battlesWon and awards +25 plunder energy',
   const alpha = players.find(p => p.id === 'alpha');
   assert.ok(alpha.battlesWon > 0, `alpha battlesWon must be > 0 (got ${alpha.battlesWon})`);
   assert.ok(alpha.energy >= 100 + alpha.battlesWon * 25, 'alpha energy must include +25 plunder bounty per win');
+});
+
+test('credentials registration and login create isolated accounts and verify passwords securely', async () => {
+  const store = new MemoryStore();
+  const env = { LOCAL_DEV: 'true' };
+  const origin = 'http://127.0.0.1:9999';
+
+  // 1. Get challenge
+  const challengeRes = await handleAuth(new Request(`${origin}/api/auth/me`), env, store);
+  const challengeData = await challengeRes.json();
+  const cookie = challengeRes.headers.getSetCookie().find(c => c.startsWith('pd_login=') || c.startsWith('__Host-pd_login='))?.split(';')[0];
+  const csrf = challengeData.csrfToken;
+
+  // 2. Register
+  const regRes = await handleAuth(new Request(`${origin}/api/auth/credentials/register`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      origin,
+      cookie,
+      'x-csrf-token': csrf
+    },
+    body: JSON.stringify({
+      username: 'TestCommander',
+      password: 'mypassword123',
+      fingerprint: 'device-test-123'
+    })
+  }), env, store);
+
+  assert.equal(regRes.status, 200);
+  const regData = await regRes.json();
+  assert.equal(regData.account.name, 'TestCommander');
+  assert.equal(regData.account.provider, 'credentials');
+  assert.ok(regData.sessionToken);
+
+  // 3. Duplicate registration rejected
+  const dupRes = await handleAuth(new Request(`${origin}/api/auth/credentials/register`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      origin,
+      cookie,
+      'x-csrf-token': csrf
+    },
+    body: JSON.stringify({
+      username: 'testcommander',
+      password: 'differentpass',
+      fingerprint: 'device-test-456'
+    })
+  }), env, store);
+  assert.equal(dupRes.status, 409);
+
+  // 4. Login with wrong password rejected
+  const wrongPassRes = await handleAuth(new Request(`${origin}/api/auth/credentials/login`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      origin,
+      cookie,
+      'x-csrf-token': csrf
+    },
+    body: JSON.stringify({
+      username: 'TestCommander',
+      password: 'wrongpassword',
+      fingerprint: 'device-test-123'
+    })
+  }), env, store);
+  assert.equal(wrongPassRes.status, 401);
+
+  // 5. Login with correct password succeeds
+  const loginRes = await handleAuth(new Request(`${origin}/api/auth/credentials/login`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      origin,
+      cookie,
+      'x-csrf-token': csrf
+    },
+    body: JSON.stringify({
+      username: 'TestCommander',
+      password: 'mypassword123',
+      fingerprint: 'device-test-123'
+    })
+  }), env, store);
+  assert.equal(loginRes.status, 200);
+  const loginData = await loginRes.json();
+  assert.equal(loginData.account.name, 'TestCommander');
+  assert.ok(loginData.sessionToken);
 });

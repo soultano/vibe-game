@@ -470,7 +470,10 @@ async function refreshAuth() {
   $("logoutBtn").hidden = !account;
   $("authCard").hidden = !!account;
   $("spawnCard").hidden = true;
-  if (account) await refreshState(true);
+  if (account) {
+    if ($("authModal")?.open) $("authModal").close();
+    await refreshState(true);
+  }
   else {
     resetWorldState();
     updateUI();
@@ -508,6 +511,7 @@ async function initAuth() {
   $("googleLogin").hidden = !providers.google?.enabled;
   $("googleLogin").disabled = !providers.google?.enabled;
   $("googleLogin").innerHTML = providers.google?.enabled ? "Продолжить с Google" : 'Google <span class="soon-label">скоро</span>';
+  if ($("modalGoogleSoon")) $("modalGoogleSoon").hidden = !!providers.google?.enabled;
   $("telegramLogin").hidden = !providers.telegram?.enabled;
   $("devAuth").hidden = !providers.development;
   $('browserTelegramLogin').hidden = !providers.telegram?.enabled || !!telegramLaunchData;
@@ -1276,10 +1280,14 @@ $("googleLogin").onclick = async (e) => {
 };
 window.onTelegramAuth = async (user) => {
   const result = await action("/api/auth/telegram", { telegram: user, fingerprint: await fingerprint() });
-  if (result) await refreshAuth();
+  if (result) {
+    if ($("authModal")?.open) $("authModal").close();
+    await refreshAuth();
+  }
 };
-window.openTelegramWidget = () => {
-  if (!providers.telegram?.enabled || $("telegramWidget").children.length) return;
+window.openTelegramWidget = (targetId = "telegramWidget") => {
+  const target = $(targetId) || $("telegramWidget");
+  if (!providers.telegram?.enabled || target.children.length) return;
   const script = document.createElement("script");
   script.src = "https://telegram.org/js/telegram-widget.js?22";
   script.async = true;
@@ -1287,10 +1295,11 @@ window.openTelegramWidget = () => {
   script.setAttribute("data-size", "large");
   script.setAttribute("data-onauth", "onTelegramAuth(user)");
   script.onerror = () => {
-    $('telegramWidget').innerHTML = '';
+    target.innerHTML = '';
     setText('authNotice', 'Не удалось загрузить окно входа. Откройте чат бота и нажмите «Играть».');
+    if ($('modalAuthNotice')) setText('modalAuthNotice', 'Не удалось загрузить окно входа. Откройте чат бота и нажмите «Играть».');
   };
-  $("telegramWidget").appendChild(script);
+  target.appendChild(script);
 };
 $("browserTelegramLogin").onclick = () => window.openTelegramWidget();
 $("telegramLogin").onclick = () => {
@@ -1300,6 +1309,94 @@ $("telegramLogin").onclick = () => {
   const webApp = window.Telegram?.WebApp;
   if (webApp?.initData && webApp.openTelegramLink) webApp.openTelegramLink(url);
   else location.assign(url);
+};
+function openAuthModal() {
+  setText("modalAuthNotice", "");
+  $("authModal")?.showModal();
+}
+function closeAuthModal() {
+  $("authModal")?.close();
+}
+if ($("openAuthModalBtn")) $("openAuthModalBtn").onclick = () => openAuthModal();
+if ($("closeAuthModalBtn")) $("closeAuthModalBtn").onclick = () => closeAuthModal();
+
+if ($("modalTelegramBtn")) $("modalTelegramBtn").onclick = () => {
+  if (telegramLaunchData && !launchExpired) {
+    closeAuthModal();
+    return autoMiniAppLogin();
+  }
+  const url = telegramLink(providers.telegram?.botUsername);
+  if (!url) {
+    if (providers.telegram?.enabled) {
+      window.openTelegramWidget("modalTelegramWidget");
+    } else {
+      setText("modalAuthNotice", "Telegram-бот настраивается. Зарегистрируйтесь по логину и паролю.");
+    }
+    return;
+  }
+  const webApp = window.Telegram?.WebApp;
+  if (webApp?.initData && webApp.openTelegramLink) webApp.openTelegramLink(url);
+  else location.assign(url);
+};
+
+if ($("modalGoogleBtn")) $("modalGoogleBtn").onclick = async (e) => {
+  e.preventDefault();
+  if (providers.google?.enabled) {
+    location.href = "/api/auth/google/start?fingerprint=" + encodeURIComponent(await fingerprint());
+  } else {
+    setText("modalAuthNotice", "Google-вход настраивается. Войдите через Telegram или по логину и паролю.");
+  }
+};
+
+async function submitCredentials(isRegister) {
+  const username = $("credUsername").value.trim();
+  const password = $("credPassword").value;
+  if (!username) {
+    setText("modalAuthNotice", "Введите имя командира");
+    $("credUsername").focus();
+    return;
+  }
+  if (!password) {
+    setText("modalAuthNotice", "Введите пароль");
+    $("credPassword").focus();
+    return;
+  }
+  if (isRegister && username.length < 3) {
+    setText("modalAuthNotice", "Логин должен быть от 3 символов");
+    return;
+  }
+  if (isRegister && password.length < 6) {
+    setText("modalAuthNotice", "Пароль должен быть от 6 символов");
+    return;
+  }
+
+  const btn = isRegister ? $("credRegisterBtn") : $("credLoginBtn");
+  btn.disabled = true;
+  setText("modalAuthNotice", isRegister ? "Создаём аккаунт командира..." : "Входим...");
+
+  try {
+    const path = isRegister ? "/api/auth/credentials/register" : "/api/auth/credentials/login";
+    const result = await api(path, { username, password, fingerprint: await fingerprint() });
+    if (result?.sessionToken) {
+      saveSession(result.sessionToken);
+    }
+    closeAuthModal();
+    await refreshAuth();
+    toast(isRegister ? "Добро пожаловать на службу, Командир!" : "С возвращением на базу!");
+  } catch (err) {
+    const msg = err.message || "Ошибка входа";
+    setText("modalAuthNotice", msg);
+    toast(msg, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+if ($("credRegisterBtn")) $("credRegisterBtn").onclick = () => submitCredentials(true);
+if ($("credLoginBtn")) $("credLoginBtn").onclick = () => submitCredentials(false);
+if ($("credAuthForm")) $("credAuthForm").onsubmit = (e) => {
+  e.preventDefault();
+  submitCredentials(true);
 };
 $("logoutBtn").onclick = async () => {
   const result = await action("/api/auth/logout", {});
@@ -1485,7 +1582,7 @@ for (const button of document.querySelectorAll("[data-dismiss]")) button.onclick
 };
 $("profileButton").onclick = () => {
   if (!account) {
-    openPanel("base");
+    openAuthModal();
     return;
   }
   const wasOpen = !$("accountPanel").hidden;

@@ -374,11 +374,73 @@ async function telegramMiniAppLogin(req, env, store, body) {
   return signIn(req, env, store, account, false, replayKey);
 }
 
+async function credentialsRegister(req, env, store, body) {
+  const username = typeof body.username === 'string' ? body.username.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!username || username.length < 3 || username.length > 30) fail(400, 'Логин должен содержать от 3 до 30 символов');
+  if (!/^[\p{L}\p{N}_-]{3,30}$/u.test(username)) fail(400, 'Логин может содержать только буквы, цифры, дефис и подчеркивание');
+  if (!password || password.length < 6 || password.length > 128) fail(400, 'Пароль должен содержать от 6 до 128 символов');
+
+  const fingerprint = await fingerprintHash(body.fingerprint);
+  const normalized = username.toLowerCase();
+  const identityKey = `identity:credentials:${normalized}`;
+  const existing = await store.get(identityKey);
+  if (existing) fail(409, 'Командир с таким логином уже существует');
+
+  const salt = randomToken(16);
+  const passwordHash = await digest(`${salt}:${password}`);
+  const id = randomToken(18);
+  const account = { id, name: username, provider: 'credentials', createdAt: Date.now(), fingerprintHash: fingerprint };
+
+  const checks = [{ key: identityKey, version: null }, { key: `account:${id}`, version: null }];
+  const puts = [
+    { key: identityKey, value: { accountId: id, salt, passwordHash } },
+    { key: `account:${id}`, value: account }
+  ];
+
+  if (!await store.atomic({ checks, puts })) {
+    fail(409, 'Командир с таким логином уже существует');
+  }
+
+  return signIn(req, env, store, account);
+}
+
+async function credentialsLogin(req, env, store, body) {
+  const username = typeof body.username === 'string' ? body.username.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!username || !password) fail(400, 'Введите логин и пароль');
+
+  const fingerprint = await fingerprintHash(body.fingerprint);
+  const normalized = username.toLowerCase();
+  const identityKey = `identity:credentials:${normalized}`;
+  const identity = await store.get(identityKey);
+  if (!identity || !identity.value?.salt || !identity.value?.passwordHash) {
+    fail(401, 'Неверный логин или пароль');
+  }
+
+  const computedHash = await digest(`${identity.value.salt}:${password}`);
+  if (!equal(computedHash, identity.value.passwordHash)) {
+    fail(401, 'Неверный логин или пароль');
+  }
+
+  const accountKey = `account:${identity.value.accountId}`;
+  const accountRecord = await store.get(accountKey);
+  if (!accountRecord) fail(401, 'Аккаунт не найден');
+
+  const account = { ...accountRecord.value, fingerprintHash: fingerprint };
+  await store.atomic({
+    checks: [{ key: accountKey, version: accountRecord.version }],
+    puts: [{ key: accountKey, value: account }]
+  });
+
+  return signIn(req, env, store, account);
+}
+
 export async function handleAuth(req, env, store) {
   const path = new URL(req.url).pathname;
   if (!path.startsWith('/api/auth/')) return null;
   try {
-    if (req.method === 'GET' && path === '/api/auth/providers') return json({ google: { enabled: googleEnabled(env), url: '/api/auth/google/start' }, telegram: { enabled: telegramEnabled(env), botUsername: telegramEnabled(env) ? telegramUsername(env) : null }, development: isLocalDevelopment(req, env) });
+    if (req.method === 'GET' && path === '/api/auth/providers') return json({ google: { enabled: googleEnabled(env), url: '/api/auth/google/start' }, telegram: { enabled: telegramEnabled(env), botUsername: telegramEnabled(env) ? telegramUsername(env) : null }, development: isLocalDevelopment(req, env), credentials: { enabled: true } });
     if (req.method === 'GET' && path === '/api/auth/me') {
       const current = await getAuthContext(req, env, store);
       if (current) return json({ account: publicAccount(current.account), csrfToken: current.csrfToken });
@@ -396,19 +458,19 @@ export async function handleAuth(req, env, store) {
       if (session) await store.atomic({ checks: [{ key: session.key, version: session.version }], deletes: [session.key] });
       return json({ ok: true }, 200, { 'set-cookie': cookie(req, env, 'pd_session', '', 0) });
     }
-    if (!['/api/auth/guest', '/api/auth/dev', '/api/auth/telegram', '/api/auth/telegram/miniapp'].includes(path)) return json({ error: 'Маршрут авторизации не найден' }, 404);
+    if (!['/api/auth/guest', '/api/auth/dev', '/api/auth/telegram', '/api/auth/telegram/miniapp', '/api/auth/credentials/register', '/api/auth/credentials/login'].includes(path)) return json({ error: 'Маршрут авторизации не найден' }, 404);
     if (path === '/api/auth/dev' && !isLocalDevelopment(req, env)) return json({ error: 'Локальный тестовый вход отключён' }, 404);
     await preloginCsrf(req, env, store);
     await throttle(req, env, store);
     const body = await readBody(req);
-    if(path==='/api/auth/guest'){
-      const current=await getAuthContext(req,env,store);if(current)return await signIn(req,env,store,current.account);
-      const fingerprint=await fingerprintHash(body.fingerprint);
-      // A fingerprint is only an anti-abuse signal, never a login credential.
-      // Guest identity is a random server subject recovered by its session cookie.
-      const account=await accountFor(store,'guest',randomToken(),displayName(body.name,'Командир'),fingerprint);
-      return await signIn(req,env,store,account);
+    if (path === '/api/auth/guest') {
+      const current = await getAuthContext(req, env, store); if (current) return await signIn(req, env, store, current.account);
+      const fingerprint = await fingerprintHash(body.fingerprint);
+      const account = await accountFor(store, 'guest', randomToken(), displayName(body.name, 'Командир'), fingerprint);
+      return await signIn(req, env, store, account);
     }
+    if (path === '/api/auth/credentials/register') return await credentialsRegister(req, env, store, body);
+    if (path === '/api/auth/credentials/login') return await credentialsLogin(req, env, store, body);
     if (path === '/api/auth/telegram/miniapp') return await telegramMiniAppLogin(req, env, store, body);
     if (path === '/api/auth/telegram') return await telegramLogin(req, env, store, body);
     if (typeof body.name !== 'string' || body.name.trim().length < 2 || body.name.length > 64) fail(400, 'Имя: от 2 до 64 символов');

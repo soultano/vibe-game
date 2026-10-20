@@ -102,3 +102,26 @@ test('idle canvas stops scheduling frames; ordinary hover reuses the ownership i
   await h.documentEvents.get('visibilitychange')();
   assert.equal(h.frames.size, 0);
 });
+
+test('registration modal opens from welcome card with single registration button and authenticates via credentials', async () => {
+  const h = await createClientHarness({ ...options(), launchData: '' });
+  assert.equal(h.$('authCard').hidden, false);
+  assert.ok(h.$('openAuthModalBtn'), 'openAuthModalBtn must exist in authCard');
+  
+  // Open modal
+  h.$('openAuthModalBtn').onclick();
+  assert.equal(h.$('authModal').open, true);
+
+  // Fill credentials and register
+  h.$('credUsername').value = 'Commandant99';
+  h.$('credPassword').value = 'strongPassWord123';
+  await h.$('credRegisterBtn').onclick();
+
+  // Verify successful authentication
+  assert.ok(h.client.state().account);
+  assert.equal(h.client.state().account.name, 'Commandant99');
+  assert.equal(h.client.state().account.provider, 'credentials');
+  assert.equal(h.$('authModal').open, false);
+  assert.equal(h.$('authCard').hidden, true);
+  assert.equal(h.$('spawnCard').hidden, false);
+});

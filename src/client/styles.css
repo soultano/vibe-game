@@ -597,3 +597,18 @@ dialog .secondary-button { margin-top: 16px; justify-content: center; }
 @media(max-width:760px){.army-controls{max-width:calc(100vw - 14px);padding:7px}.army-controls button{padding:8px 6px}.unit-panel{padding:9px;width:min(346px,calc(100vw - 24px));bottom:calc(var(--bottom) + var(--dock-height) + 92px)}.unit-heading{min-height:46px}.unit-heading>img{width:48px;height:48px}.unit-roster{padding:7px 1px}.unit-command-grid button{min-height:44px}.unit-command-grid kbd{display:none}.unit-order-status{margin-top:7px}}
 @media(max-height:620px){.unit-panel{left:var(--edge);transform:none;bottom:var(--bottom);width:300px;max-height:calc(var(--viewport-height) - var(--top) - 75px);overflow:auto}.unit-heading>img{width:42px;height:42px}.unit-heading{min-height:42px}.unit-roster{padding:5px 1px}.unit-command-grid button{min-height:40px}.unit-route-info{display:none}}
 .terrain-tooltip{display:block;margin-top:5px;font-size:10px;color:#b6c9ac}
+/* Auth / Registration Modal */
+.auth-modal-dialog { width: min(440px, calc(100vw - 28px)); }
+.auth-modal-prompt { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 6px 0 16px; font-weight: 500; }
+.auth-modal-options { display: flex; flex-direction: column; gap: 10px; }
+.auth-modal-btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 48px; font-size: 13px; font-weight: 700; margin-top: 0 !important; }
+.auth-divider { display: flex; align-items: center; margin: 10px 0 6px; text-align: center; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; border-bottom: 1px solid var(--line); margin: 0 10px; }
+.credentials-form { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.credentials-form .form-field { display: flex; flex-direction: column; gap: 4px; }
+.credentials-form .form-field label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.credentials-form .form-field input { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); padding: 10px 12px; font-size: 13px; outline: none; transition: border-color .15s; width: 100%; }
+.credentials-form .form-field input:focus { border-color: var(--accent); }
+.cred-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.cred-btn { justify-content: center; min-height: 44px; margin-top: 0 !important; width: 100%; }
+.modal-notice { margin-top: 12px; font-size: 12px; text-align: center; min-height: 18px; color: var(--accent); }
