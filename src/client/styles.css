@@ -612,3 +612,120 @@ dialog .secondary-button { margin-top: 16px; justify-content: center; }
 .cred-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
 .cred-btn { justify-content: center; min-height: 44px; margin-top: 0 !important; width: 100%; }
 .modal-notice { margin-top: 12px; font-size: 12px; text-align: center; min-height: 18px; color: var(--accent); }
+
+/* Clan Hall Grand Castle Modal */
+.clanhall-dialog {
+  width: min(480px, calc(100vw - 28px));
+  border: 1px solid #f59e0b88 !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8), 0 0 24px rgba(245, 158, 11, 0.25) !important;
+}
+.clanhall-modal-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+.castle-crest-icon {
+  font-size: 48px;
+  line-height: 1;
+  filter: drop-shadow(0 0 16px rgba(245, 158, 11, 0.7));
+}
+.clanhall-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 20px;
+  padding: 4px 12px;
+}
+.clanhall-subheading {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  margin: -4px 0 14px;
+}
+.clanhall-event-card {
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: linear-gradient(150deg, rgba(30, 27, 75, 0.8), rgba(15, 23, 42, 0.95));
+}
+.clanhall-lock-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.clanhall-lock-badge .lock-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+#clanHallEventStatus {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  color: #f87171;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+#clanHallEventSub {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #fca5a5;
+  font-weight: 600;
+}
+.clanhall-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  margin: 0 0 14px 0;
+}
+.clanhall-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.clanhall-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px 4px;
+  border-radius: 6px;
+}
+.clanhall-stat span {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.clanhall-stat strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f59e0b;
+  margin-top: 2px;
+}
+.clanhall-stat .stat-closed {
+  color: #ef4444 !important;
+}
+.clanhall-actions {
+  margin-top: 16px;
+}
+.clanhall-btn {
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}

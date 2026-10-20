@@ -291,3 +291,28 @@ test('custom domains 01node.uz and www.01node.uz are allowed for registration an
     assert.ok(regData.sessionToken);
   }
 });
+
+
+test('Grand Clan Hall in Central Europe occupies 40 hexes and is protected against base placement', async () => {
+  const { CLAN_HALL_CENTER_COORDS, CLAN_HALL_CENTER_CELL, CLAN_HALL_CELLS, isClanHallCell, isClanHallCenter } = await import('../src/shared/clan-hall.js');
+  
+  assert.equal(CLAN_HALL_CELLS.length, 40, 'Clan Hall must occupy exactly 40 hexes');
+  assert.equal(new Set(CLAN_HALL_CELLS).size, 40, 'All 40 hexes must be unique');
+  assert.equal(isClanHallCell(CLAN_HALL_CENTER_CELL), true);
+  assert.equal(isClanHallCenter(CLAN_HALL_CENTER_CELL), true);
+  assert.equal(isClanHallCell(BASE_A), false);
+
+  const { game, account } = await setup();
+  await account('user_castle_test');
+
+  // Attempt to place base on Clan Hall cell
+  await assert.rejects(
+    () => game.placeBase('user_castle_test', { cell: CLAN_HALL_CENTER_CELL, faction: 'protocol' }),
+    (err) => {
+      assert.equal(err.status, 403);
+      assert.equal(err.code, 'EVENT_LOCKED');
+      assert.match(err.message, /Великого Кланхолла/);
+      return true;
+    }
+  );
+});

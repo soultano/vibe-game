@@ -320,6 +320,38 @@
     <p id="modalAuthNotice" class="auth-notice modal-notice" role="status" aria-live="polite"></p>
   </div>
 </dialog>
+<!-- Clan Hall Event Dialog -->
+<dialog id="clanHallDialog" class="floating-card clanhall-dialog">
+  <button class="close-button" data-close="clanHallDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button>
+  <div class="clanhall-modal-hero">
+    <div class="castle-crest-icon">🏰</div>
+    <span class="clanhall-tag">ОБЩИЙ МИР · ЦЕНТР ЕВРОПЫ</span>
+  </div>
+  <h2 id="clanHallTitle">Великий Кланхолл</h2>
+  <div class="clanhall-subheading">Цитадель континента · Огромная крепость на 40 гексов</div>
+
+  <div class="clanhall-event-card surface">
+    <div class="clanhall-lock-badge">
+      <span class="lock-icon">🔒</span>
+      <div>
+        <strong id="clanHallEventStatus">Ивент закрыт</strong>
+        <p id="clanHallEventSub">Появится в следующем сезоне</p>
+      </div>
+    </div>
+    <p class="clanhall-desc">
+      Древняя королевская цитадель Европы запечатана силовым барьером. В следующем сезоне здесь откроется глобальный ивент: клановые войны за владение Цитаделью, сбор дани со всей Европы и технологии великих альянсов!
+    </p>
+    <div class="clanhall-stats-grid">
+      <div class="clanhall-stat"><span>Размер:</span><strong>40 гексов</strong></div>
+      <div class="clanhall-stat"><span>Статус:</span><strong class="stat-closed">Недоступен</strong></div>
+      <div class="clanhall-stat"><span>Открытие:</span><strong>Сезон 2</strong></div>
+    </div>
+  </div>
+
+  <div class="clanhall-actions">
+    <button id="closeClanHallBtn" class="primary-button clanhall-btn" data-close="clanHallDialog">Понятно, ждём Сезон 2!</button>
+  </div>
+</dialog>
 <script type="module" src="/main.js"></script>
 </body>
 </html>

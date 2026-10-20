@@ -21,6 +21,8 @@ import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./te
 import { getLang, setLang, t, LANGUAGES } from "./i18n.js";
 import { ACHIEVEMENTS, playAchievementFanfare, launchFireworks } from "./achievements.js";
 import { initTutorial, isTutorialDone, setTutorialDone } from "./tutorial.js";
+import { CLAN_HALL_CENTER_COORDS, isClanHallCell } from "../shared/clan-hall.js";
+import { drawClanHallHexes, drawClanHallCastle, hitClanHall } from "./clan-hall-renderer.js";
 const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), displayCtx = canvas.getContext("2d", { alpha: false });
 let ctx = displayCtx;
 const mapLayer = document.createElement("canvas"), mapCtx = mapLayer.getContext("2d", { alpha: false });
@@ -863,6 +865,7 @@ function drawMap(now) {
       drawCellMark(cell, owner?.faction);
     }
   }
+  if (detailedMap()) drawClanHallHexes(ctx, { cellPath, cellVisible });
   for (const cell of selectedCells) {
     cellPath(cell);
     ctx.fillStyle = "#faf6c383";
@@ -938,6 +941,7 @@ function drawMap(now) {
       ctx.textAlign = "left";
     }
   }
+  drawClanHallCastle(ctx, { project, zoom, cw, ch, detailed: detailedMap(), now });
   if (mouse && placing && detailedMap()) {
     const p = atPoint(mouse.x, mouse.y), cell = latLngToCell(p.lat, p.lng, 8);
     cellPath(cell);
@@ -1083,7 +1087,12 @@ canvas.addEventListener("pointermove", (e) => {
   const p = atPoint(mouse.x, mouse.y);
   if (detailedMap() && !placing) {
     const cell = latLngToCell(p.lat, p.lng, 8), owner = ownerCells().get(cell), known = playerById(owner);
-    if (known) {
+    if (isClanHallCell(cell)) {
+      let html = `<div class="tooltip-header"><span style="color:#f59e0b">🏰</span> <b>${escape(CLAN_HALL_CENTER_COORDS.name)}</b> <small style="color:#ef4444">(${escape(CLAN_HALL_CENTER_COORDS.subtitle)})</small></div>`;
+      html += `<div style="font-size:11px;color:#fbbf24;margin-top:2px;font-weight:600;">🔒 ${escape(CLAN_HALL_CENTER_COORDS.eventShortMessage)}</div>`;
+      html += `<small class="terrain-tooltip" style="color:#94a3b8">Огромная цитадель (40 гексов) · Центр Европы<br>Запечатан силовым барьером до 2-го сезона</small>`;
+      $("mapTooltip").innerHTML = html;
+    } else if (known) {
       const pCol = playerColor(known, known.faction);
       let html = `<div class="tooltip-header"><span style="color:${pCol}">●</span> <b>${escape(known.name)}</b> <small>(${escape(getFaction(known.faction).name)})</small></div>`;
       if (known.customLink) {
@@ -1098,6 +1107,18 @@ canvas.addEventListener("pointermove", (e) => {
     $("mapTooltip").style.left = `${Math.max(8, Math.min(cw - 280, mouse.x + 12))}px`;
     $("mapTooltip").style.top = `${Math.max(35, mouse.y - 48)}px`;
     $("mapTooltip").hidden = false;
+  } else if (!detailedMap() && mouse) {
+    if (hitClanHall(project, mouse.x, mouse.y, cw, ch)) {
+      let html = `<div class="tooltip-header"><span style="color:#f59e0b">🏰</span> <b>${escape(CLAN_HALL_CENTER_COORDS.name)}</b> <small style="color:#ef4444">(${escape(CLAN_HALL_CENTER_COORDS.subtitle)})</small></div>`;
+      html += `<div style="font-size:11px;color:#fbbf24;margin-top:2px;font-weight:600;">🔒 ${escape(CLAN_HALL_CENTER_COORDS.eventShortMessage)}</div>`;
+      html += `<small class="terrain-tooltip" style="color:#94a3b8">Кликните, чтобы осмотреть цитадель Европы (40 гексов)</small>`;
+      $("mapTooltip").innerHTML = html;
+      $("mapTooltip").style.left = `${Math.max(8, Math.min(cw - 280, mouse.x + 12))}px`;
+      $("mapTooltip").style.top = `${Math.max(35, mouse.y - 48)}px`;
+      $("mapTooltip").hidden = false;
+    } else {
+      $("mapTooltip").hidden = true;
+    }
   }
   if (placing) invalidate();
 });
@@ -1121,6 +1142,17 @@ canvas.addEventListener("pointerup", async (e) => {
   const point = pointFor(e), p = atPoint(point.x, point.y);
   if(!p.valid)return;
   const cell = latLngToCell(p.lat, p.lng, 8);
+  const isClanHallHit = isClanHallCell(cell) || (!detailedMap() && hitClanHall(project, point.x, point.y, cw, ch));
+  if (isClanHallHit) {
+    if (placing) {
+      toast("Территория Великого Кланхолла защищена. Размещение базы здесь запрещено!", true);
+      return;
+    }
+    beep(360);
+    $("clanHallDialog")?.showModal();
+    toast(CLAN_HALL_CENTER_COORDS.eventMessage, false);
+    return;
+  }
   if (armyTargeting && model?.player) {
     if(!detailedMap()){focusAt(p.lat,p.lng,2048);return;}
     armyTargeting=false;const result=await action("/api/army/order",{mode:"attack",cell},"Приказ передан войскам.");updateUI();return;

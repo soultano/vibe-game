@@ -12,6 +12,7 @@ import { aggregateOverview, mapEntry } from './map-overview.js';
 import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.js';
 export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
+import { isClanHallCell } from '../shared/clan-hall.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -378,6 +379,7 @@ export class GameService {
         const previous=await this.owner(tx,goal),defender=previous&&previous!==p.id?await tx.get('player:'+previous):null;
         if(['attack','capture'].includes(input.mode))fail(!defender||((defender.shieldUntil||0)<=now&&(p.shieldUntil||0)<=now),'Территорию защищает щит.');
         if(input.mode==='capture'){
+          fail(!isClanHallCell(goal), 'Великий Кланхолл защищён. Ивент откроется в следующем сезоне.', 403, 'EVENT_LOCKED');
           fail(unit.type!=='air','Авиация сражается, но не захватывает землю.');
           fail(goal!==p.baseCell&&goal!==defender?.baseCell,'Захват штаба запрещён.');
           fail(previous!==p.id,'Этот гекс уже принадлежит вам.');
@@ -531,6 +533,7 @@ export class GameService {
   async placeBase(accountId, input = {}) {
     fail(accountId, 'Войдите через Google или Telegram.', 401, 'AUTH_REQUIRED');
     const { cell, faction = 'protocol', azimuth = 0 } = input;
+    fail(!isClanHallCell(cell), 'Территория Великого Кланхолла защищена. Ивент откроется в следующем сезоне.', 403, 'EVENT_LOCKED');
     fail(validCell(cell) && validatePlayableCell(cell), 'База должна находиться на суше в стартовом регионе Ташкента.');
     if(this.config.npcEnabled)fail(traversable(cell),'Штаб нельзя поставить в воде. Выберите берег или сушу.');
     fail(Number.isFinite(azimuth), 'Азимут должен быть числом.');
