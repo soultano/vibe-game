@@ -31,7 +31,7 @@ export async function createClientHarness({ env = {}, origin = 'http://127.0.0.1
   const nodes = new Set(), byId = new Map(), contexts = [];
   function context2d() {
     const calls = new Map();
-    const context = new Proxy({ calls, measureText: text => ({ width: text.length * 6 }) }, {
+    const context = new Proxy({ calls, measureText: text => ({ width: text.length * 6 }), createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }) }, {
       get(target, key) { return key in target ? target[key] : (...args) => calls.set(key, (calls.get(key) || 0) + 1); },
       set(target, key, value) { target[key] = value; return true; },
     });

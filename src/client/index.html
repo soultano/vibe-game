@@ -78,6 +78,7 @@
 
   <div id="connectionNotice" class="connection-notice surface" hidden><span>Нет связи</span><button id="syncBtn" aria-label="Попробовать подключиться снова">Повторить</button></div>
 
+  <aside class="army-controls surface" id="armyControls" hidden aria-label="Приказы войскам"><span id="armyStatus" role="status">Автономные войска</span><div><button id="armyExpand" aria-label="Автоматический захват территории">⚑ Захватывать</button><button id="armyDefend" aria-label="Вернуться к штабу и защищать его">♜ Защищать</button><button id="armyAttack" aria-label="Указать цель на карте">⌖ Указать цель</button></div></aside>
   <section class="floating-card welcome-card" id="authCard" aria-labelledby="welcomeTitle">
     <button class="close-button" data-dismiss="authCard" aria-label="Свернуть вход"><svg><use href="#i-close"/></svg></button>
     <span class="eyebrow"><span class="status-light" aria-hidden="true"></span> КОМАНДИР, ВЫ НА СВЯЗИ?</span>
@@ -85,8 +86,9 @@
     <h1 id="welcomeTitle">МАЛЕНЬКАЯ БАЗА.<br><em>БОЛЬШАЯ ИМПЕРИЯ.</em></h1>
     <p class="card-description">Захватывайте землю. Усиливайте штаб.<br>Оставьте свой след на карте мира.</p>
     <div class="welcome-emblems" id="factionPreview" aria-label="Посмотреть фракции"></div>
+    <button id="guestLogin" class="primary-button auth-button">Играть на сайте</button>
     <button id="telegramLogin" class="primary-button auth-button" hidden><svg><use href="#i-telegram"/></svg><span>Войти через Telegram</span><span aria-hidden="true">↗</span></button>
-    <button id="browserTelegramLogin" class="text-button" hidden>Войти в этом окне</button>
+    <button id="browserTelegramLogin" class="text-button" hidden>Войти через Telegram в этом окне</button>
     <button id="googleLogin" class="secondary-button auth-button" disabled hidden>Google <span class="soon-label">скоро</span></button>
     <div id="telegramWidget"></div>
     <div id="devAuth" class="local-login" hidden><input id="devName" maxlength="24" value="Командир" aria-label="Имя командира" autocomplete="off"><button class="secondary-button" id="devLogin">Начать</button></div>

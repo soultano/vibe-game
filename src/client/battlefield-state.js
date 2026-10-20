@@ -1,78 +1,35 @@
-import { troopDeployment, troopFor } from '../shared/troops.js';
-
-const validCell = cell => typeof cell === 'string' && /^[0-9a-f]{15}$/.test(cell);
-export function unitSeed(key) {
-  let value = 2166136261;
-  for (const letter of key) value = Math.imul(value ^ letter.charCodeAt(0), 16777619);
-  return (value >>> 0) / 4294967296;
-}
-
-// Visual squads are projections of server territory/combat, never a second
-// combat simulation. Only confirmed ownership deltas can create a capture.
-export function createBattlefieldState({ maxUnits = 36 } = {}) {
-  let players = new Map(), conflicts = [], syncedAt = 0, ownId = null;
-  const captures = new Map(), seen = new Set();
-  return {
-    sync(snapshot, now) {
-      ownId = snapshot.player?.id || null;
-      players = new Map((snapshot.players || []).filter(player => player?.id && validCell(player.baseCell)).map(player => [player.id, player]));
-      if (snapshot.player && validCell(snapshot.player.baseCell)) players.set(snapshot.player.id, snapshot.player);
-      conflicts = (snapshot.conflicts || []).filter(conflict => conflict.status === 'active'
-        && (!Number.isFinite(conflict.lastResolvedAt) || now - conflict.lastResolvedAt < 15000));
-      syncedAt = now;
-    },
-    capture(change, now) {
-      if (!validCell(change.cell) || !change.owner || !Number.isFinite(change.at) || change.at > now + 1000 || now - change.at > 15000) return false;
-      if (!validCell(change.fromCell) || change.fromCell === change.cell) return false;
-      const key = `${change.cell}:${change.owner}:${change.version ?? change.at}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      if (seen.size > 512) seen.delete(seen.values().next().value);
-      captures.set(key, { ...change, key, startedAt: now });
-      if (captures.size > 16) captures.delete(captures.keys().next().value);
-      return true;
-    },
-    units(now) {
-      const result = [], fresh = now - syncedAt < 15000;
-      const ordered = [...players.values()].sort((a, b) => (b.id === ownId) - (a.id === ownId) || a.id.localeCompare(b.id));
-      for (const player of ordered) {
-        const front = fresh ? conflicts.flatMap(conflict => conflict.fronts || []).find(edge => edge.aId === player.id || edge.bId === player.id) : null;
-        const cell = front ? front.aId === player.id ? front.aCell : front.bCell : null;
-        const target = front ? front.aId === player.id ? front.bCell : front.aCell : null;
-        const frontier = (player.frontier || []).filter(validCell);
-        const deployment = player.troops || troopDeployment(player, now);
-        for (const group of deployment) {
-          if (group.type !== 'infantry' && (!Number.isFinite(group.activeUntil) || group.activeUntil <= now)) continue;
-          const count = Math.max(0, Math.min(group.type === 'infantry' ? 5 : 1, Number(group.count) || 0));
-          for (let i = 0; i < count; i++) {
-            const spec = troopFor(player.faction, group.type), key = `${player.id}:${spec.type}:${i}`;
-            const anchor = validCell(cell) ? cell : frontier[i % Math.max(1, frontier.length)] || player.baseCell;
-            const atBase = anchor === player.baseCell && !front;
-            result.push({ ...spec, key, owner: player.id,
-              cell: anchor,
-              target: validCell(target) ? target : null,
-              animation: fresh ? front ? 'attack' : 'walk' : 'idle', phase: unitSeed(key),
-              offsetX: (i - (count - 1) / 2) * 13 + (spec.type === 'armor' ? -23 : 0),
-              offsetY: spec.type === 'air' ? -27 : spec.type === 'ultimate' ? atBase ? 42 : 27 : spec.type === 'armor' ? atBase ? 32 : 20 : atBase ? 23 : 3,
-              azimuth: player.azimuth || 0, ultimate: spec.type === 'ultimate' });
-          }
-        }
-      }
-      for (const [key, event] of captures) {
-        const age = now - event.startedAt;
-        if (age >= 4200) { captures.delete(key); continue; }
-        const player = players.get(event.owner);
-        if (!player) continue;
-        const defender = event.previous && players.get(event.previous);
-        if (defender && age >= 2300) result.unshift({ ...troopFor(defender.faction, 'infantry'), key: `defeat:${key}`, owner: defender.id,
-          cell: event.cell, progress: 1, animation: 'death', phase: 0, offsetX: 8, offsetY: 0, azimuth: defender.azimuth || 0 });
-        result.unshift({ ...troopFor(player.faction, 'infantry'), key: `capture:${key}`, owner: event.owner,
-          cell: event.cell, fromCell: event.fromCell, progress: Math.min(1, age / 2300),
-          animation: age < 2300 ? 'walk' : 'capture', phase: unitSeed(key), offsetX: 0, offsetY: 0,
-          capture: age >= 2300, combat: !!event.previous, azimuth: player.azimuth || 0 });
-      }
-      return result.slice(0, maxUnits);
-    },
-    clear() { players.clear(); conflicts = []; captures.clear(); seen.clear(); syncedAt = 0; },
-  };
+import { troopFor } from '../shared/troops.js';
+export function unitSeed(key) { let value=2166136261;for(const c of key)value=Math.imul(value^c.charCodeAt(0),16777619);return(value>>>0)/4294967296; }
+const modes={idle:'idle',move:'walk',retreat:'run',attack:'attack',capture:'capture',death:'death'};
+// This adapter only interpolates persisted server NPC positions. It neither
+// invents patrols nor predicts damage, victories, or ownership changes.
+export function createBattlefieldState({maxUnits=36}={}){
+ let actors=[],syncedAt=0,ownId=null;
+ return{
+  sync(snapshot,now){
+   ownId=snapshot.player?.id||null;
+   const players=new Map((snapshot.players||[]).filter(p=>p?.id).map(p=>[p.id,p]));if(snapshot.player)players.set(snapshot.player.id,snapshot.player);
+   const units=new Map();
+   for(const player of players.values())for(const u of player.army?.units||[])if(u?.id&&u.cell&&(!units.has(u.id)||player.id===ownId))units.set(u.id,{...u,at:player.army.at});
+   actors=[...units.values()].sort((a,b)=>(b.owner===ownId)-(a.owner===ownId)||a.id.localeCompare(b.id));syncedAt=now;
+  },
+  capture(){return false;},
+  units(now,isVisible=()=>true){
+   const byId=new Map(actors.map(u=>[u.id,u]));
+   return actors.filter(u=>isVisible(u.move?.to||u.cell)).slice(0,maxUnits).map(u=>{
+    const fresh=now-syncedAt<10000&&now-u.at<10000;
+    const spec=troopFor(u.faction,u.type),move=u.move;
+    const progress=move?Math.max(0,Math.min(1,((fresh?now:syncedAt)-move.startedAt)/(move.endsAt-move.startedAt))):1;
+    const target=byId.get(u.targetId);
+    return{...spec,key:u.id,owner:u.owner,cell:move?.to||u.cell,fromCell:move?.from,
+     progress,animation:fresh?modes[u.state]||'idle':u.hp<=0?'death':'idle',
+     phase:unitSeed(u.id),offsetX:((unitSeed(u.id+':x')-.5)*9),offsetY:((unitSeed(u.id+':y')-.5)*7),
+     target:target?.move?.to||target?.cell||null,hp:u.hp,maxHp:u.maxHp,neutral:!!u.neutral,
+     capture:fresh&&u.state==='capture',ultimate:u.type==='ultimate',azimuth:0,
+     state:u.state,stateAt:u.stateAt,at:u.at,
+    };
+   });
+  },
+  clear(){actors=[];syncedAt=0;ownId=null;},
+ };
 }

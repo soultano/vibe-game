@@ -69,7 +69,7 @@ async function checkWorker() {
     const call = (path, options) => worker.fetch(new Request(`${origin}${path}`, options), env);
     const home = await call('/');
     assert.equal(home.status, 200); assert.match(home.headers.get('content-type'), /^text\/html/);
-    assert.equal(await home.text(), await readFile(join(project, 'src/client/index.html'), 'utf8'));
+    assert.equal(await home.text(), await readFile(join(project, 'dist/client/index.html'), 'utf8'));
     let artworkBytes = 0;
     for (const group of ['factions', 'headquarters']) for (const id of factionIds) {
       const path = `/assets/${group}/${id}.webp`;
@@ -114,6 +114,10 @@ async function checkWorker() {
       assert.equal((await call(path, { headers: { 'if-none-match': response.headers.get('etag') } })).status, 304);
     }
     assert.ok(armyBytes < 16000000, `animated army download budget: ${armyBytes}`);
+    const terrainManifest=await (await call('/assets/terrain/manifest.json')).json();
+    assert.equal(terrainManifest.assets.length,12);
+    for(const asset of terrainManifest.assets){const path='/assets/terrain/'+asset.file,response=await call(path);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/webp');assert.deepEqual(Buffer.from(await response.arrayBuffer()),await readFile(join(project,'dist/client',path)));}
+    const release=await (await call('/release.json')).json();assert.match(release.release,/^[0-9a-f]{16}$/);assert.ok(release.features.includes('server-npc'));
     for (const name of await readdir(join(project, 'dist/client/chunks'))) {
       const response = await call('/chunks/' + name); assert.equal(response.status, 200);
       assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(join(project, 'dist/client/chunks', name)));
@@ -133,18 +137,23 @@ async function checkWorker() {
     assert.equal((await call('/api/auth/dev', { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ name: 'Denied', fingerprint: 'worker-check-device' }) })).status, 404);
     const tilesPath = `/api/tiles?parents=${parentCell}`;
     const first = await call(tilesPath);
-    assert.equal(first.status, 200); assert.match(first.headers.get('cache-control'), /public/);
-    const etag = first.headers.get('etag'); assert.ok(etag);
+    assert.equal(first.status, 200); assert.equal(first.headers.get('cache-control'),'no-store');
+    const etag = 'W/old-territory-only';
     const tiles = await first.json(); assert.equal(tiles.tiles.length, 1); assert.equal(tiles.tiles[0].parent, parentCell);
     assert.equal(tiles.tiles[0].version, 0); assert.deepEqual(tiles.tiles[0].owners, {});
     const unchanged = await call(tilesPath, { headers: { 'if-none-match': etag } });
-    assert.equal(unchanged.status, 304); assert.equal(await unchanged.text(), ''); assert.equal(unchanged.headers.get('etag'), etag);
+    assert.equal(unchanged.status, 200); assert.ok((await unchanged.json()).players,'NPC state must not return a stale territory-only 304');
     assert.equal((await call('/api/nonexistent-check')).status, 404);
     assert.equal((await call('/nonexistent-check')).status, 404);
     assert.ok(DB.counts.statements > 0 && DB.counts.bound > 0 && DB.counts.batches > 0, 'the emitted Worker must exercise actual prepared SQL and transaction bindings');
     assert.equal(db.prepare('SELECT count(*) AS count FROM records WHERE key LIKE ?').get('login:%').count, 1);
+    const guest=await call('/api/auth/guest',{method:'POST',headers:{'content-type':'application/json',origin,'x-login-token':me.loginToken,'x-csrf-token':me.csrfToken},body:JSON.stringify({name:'Web player',fingerprint:'worker-guest-device'})});
+    assert.equal(guest.status,200);const identity=await guest.json();assert.equal(identity.account.provider,'guest');
+    const writeHeaders={'content-type':'application/json',origin,authorization:'Bearer '+identity.sessionToken,'x-csrf-token':identity.csrfToken};
+    const base=await call('/api/base',{method:'POST',headers:writeHeaders,body:JSON.stringify({cell:baseCell,faction:'protocol'})});assert.equal(base.status,200);assert.equal((await base.json()).player.army.units.length,3);
+    const order=await call('/api/army/order',{method:'POST',headers:writeHeaders,body:JSON.stringify({mode:'defend'})});assert.equal(order.status,200);assert.equal((await order.json()).player.army.order.mode,'defend');
     assert.equal(db.prepare('SELECT count(*) AS count FROM _atomic_guard').get().count, 0);
-    console.log(`Worker OK: HTML, ten WebP sprites, five GLBs and posters, lazy 3D chunk, download budgets, H3 config, SQL storage, host cookies, disabled dev auth, tile ETag/304, 404 (${DB.counts.statements} real SQL statements).`);
+    console.log(`Worker OK: HTML, ten WebP sprites, five GLBs and posters, lazy 3D chunk, download budgets, H3 config, SQL storage, host cookies, disabled dev auth, fresh NPC tile snapshots, 404 (${DB.counts.statements} real SQL statements).`);
   } finally { db.close(); }
 }
 

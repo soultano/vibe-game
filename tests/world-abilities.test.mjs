@@ -14,7 +14,7 @@ async function setup(config = {}, { faction = 'protocol', place = true } = {}) {
   let time = Date.UTC(2026, 9, 17, 12);
   const store = new MemoryStore();
   const now = () => time;
-  const game = new GameService({ store, clock: now, config });
+  const game = new GameService({ store, clock: now, config: { npcEnabled:false, ...config } });
   await store.atomic({ puts: [{ key: 'account:a', value: {
     id: 'a', name: 'a', provider: 'telegram', createdAt: time, fingerprintHash: 'device:a',
   } }] });
@@ -135,7 +135,7 @@ test('duplicate activation request IDs remain idempotent across restarts, elapse
   assert.ok(results.every(({ player }) => player.crystals === 260));
   const before = (await env.store.get('player:a')).value;
   env.advance(MINUTE);
-  const restarted = new GameService({ store: env.store, clock: env.now });
+  const restarted = new GameService({ store: env.store, clock: env.now, config:{npcEnabled:false} });
   const repeated = await restarted.useAbility('a', payload);
   assert.equal(repeated.player.crystals, 260);
   const after = (await env.store.get('player:a')).value;
@@ -162,7 +162,7 @@ test('paid request receipts survive ring eviction, restart and a fully recovered
   assert.ok(await env.store.get(`ability-payment:a:${paid.requestId}`));
   env.advance(MINUTE);
   assert.ok(before.abilities.infantry.readyAt <= env.now());
-  const restarted = new GameService({ store: env.store, clock: env.now });
+  const restarted = new GameService({ store: env.store, clock: env.now, config:{npcEnabled:false} });
   const replay = await restarted.useAbility('a', paid);
   assert.equal(replay.player.crystals, 998);
   assert.equal(replay.player.captureMultiplier, 1);
@@ -199,7 +199,7 @@ test('public ability definitions use faction names while persistence retains one
   assert.equal(Array.isArray(raw.abilities), false);
   assert.deepEqual(Object.keys(raw.abilities), ['field']);
   env.advance(10 * SECOND);
-  const restarted = new GameService({ store: env.store, clock: env.now });
+  const restarted = new GameService({ store: env.store, clock: env.now, config:{npcEnabled:false} });
   const restored = await restarted.state('a');
   assert.deepEqual(restored.player.abilities, cast.player.abilities);
   assert.equal(restored.player.captureMultiplier, 1.5);

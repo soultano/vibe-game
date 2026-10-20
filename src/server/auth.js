@@ -396,11 +396,19 @@ export async function handleAuth(req, env, store) {
       if (session) await store.atomic({ checks: [{ key: session.key, version: session.version }], deletes: [session.key] });
       return json({ ok: true }, 200, { 'set-cookie': cookie(req, env, 'pd_session', '', 0) });
     }
-    if (!['/api/auth/dev', '/api/auth/telegram', '/api/auth/telegram/miniapp'].includes(path)) return json({ error: 'Маршрут авторизации не найден' }, 404);
+    if (!['/api/auth/guest', '/api/auth/dev', '/api/auth/telegram', '/api/auth/telegram/miniapp'].includes(path)) return json({ error: 'Маршрут авторизации не найден' }, 404);
     if (path === '/api/auth/dev' && !isLocalDevelopment(req, env)) return json({ error: 'Локальный тестовый вход отключён' }, 404);
     await preloginCsrf(req, env, store);
     await throttle(req, env, store);
     const body = await readBody(req);
+    if(path==='/api/auth/guest'){
+      const current=await getAuthContext(req,env,store);if(current)return await signIn(req,env,store,current.account);
+      const fingerprint=await fingerprintHash(body.fingerprint);
+      // A fingerprint is only an anti-abuse signal, never a login credential.
+      // Guest identity is a random server subject recovered by its session cookie.
+      const account=await accountFor(store,'guest',randomToken(),displayName(body.name,'Командир'),fingerprint);
+      return await signIn(req,env,store,account);
+    }
     if (path === '/api/auth/telegram/miniapp') return await telegramMiniAppLogin(req, env, store, body);
     if (path === '/api/auth/telegram') return await telegramLogin(req, env, store, body);
     if (typeof body.name !== 'string' || body.name.trim().length < 2 || body.name.length > 64) fail(400, 'Имя: от 2 до 64 символов');

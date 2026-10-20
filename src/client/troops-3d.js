@@ -5,6 +5,7 @@ import { normalizeHeadquarters,disposeHeadquarters } from './model-geometry.js';
 import { createAssetLibrary } from './asset-library.js';
 import { troopFor } from '../shared/troops.js';
 
+const factorFor=zoom=>Math.max(.75,Math.min(2.2,zoom/1024));
 export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},reducedMotion=false,maxUnits=36 }={}) {
   const surface=document.createElement('canvas'),renderer=new WebGLRenderer({canvas:surface,alpha:true,antialias:false,powerPreference:'low-power'});
   renderer.setPixelRatio(1);renderer.setClearColor(0,0);renderer.outputColorSpace=SRGBColorSpace;renderer.toneMapping=ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;
@@ -36,7 +37,8 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
     actors.set(unit.key,actor);
     library.ensure(unit.id).then(asset=>{
       if(disposed||actors.get(unit.key)!==actor)return;
-      const content=clone(asset.scene),root=normalizeHeadquarters(content),mixer=new AnimationMixer(root);
+      const content=clone(asset.scene),normalized=normalizeHeadquarters(content),root=new Group();root.add(normalized);
+      const mixer=new AnimationMixer(root);
       root.traverse(node=>{if(node.isMesh)node.frustumCulled=false;});
       actor.root=root;actor.mixer=mixer;actor.clips=asset.animations;actor.loading=false;scene.add(root);onReady();
     }).catch(()=>{actor.loading=false;});
@@ -78,13 +80,12 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
       keep.add(unit.key);const actor=actorFor(unit);visibleCount++;
       if(!actor.root)continue;
       const target=unit.target?projectCell(unit.target):null;
-      const walk=unit.animation==='walk'&&!from&&!reducedMotion;
-      if(walk){x+=Math.sin(now/1600+unit.phase*Math.PI*2)*5;y+=Math.cos(now/1600+unit.phase*Math.PI*2)*3;}
       const factor=Math.max(.75,Math.min(2.2,zoom/1024)),scale=unit.size*factor/2;
       const elevation=unit.type==='air'?20*factor:unit.id==='protocol-ultimate'?7*factor:0;
       actor.root.visible=true;actor.root.position.set(x-width/2,elevation,(y-height/2)/.6);actor.root.scale.setScalar(scale);
-      const heading=target?{x:target.x-x,y:target.y-y}:from?{x:to.x-from.x,y:to.y-from.y}:walk?{x:Math.cos(now/1600+unit.phase*Math.PI*2)*5,y:-Math.sin(now/1600+unit.phase*Math.PI*2)*3}:null;
-      actor.root.rotation.y=heading?Math.atan2(heading.x,heading.y/.6):Math.PI-unit.azimuth*Math.PI/180;
+      const heading=target?{x:target.x-x,y:target.y-y}:from?{x:to.x-from.x,y:to.y-from.y}:null;
+      if(heading && Math.hypot(heading.x,heading.y)>.01)actor.heading=Math.atan2(heading.x,heading.y/.6);
+      actor.root.rotation.y=actor.heading??Math.PI;
       play(actor,unit.animation);actor.mixer.update(reducedMotion?0:delta);
       if(!reducedMotion&&unit.animation!=='idle'&&(unit.animation!=='death'||actor.action?.isRunning()))animated=true;
       const phase=(now/1250+unit.phase)%1;
@@ -103,6 +104,10 @@ export function createTroops3D({ canvas,onReady=()=>{},onUnavailable=()=>{},redu
     const ratio=Math.min(1.25,globalThis.devicePixelRatio||1),w=Math.round(width*ratio),h=Math.round(height*ratio);
     if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
     size(w,h);renderer.render(scene,camera);copy(canvas);
+    const hud=canvas.getContext('2d'),sx=canvas.width/width,sy=canvas.height/height;
+    hud.save();hud.scale(sx,sy);
+    for(const unit of units.slice(0,maxUnits)){if(!(unit.hp>0))continue;const to=projectCell(unit.cell);if(!to)continue;const from=unit.fromCell?projectCell(unit.fromCell):null,p=unit.progress??1;const x=(from?from.x+(to.x-from.x)*p:to.x)+unit.offsetX,y=(from?from.y+(to.y-from.y)*p:to.y)+unit.offsetY-unit.size*factorFor(zoom)-8;hud.fillStyle='#07120ee6';hud.fillRect(x-15,y,30,5);hud.fillStyle=unit.neutral?'#e58554':unit.color;hud.fillRect(x-14,y+1,28*Math.max(0,Math.min(1,unit.hp/unit.maxHp)),3);}
+    hud.restore();
   }
   surface.addEventListener('webglcontextlost',event=>{event.preventDefault();lost=true;preview?.fallback();onUnavailable();});
   return {

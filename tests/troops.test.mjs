@@ -21,31 +21,21 @@ test('deployment derives from server effect intervals; no future or expired heav
  const p={...player,abilities:{field:{activeFrom:now-1,activeUntil:now+1},heavy:{activeFrom:now+1,activeUntil:now+1000},ultimate:{activeFrom:now-1000,activeUntil:now}}};
  assert.deepEqual(troopDeployment(p,now).map(x=>x.type),['infantry','armor']);assert.deepEqual(troopDeployment(null,now),[]);
 });
-test('visual troops fire only at active confirmed server contacts and freeze after connection staleness',()=>{
- const state=createBattlefieldState(),other={...player,id:'enemy',faction:'pack',baseCell:neighbors[0]};
- const front={aId:'owner',bId:'enemy',aCell:base,bCell:neighbors[0]};
- state.sync({player,players:[other],conflicts:[{status:'shielded',fronts:[front]}]},now);
- assert.ok(state.units(now).every(x=>x.animation!=='attack'));
- state.sync({player,players:[other],conflicts:[{status:'active',fronts:[front]}]},now);
- assert.ok(state.units(now).every(x=>x.animation==='attack'&&x.target));
- assert.ok(state.units(now+15001).every(x=>x.animation==='idle'&&!x.target));
-});
-test('captures require fresh confirmed ownership deltas, deduplicate and travel from an owned neighbor',()=>{
- const state=createBattlefieldState();state.sync({player,players:[],conflicts:[]},now);
- const change={cell:neighbors[0],fromCell:base,owner:'owner',at:now,version:1};
- assert.equal(state.capture({...change,at:now-16000},now),false);
- assert.equal(state.capture({...change,fromCell:change.cell},now),false);
- assert.equal(state.capture(change,now),true);assert.equal(state.capture(change,now),false);
- const moving=state.units(now+1000).find(x=>x.key.startsWith('capture:'));
- assert.equal(moving.animation,'walk');assert.equal(moving.fromCell,base);assert.ok(moving.progress>0&&moving.progress<1);
- assert.equal(state.units(now+2600).find(x=>x.key.startsWith('capture:')).animation,'capture');
- assert.equal(state.units(now+5000).some(x=>x.key.startsWith('capture:')),false);
+test('server NPC adapter follows timed waypoints, keeps idle soldiers still and freezes stale snapshots',()=>{
+ const state=createBattlefieldState();const units=[{id:'a:0',owner:'owner',faction:'pack',type:'infantry',cell:base,hp:100,maxHp:100,state:'move',move:{from:base,to:neighbors[0],startedAt:now,endsAt:now+4000}}];
+ state.sync({player:{...player,army:{at:now,units}}},now);
+ const moving=state.units(now+2000)[0];assert.equal(moving.animation,'walk');assert.equal(moving.fromCell,base);assert.equal(moving.cell,neighbors[0]);assert.equal(moving.progress,.5);
+ assert.equal(state.units(now+10001)[0].animation,'idle');
+ units[0]={...units[0],state:'idle',move:undefined};state.sync({player:{...player,army:{at:now,units}}},now);
+ assert.deepEqual(state.units(now+1000),state.units(now+2000),'stationary soldiers cannot orbit the anchor');
+ assert.equal(state.capture({cell:neighbors[0],fromCell:base,owner:'owner',at:now},now),false,'ownership deltas cannot fabricate a second unit');
  state.clear();assert.equal(state.units(now).length,0);
 });
-test('the visible unit budget remains bounded and own squads have priority',()=>{
- const state=createBattlefieldState({maxUnits:12}),players=Array.from({length:40},(_,i)=>({...player,id:'enemy-'+i}));
- state.sync({player,players},now);const units=state.units(now);assert.equal(units.length,12);assert.equal(units[0].owner,player.id);
- assert.deepEqual(state.units(now).map(u=>u.key),units.map(u=>u.key));
+test('server NPC adapter renders without an account, bounds the budget and prioritizes owned armies',()=>{
+ const make=(id,n)=>({...player,id,army:{at:now,units:Array.from({length:n},(_,i)=>({id:id+':'+i,owner:id,faction:'pack',type:'infantry',cell:base,hp:100,maxHp:100,state:'idle'}))}});
+ const state=createBattlefieldState({maxUnits:12}),own=make('owner',3),other=make('other',15);
+ state.sync({player:own,players:[other]},now);assert.equal(state.units(now).length,12);assert.equal(state.units(now)[0].owner,'owner');
+ state.sync({players:[other]},now);assert.equal(state.units(now).length,12);
 });
 test('arsenal exposes every approved class and faction without WebGL and does not alter account or army',async()=>{
  const h=await createClientHarness();await h.$('troopsBtn').onclick();assert.equal(h.$('troopsDialog').open,true);

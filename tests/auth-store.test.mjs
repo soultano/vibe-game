@@ -232,3 +232,15 @@ test('Google rejects expired OAuth state and signed tokens with wrong audience o
   }
   assert.equal((await store.list('account:')).length, 0);
 });
+
+test('production web guest uses CSRF and a random session; a fingerprint cannot recover another guest',async()=>{
+ const store=new MemoryStore(),env={APP_ORIGIN:productionOrigin};
+ const denied=await handleAuth(request('/api/auth/guest',{method:'POST',origin:productionOrigin,body:{name:'Guest',fingerprint}}),env,store);assert.equal(denied.status,403);
+ const firstChallenge=await challenge(store,env,productionOrigin);
+ const response=await handleAuth(request('/api/auth/guest',{method:'POST',origin:productionOrigin,body:{name:'Guest',fingerprint},...firstChallenge}),env,store);assert.equal(response.status,200);
+ const first=await response.json(),sessionCookie=cookieValue(response,'pd_session');assert.equal(first.account.provider,'guest');assert.ok(sessionCookie);assert.match(response.headers.get('set-cookie'),/HttpOnly/);
+ const current=await getAuthContext(request('/api/auth/me',{origin:productionOrigin,cookie:sessionCookie}),env,store);assert.equal(current.account.id,first.account.id);
+ const secondChallenge=await challenge(store,env,productionOrigin),other=await handleAuth(request('/api/auth/guest',{method:'POST',origin:productionOrigin,body:{name:'Guest',fingerprint},...secondChallenge}),env,store);
+ assert.notEqual((await other.json()).account.id,first.account.id,'device signals never authenticate a guest');
+ const forged=await handleAuth(request('/api/auth/guest',{method:'POST',origin:'https://attacker.example',body:{fingerprint},...firstChallenge}),env,store);assert.equal(forged.status,403);
+});

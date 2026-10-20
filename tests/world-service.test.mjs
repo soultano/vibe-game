@@ -6,13 +6,15 @@ import { MemoryStore } from '../src/server/store.js';
 import { decodeTile, tileForCell, validatePlayableCell } from '../src/shared/geography.js';
 import { upgradeDurationMs, upgradeCost } from '../src/shared/economy.js';
 
+// These fixtures retain the v2 analytical territorial engine as compatibility coverage.
+// The production-default autonomous army engine is exercised in npc-simulation.test.mjs.
 const HOUR = 3_600_000;
 const BASE = latLngToCell(41.3111, 69.2797, 8);
 
 async function setup(config = {}) {
   let now = Date.UTC(2026, 9, 17, 12);
   const store = new MemoryStore();
-  const game = new GameService({ store, clock: () => now, config });
+  const game = new GameService({ store, clock: () => now, config: { npcEnabled:false, ...config } });
   const account = async (id, extra = {}) => store.atomic({ puts: [{ key: `account:${id}`, value: {
     id, name: id, provider: 'google', createdAt: now, fingerprintHash: `device:${id}`, ...extra,
   } }] });
@@ -80,7 +82,7 @@ test('elapsed server time expands multiple owners without overlap and restart pr
   const a = await game.state('a'), b = await game.state('b');
   const held = await counts(store);
   assert.equal(held.get('a'), a.player.pixels); assert.equal(held.get('b'), b.player.pixels);
-  const restarted = new GameService({ store, clock: now });
+  const restarted = new GameService({ store, clock: now, config:{npcEnabled:false} });
   assert.equal((await restarted.state('a')).player.pixels, a.player.pixels);
 });
 

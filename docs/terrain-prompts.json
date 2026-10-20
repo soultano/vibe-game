@@ -1,0 +1,19 @@
+{
+  "tool": "built-in image_gen.imagegen",
+  "date": "2026-10-20",
+  "assets": [
+    {
+      "kind": "terrain texture atlas",
+      "transparent_background": false,
+      "prompt": "Use case: stylized-concept. Asset type: production terrain texture atlas for a real time strategy game. Generate ONE precisely aligned 3-column by 2-row atlas, all 6 square panels exactly equal, edge-to-edge, no margins, borders, labels or text. Overall image landscape 1536x1024. Each panel a seamless-looking orthographic top-down ground texture, no perspective, no objects casting large shadows. Painterly hand-painted fantasy RTS art reminiscent of classic Warcraft maps, original artwork, rich tactile brushwork, subdued enough for tiny troops readability, fine texture details. TOP LEFT: mossy emerald meadow grass with little warm olive blades and scattered tiny pebbles. TOP MIDDLE: dark pine forest floor, deep teal moss roots and fallen needles. TOP RIGHT: gray warm slate craggy rock ground with tiny cracks and moss. BOTTOM LEFT: warm ochre dirt trail and worn earth with tiny gravel. BOTTOM MIDDLE: luminous turquoise deep blue water with soft painted ripples and caustics, absolutely no land. BOTTOM RIGHT: pale sandstone sandy beach with tiny shells and smooth irregular sand ridges. Crisp game-ready materials, consistent soft overhead light from upper left. No characters, no buildings, no lettering, no UI, no logos. Each panel must fill precisely one third image width and half height.",
+      "outputs": ["grass.webp", "forest.webp", "rock.webp", "dirt.webp", "water.webp", "sand.webp"]
+    },
+    {
+      "kind": "environment prop atlas",
+      "transparent_background": true,
+      "prompt": "Use case: stylized-concept. Asset type: finished game environment prop sprite atlas on true transparent alpha background. ONE 1536x1024 image divided into exactly 3 columns and 2 rows of 512x512 cells. One isolated prop centered fully inside each cell, bottom grounded at same cell height, 50px blank transparent padding on all sides so nothing touches neighbouring cell. No ground tile or terrain island; transparent empty background. Top left: lush ancient conifer pine tree with thick angular dark teal foliage, visible twisted brown trunk. Top middle: broad majestic emerald oak tree with a spreading clustered canopy. Top right: towering jagged gray slate mountain peak with warm sunlit facets and snow cap. Bottom left: rocky crag gray mountains with patches of green moss. Bottom middle: one cluster of three large rounded moss-covered boulders. Bottom right: luminous purple mushroom cluster with twisted roots and three large caps. Original hand-painted stylized fantasy RTS game artwork, isometric view from above at 45 degrees, classic Warcraft-era strategy environment art aesthetic, vivid but sophisticated colors, strong readable silhouette, soft warm light from upper left, painted rich texture, consistent scale and perspective. No text no UI no labels no frames no borders no characters no buildings. Keep six objects separate in strict equal grid. Actual transparency around props, no checkerboard.",
+      "outputs": ["pine.webp", "oak.webp", "peak.webp", "crag.webp", "boulders.webp", "mushrooms.webp"]
+    }
+  ],
+  "preparation": "Deterministic 512x512 atlas slicing; ground textures resized to 256px WebP quality 85, props to 384px WebP quality 88. Alpha preserved. Assets copied into src/client/assets/terrain. Original atlases retained outside repository."
+}

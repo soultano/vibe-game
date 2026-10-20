@@ -569,3 +569,11 @@ dialog .secondary-button { margin-top: 16px; justify-content: center; }
 .troop-role-picker button, .troops-dialog .faction-picker button { color: #d5e5ef; }
 :root[data-theme="light"] .troops-dialog { background: #f3f8fc; color: #142a3c; }
 :root[data-theme="light"] .troops-dialog .model-status { color: #405e75; }
+
+/* Field commands remain available beside the map on web and Telegram alike. */
+.army-controls{position:fixed;z-index:16;bottom:calc(var(--bottom) + var(--dock-height) + 94px);left:50%;transform:translateX(-50%);max-width:calc(100vw - 32px);padding:9px 13px;border-color:#8ca47966;background:linear-gradient(180deg,#253a2deF,#121e19f5);box-shadow:0 5px 24px #06100970;color:#d9e5c5}
+.army-controls>span{display:block;text-align:center;font-size:10px;letter-spacing:.04em;margin-bottom:7px}
+.army-controls>div{display:flex;gap:5px}.army-controls button{white-space:nowrap;border:1px solid #7b96794d;background:#314333;color:#e7e7c6;border-radius:6px;padding:7px 10px;font:inherit;font-size:11px;font-weight:600;cursor:pointer}.army-controls button:hover,.army-controls button:focus-visible{background:#4c6343;border-color:#bdcb8d}
+#guestLogin{background:linear-gradient(135deg,#b6b46e,#e5d29c);color:#17251c;border-color:#f6e8b7}
+@media(max-width:760px){.army-controls{padding:7px 9px}.army-controls>span{max-width:280px;font-size:9px}.army-controls button{padding:6px 8px;font-size:10px}}
+.terrain-tooltip{display:block;margin-top:5px;font-size:10px;color:#b6c9ac}

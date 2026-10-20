@@ -6,6 +6,8 @@ import { ABILITIES, abilityDefinition, factionAbilityName, captureMultiplierAt }
 import { CATALOG } from '../shared/catalog.js';
 import { resolveCombat } from '../shared/combat.js';
 import { troopDeployment } from '../shared/troops.js';
+import { createArmy, advanceArmies, publicArmy, reconcileArmy } from './npc-simulation.js';
+import { traversable } from '../shared/landscape.js';
 import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.js';
 export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
@@ -90,7 +92,7 @@ export class GameService {
       maxNewCells: 1024, battleThreshold: CONFIG.COMBAT_RATIO_THRESHOLD ?? 1.15,
       battleCellsPerContactHour: CONFIG.COMBAT_CONTACT_CELLS_PER_HOUR ?? 0.5,
       abandonCooldownHours: 6, abandonLockHours: 12,
-      ...config };
+      npcEnabled: true, ...config };
   }
 
   async transaction(fn) {
@@ -153,12 +155,13 @@ export class GameService {
       cost, status: player.upgradeCompletesAt ? 'building' : 'funding', startedAt: player.upgradeStartedAt ?? null,
       completesAt: player.upgradeCompletesAt ?? null, durationMs: upgradeDurationMs(player.level) } : null;
     const { fingerprintHash, seed, captureDebts, captureCursors, levelTimeline, energyPixels, energyTerrainAverage,
-      stripeCustomerId, stripeSubscriptionId, borderCells, frontierBirths, abilities, abilityReceipts, ...safe } = player;
+      stripeCustomerId, stripeSubscriptionId, borderCells, frontierBirths, abilities, abilityReceipts, army, ...safe } = player;
     const multiplier = captureMultiplierAt(player, now);
     return { ...safe, pixels: Math.floor(player.pixels), cap: stats.cap, sectorAngle: stats.sectorAngle ?? stats.angle,
       capturePerHour: stats.capturePerHour * multiplier, baseCapturePerHour: stats.capturePerHour,
       captureMultiplier: multiplier, netPerHour: net, grossPerHour: gross,
       troops: troopDeployment(player, now), frontier: (borderCells ?? [player.baseCell]).slice(0, 8),
+      army: publicArmy(army, now),
       abilities: ABILITIES.map(definition => ({ ...definition, name: factionAbilityName(player.faction, definition.id),
         readyAt: abilities?.[definition.id]?.readyAt ?? 0, activeFrom: abilities?.[definition.id]?.activeFrom ?? 0,
         activeUntil: abilities?.[definition.id]?.activeUntil ?? 0 })),
@@ -198,6 +201,7 @@ export class GameService {
     }
     const captures = tx.captureEvents;
     const initialPlayers = tx.initialPlayers;
+    if (this.config.npcEnabled) return this.settleArmies(tx, players, accountId, now);
     if (players.length > 1) return this.settleCoupled(tx, players, accountId, now);
     const initialPixels = new Map(players.map(p => [p.id, p.pixels]));
     for (const original of players) {
@@ -303,6 +307,57 @@ export class GameService {
       await tx.put(`player:${p.id}`, p); await indexPlayer(tx, p);
     }
     return conflicts.filter(c => c.players.includes(accountId));
+  }
+
+  async settleArmies(tx, players, accountId, now) {
+    const armies = new Map(), changed = new Set(), byId = new Map(players.map(p => [p.id,p]));
+    for (const p of players) {
+      const advanced = advanceProgression(p, now);
+      for (const field of ['level','levelTimeline','upgradeTargetLevel','upgradeStartedAt','upgradeCompletesAt','upgradeInvestment','queuedProject']) p[field] = advanced[field] ?? null;
+      p.army ??= createArmy(p, now);
+      armies.set(p.id,p.army);
+    }
+    await advanceArmies({ players,armies,now,
+      owner: cell => this.owner(tx,cell),
+      locked: async (cell,at) => (await this.tile(tx,tileForCell(cell))).locks[cell] > at,
+      claim: async (cell,previous,id,at) => {
+        const p=byId.get(id), defender=byId.get(previous);
+        if (!p || await this.owner(tx,cell)!==previous || players.some(other=>other.baseCell===cell)
+          || previous&&!defender || defender&&((defender.shieldUntil||0)>at||(p.shieldUntil||0)>at)) return false;
+        const multiplier=terrainForCell(cell).multiplier||1;
+        await this.writeOwner(tx,cell,id,at);changed.add(cell);
+        p.terrainAverage=((p.terrainAverage||1)*p.pixels+multiplier)/(p.pixels+1);p.pixels++;
+        tx.captureEvents.get(id).push({cell,at,terrain:multiplier,delta:1});
+        if(defender){defender.terrainAverage=((defender.terrainAverage||1)*defender.pixels-multiplier)/Math.max(1,defender.pixels-1);defender.pixels--;
+          tx.captureEvents.get(previous).push({cell,at,terrain:multiplier,delta:-1});p.battlesWon=(p.battlesWon||0)+1;}
+        // Routes in the same simulation discover the newly connected frontier.
+        await this.refreshFrontier(tx,players,[cell]);
+        return true;
+      },
+    });
+    for(const p of players){
+      Object.assign(p,settleActualEnergy({...tx.initialPlayers.get(p.id),levelTimeline:p.levelTimeline},tx.captureEvents.get(p.id),now));
+      p.tLast=now;p.energyTLast=now;p.energyPixels=p.pixels;p.energyTerrainAverage=p.terrainAverage;
+      p.pendingCaptures=0;p.captureDebts=[];p.desiredPixels=p.pixels;
+      await tx.put(`player:${p.id}`,p);await indexPlayer(tx,p);
+    }
+    const fronts=await this.borderContacts(tx,players), grouped=new Map();
+    for(const edge of fronts){const id=[edge.aId,edge.bId].sort().join(':');if(!grouped.has(id))grouped.set(id,[]);grouped.get(id).push(edge);}
+    return [...grouped].map(([id,edges])=>({id,players:id.split(':'),fronts:edges.slice(0,6),lastResolvedAt:now,
+      status:players.filter(p=>id.split(':').includes(p.id)).some(p=>p.shieldUntil>now)?'shielded':'active',contactLength:edges.length}));
+  }
+
+  async commandArmy(accountId, input={}) {
+    fail(['expand','defend','attack'].includes(input.mode),'Неизвестный приказ.');
+    return this.action(accountId, async (p,tx,now) => {
+      fail(this.config.npcEnabled,'Войска пока недоступны.');
+      if(input.mode==='attack'){
+        fail(validCell(input.cell)&&traversable(input.cell,'air',p.baseCell),'Укажите цель в игровом регионе.');
+        fail(distance(p.baseCell,input.cell)<=Math.max(12,projectedRadius(p)+8),'Цель слишком далеко.');
+      }
+      p.army??=createArmy(p,now);p.army.order={mode:input.mode,cell:input.mode==='attack'?input.cell:null};
+      for(const u of p.army.units){u.path=[];u.targetCell=null;}
+    });
   }
 
   async refreshFrontier(tx, players, changedCells) {
@@ -442,6 +497,7 @@ export class GameService {
     fail(accountId, 'Войдите через Google или Telegram.', 401, 'AUTH_REQUIRED');
     const { cell, faction = 'protocol', azimuth = 0 } = input;
     fail(validCell(cell) && validatePlayableCell(cell), 'База должна находиться на суше в стартовом регионе Ташкента.');
+    if(this.config.npcEnabled)fail(traversable(cell),'Штаб нельзя поставить в воде. Выберите берег или сушу.');
     fail(Number.isFinite(azimuth), 'Азимут должен быть числом.');
     fail(Object.values(FACTIONS).some(f => factionId(f) === faction), 'Неизвестная фракция.');
     return this.transaction(async (tx, now) => {
@@ -481,6 +537,7 @@ export class GameService {
         customLink: null, customLinkTitle: null,
         referralsCount: 0, reserveEnergy: 0, claimedReserveEnergy: 0,
         battlesWon: 0, achievements: [] };
+      if(this.config.npcEnabled){player.army=createArmy(player,now);reconcileArmy(player.army,player,now);}
       if (input.referrer && typeof input.referrer === 'string' && input.referrer !== accountId) {
         const referrer = await tx.get(`player:${input.referrer}`);
         if (referrer) {
@@ -704,7 +761,7 @@ export class GameService {
           changes: canDiff ? changes : undefined, diffBitmask: encodeTile(parent, changes.map(e => e.cell)).bitmask,
           locks: Object.fromEntries(Object.entries(tile.locks).filter(([, until]) => until > now)) });
       }
-      const ownerIds = new Set(tiles.flatMap(tile => [...Object.keys(tile.owners ?? {}), ...(tile.changes ?? []).flatMap(change => [change.owner, change.previous]).filter(Boolean)]));
+      const ownerIds = new Set([...players.map(p=>p.id),...tiles.flatMap(tile => [...Object.keys(tile.owners ?? {}), ...(tile.changes ?? []).flatMap(change => [change.owner, change.previous]).filter(Boolean)])]);
       const profiles = [];
       for (const id of ownerIds) {
         const player = await tx.get(`player:${id}`);
@@ -717,6 +774,7 @@ export class GameService {
           baseCell: player.baseCell,
           troops: troopDeployment(player, now),
           frontier: (player.borderCells ?? [player.baseCell]).slice(0, 8),
+          army: publicArmy(player.army,now),
           color: player.color ?? null,
           customLink: player.customLink ?? null,
           customLinkTitle: player.customLinkTitle ?? null,

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "style": "original painted fantasy RTS",
+  "tool": "built-in ImageGen",
+  "assets": [
+    {
+      "file": "boulders.webp",
+      "bytes": 53102,
+      "sha256": "bfbde9d4fb894a1aab92dabc607a8fb72eb38e68ccbc2ea4994ffdae5addf676"
+    },
+    {
+      "file": "crag.webp",
+      "bytes": 53124,
+      "sha256": "686bb3f1c0a23406acbc9514bfcf7b67d726cf06dcca1f47e5e2e527b2e70744"
+    },
+    {
+      "file": "dirt.webp",
+      "bytes": 27616,
+      "sha256": "d4633dc9fe23a1fde6b89db82c2444a9ffb28642d41672fef7319c01d9e74657"
+    },
+    {
+      "file": "forest.webp",
+      "bytes": 28484,
+      "sha256": "f248bab8562d6821fa6d48603b4139474299e4e193daed4b1398ac86c1b85164"
+    },
+    {
+      "file": "grass.webp",
+      "bytes": 31428,
+      "sha256": "56a0a4cea332e98b6c6dc72ddce684aedff649c8a8a84d05518dcab7e989c743"
+    },
+    {
+      "file": "mushrooms.webp",
+      "bytes": 63250,
+      "sha256": "492d692eb4a306459271881f34d4033b572e82683c562788b86d06329ff73c10"
+    },
+    {
+      "file": "oak.webp",
+      "bytes": 71486,
+      "sha256": "7cd0004d4818e4794cedbc103ea310d918afa2443de02e8b78e6f77eaaee5db3"
+    },
+    {
+      "file": "peak.webp",
+      "bytes": 52606,
+      "sha256": "97e3b56710bed4aea5a02887cb19c8a12acf17a88b7a951c3b998741ae845403"
+    },
+    {
+      "file": "pine.webp",
+      "bytes": 56168,
+      "sha256": "b9864a1e44caaa167d7c672370ca4e12ec09471b1ce73d4e91707e703bb1b8cf"
+    },
+    {
+      "file": "rock.webp",
+      "bytes": 28292,
+      "sha256": "c6ca3f57fc28ea2a965b71102f21e77ead04212e910b760517ffbb18b6049c39"
+    },
+    {
+      "file": "sand.webp",
+      "bytes": 20238,
+      "sha256": "d7606a34d0626f79528d511cd34fe7527100bf09d09e29338f8da614c93309ba"
+    },
+    {
+      "file": "water.webp",
+      "bytes": 15948,
+      "sha256": "43198bee6bf80d0bd1bbac719a980040709e4f65cf13ccb83e7a50b229540ea3"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ const bundle=await build({entryPoints:[resolve(root,'src/client/troops-3d.js')],
 }}]});
 function setup(options={}){
  const events=new Map(),requests=new Map(),counts=new Map(),paints=[],sizes=[];
- const canvas=()=>({width:0,height:0,addEventListener(n,f){events.set(n,f);},getContext(){return{clearRect(){},drawImage(){}};}});
+ const canvas=()=>({width:0,height:0,addEventListener(n,f){events.set(n,f);},getContext(){return{clearRect(){},drawImage(){},save(){},restore(){},scale(){},fillRect(){}};}});
  const document={hidden:false,createElement:canvas};
  const context=vm.createContext({document,console,paints,sizes,devicePixelRatio:1,loadModel(url){counts.set(url,(counts.get(url)||0)+1);return new Promise((resolve,reject)=>requests.set(url,{resolve,reject}));}});
  vm.runInContext(bundle.outputFiles[0].text,context);

@@ -6,6 +6,8 @@ import { skipCost } from "../shared/economy.js";
 import { ABILITIES, factionAbilityName } from "../shared/abilities.js";
 import { troopForAbility, troopFor, TROOP_CLASSES, TROOP_ANIMATIONS } from '../shared/troops.js';
 import { createBattlefieldState } from './battlefield-state.js';
+import { createLandscapeRenderer, terrainLift } from './landscape-renderer.js';
+import { landscape } from '../shared/landscape.js';
 import { headquartersFor } from "../shared/headquarters.js";
 import { readTelegramInitData, removeTelegramInitData, telegramLink } from "./telegram.js";
 import { getLang, setLang, t, LANGUAGES } from "./i18n.js";
@@ -23,6 +25,8 @@ const headquartersImages = /* @__PURE__ */ new Map(), abilityBursts = [], pointe
 let abilityBusy = null, pendingAbilityReset = null, pinch = null, gestureMoved = false;
 let headquarters3D = null, headquarters3DPromise = null, modelsUnavailable = false, inspectedFaction = "protocol", inlineModelFaction = null;
 const telegramLaunchData = readTelegramInitData(location, window.Telegram?.WebApp);
+let armyTargeting = false;
+const landscapeView = createLandscapeRenderer({ onReady: invalidate });
 let sessionToken = '', loginToken = '', authBusy = false, launchExpired = false, lastLeaderboard = 0;
 let frameHandle = null, tileTimer, pollTimer, neutralKey = '', drawingGeometry = null, ownership = new Map(), ownershipDirty = true;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
@@ -69,14 +73,19 @@ async function ensureTroops3D() {
   }).catch(() => { troopsUnavailable = true; return null; });
   return troopsPromise;
 }
-function troopsNeedFrame() { return !!troops3D && ($('troopsDialog').open || troopsEnabled && zoom >= 512) && troops3D.needsFrame(); }
+function drawTroopFallback(units) {
+  const target=$('troopsCanvas'),c=target.getContext('2d');target.hidden=!units.length;target.width=Math.round(cw);target.height=Math.round(ch);c.clearRect(0,0,cw,ch);
+  for(const u of units){const to=project(...cellToLatLng(u.cell)),from=u.fromCell?project(...cellToLatLng(u.fromCell)):to,p=u.progress??1,x=from.x+(to.x-from.x)*p,y=from.y+(to.y-from.y)*p-terrainLift(u.cell,zoom);let img=troopPosters.get(u.id);if(!img){img=new Image();img.src=u.poster;img.onload=invalidate;troopPosters.set(u.id,img);}if(img.complete&&img.naturalWidth)c.drawImage(img,x-18,y-32,36,36);c.fillStyle='#07120e';c.fillRect(x-15,y-37,30,4);c.fillStyle=u.color;c.fillRect(x-14,y-36,28*Math.max(0,u.hp/u.maxHp),2);}
+}
+const troopPosters=new Map();
+function troopsNeedFrame() { return !!troops3D && ($('troopsDialog').open || troopsEnabled && zoom >= 256) && troops3D.needsFrame(); }
 function drawTroops(now) {
   const inspecting = $('troopsDialog').open;
-  if (!inspecting && (!troopsEnabled || zoom < 512 || !account)) { $('troopsCanvas').hidden = true; return; }
-  const units = battlefield.units(serverNow());
-  if (!troops3D) { if (units.length || inspecting) ensureTroops3D().then(engine => { if (engine) invalidate(); }); return; }
+  if (!inspecting && (!troopsEnabled || zoom < 256)) { $('troopsCanvas').hidden = true; return; }
+  const units = battlefield.units(serverNow(),cell=>{try{const p=project(...cellToLatLng(cell));return p.x>=-120&&p.x<=cw+120&&p.y>=-160&&p.y<=ch+120;}catch{return false;}});
+  if (!troops3D || troopsUnavailable) { if (!troopsUnavailable && (units.length || inspecting)) ensureTroops3D().then(engine => { if (engine) invalidate(); }); if(!inspecting)drawTroopFallback(units); return; }
   $('troopsCanvas').hidden = inspecting ? $('troopsCanvas').hidden : !units.length;
-  troops3D.render(now, { width: cw, height: ch, zoom, units, projectCell(cell) { try { return project(...cellToLatLng(cell)); } catch { return null; } } });
+  troops3D.render(now, { width: cw, height: ch, zoom, units, projectCell(cell) { try { const point=project(...cellToLatLng(cell)); point.y-=terrainLift(cell,zoom); return point; } catch { return null; } } });
 }
 async function inspectTroop(faction, type = 'infantry') {
   const spec = troopFor(faction, type), generation = ++troopGeneration;
@@ -344,6 +353,7 @@ function updateFaction() {
   syncHeadquartersPreview();
 }
 function resetWorldState() {
+  armyTargeting=false;
   model = null;
   placing = false;
   selecting = false;
@@ -445,6 +455,8 @@ async function initAuth() {
   $('telegramBotLink').hidden = !providers.telegram?.enabled;
   $('telegramBotLink').href = telegramLink(providers.telegram?.botUsername, false) || '#';
   setText("authNotice", providers.telegram?.enabled ? telegramLaunchData ? 'Входим через Telegram…' : 'Откройте игру в Telegram или войдите прямо здесь.' : providers.development ? "" : "Вход через Telegram временно недоступен. Попробуйте позже.");
+  $('guestLogin').hidden = !!telegramLaunchData;
+  setText('authNotice', telegramLaunchData ? 'Входим через Telegram…' : 'Играйте прямо на сайте. Прогресс гостя хранится в этом браузере.');
   await autoMiniAppLogin();
 }
 function acceptModel(next) {
@@ -528,6 +540,8 @@ function updateUI() {
   setText("missionCopy", p ? `${fmt(p.pixels)} ячеек под вашим командованием. ${p.expansionBlocked ? "Смените направление, чтобы продолжить экспансию." : "Усильте базу, чтобы расширить пределы своей территории."}` : account ? "Изучите бонусы фракций. Затем выберите свободную сушу и разверните свой первый штаб." : "Пять фракций. Одна планета. Выберите сторону и превратите первую ячейку в империю.");
   $("missionSteps").hidden = !!p;
   $("missionBtn").hidden = !p;
+  $("armyControls").hidden = !p;
+  setText("armyStatus",armyTargeting?"Укажите цель на карте":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономный захват · войска под вашим командованием");
   $("missionSteps").children[0]?.classList.toggle("current", !account);
   $("missionSteps").children[1]?.classList.toggle("current", !!account && !placing);
   $("missionSteps").children[2]?.classList.toggle("current", placing);
@@ -626,7 +640,7 @@ function focusAt(lat, lng, nextZoom = 384) {
 }
 function home() {
   const center = model?.player?.baseCell ? cellToLatLng(model.player.baseCell) : [CONFIG.REGION.center.lat, CONFIG.REGION.center.lng];
-  focusAt(...center);
+  focusAt(...center,2048);
 }
 function fit() {
   const rect = $("mapViewport").getBoundingClientRect();
@@ -698,7 +712,7 @@ function cellVisible(cell) {
 }
 
 function playerById(id) {
-  return id === model?.player?.id ? model.player : profiles.get(id) || leaderboard.find((p) => p.id === id);
+  return id && id === model?.player?.id ? model.player : profiles.get(id) || leaderboard.find((p) => p.id === id);
 }
 function drawCellMark(cell, factionId) {
   if (zoom < 1600) return;
@@ -744,6 +758,7 @@ function drawMap(now) {
   const g = geometry();
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(terrain, g.ox, g.oy, 360 * g.size, 180 * g.size);
+  landscapeView.draw(ctx,{width:cw,height:ch,zoom,project,atPoint,baseCells:[...profiles.values(),model?.player].filter(Boolean).map(p=>p.baseCell),roads:[...profiles.values(),model?.player].filter(Boolean).flatMap(p=>(p.army?.units||[]).flatMap(u=>[u.cell,...(u.waypoints||[])]))});
   // Tactical latitude/longitude grid stays on the cached map layer.
   if (zoom < 12) {
     ctx.strokeStyle = "#51748a18";
@@ -764,7 +779,7 @@ function drawMap(now) {
   setText("mapScale", zoom < 12 ? "ОБЗОР МИРА" : zoom < 256 ? "ОПЕРАТИВНАЯ КАРТА" : "ТАКТИЧЕСКИЙ РЕЖИМ");
   neutralDetail(now);
   if (zoom >= 256) {
-    ctx.strokeStyle = "#52768e45";
+    ctx.strokeStyle = "#b6c49c18";
     ctx.lineWidth = 0.5;
     for (const cell of cellCache.keys()) {
       if (!cellVisible(cell)) continue;
@@ -777,10 +792,10 @@ function drawMap(now) {
     if (!cellVisible(cell)) continue;
     const owner = playerById(id), color = playerColor(owner, owner?.faction);
     cellPath(cell);
-    ctx.fillStyle = color + "ad";
+    ctx.fillStyle = color + "26";
     ctx.fill();
     if (zoom >= 256) {
-      ctx.strokeStyle = color + "9a";
+      ctx.strokeStyle = color + "88";
       ctx.lineWidth = 0.6;
       ctx.stroke();
       drawCellMark(cell, owner?.faction);
@@ -901,8 +916,8 @@ function draw(now) {
 }
 
 async function refreshTiles() {
-  if (!account || tilesBusy || zoom < 256 || stopped) return;
-  const generation = authGeneration, id = account.id;
+  if (tilesBusy || zoom < 256 || stopped) return;
+  const generation = authGeneration, id = account?.id;
   tilesBusy = true;
   try {
     const nw = atPoint(0, 0), se = atPoint(cw, ch), middle = atPoint(cw / 2, ch / 2);
@@ -916,6 +931,7 @@ async function refreshTiles() {
       for (const p of parents) if (tileCache.has(p)) versions[p] = tileCache.get(p).version;
       const result = await api("/api/tiles?parents=" + encodeURIComponent(parents.join(",")) + "&versions=" + encodeURIComponent(JSON.stringify(versions)));
       if (generation !== authGeneration || account?.id !== id) return;
+      if(Number.isFinite(result.serverTime))serverOffset=result.serverTime-Date.now();
       for (const p of result.players || []) profiles.set(p.id, p);
       for (const conflict of result.conflicts || []) tileConflicts.set(conflict.id, conflict);
       for (const t of result.tiles || []) {
@@ -1019,7 +1035,8 @@ canvas.addEventListener("pointermove", (e) => {
       }
       $("mapTooltip").innerHTML = html;
     } else {
-      $("mapTooltip").innerHTML = owner ? escape(t('occupied_cell')) : cellIsLand(cell) ? escape(t('free_land')) : escape(t('water'));
+      const ground=landscape(cell),names={grass:'Луг',forest:'Лес · укрытие, замедление',rock:'Скалы · укрытие',mountain:'Горы · медленный проход',sand:'Песчаный берег',water:'Вода · проходима авиацией'};
+      $("mapTooltip").innerHTML = (owner ? escape(t('occupied_cell')) : escape(names[ground.type])) + `<small class="terrain-tooltip">Высота: ${ground.elevation} · ${ground.water?'Наземным отрядам нужен обход':'Скорость: '+Math.round(ground.speed*100)+'%'}</small>`;
     }
     $("mapTooltip").style.left = `${Math.max(8, Math.min(cw - 280, mouse.x + 12))}px`;
     $("mapTooltip").style.top = `${Math.max(35, mouse.y - 48)}px`;
@@ -1043,6 +1060,9 @@ canvas.addEventListener("pointerup", async (e) => {
     return;
   }
   const point = pointFor(e), p = atPoint(point.x, point.y), cell = latLngToCell(p.lat, p.lng, 8);
+  if (armyTargeting && model?.player) {
+    armyTargeting=false;const result=await action("/api/army/order",{mode:"attack",cell},"Приказ передан войскам.");updateUI();return;
+  }
   if (placing) {
     if (zoom < 256) {
       focusAt(p.lat, p.lng, 384);
@@ -1168,6 +1188,12 @@ $("soundBtn").onclick = () => {
   $("soundBtn").setAttribute("aria-label", sound ? "Выключить звук" : "Включить звук");
   beep();
 };
+$('guestLogin').onclick = async () => {
+  $('guestLogin').disabled=true;try { await refreshAuth();if(!account){const result=await action('/api/auth/guest',{name:'Командир',fingerprint:await fingerprint()});if(!result)return;await refreshAuth();}home();}finally{$('guestLogin').disabled=false;}
+};
+$('armyExpand').onclick=()=>action('/api/army/order',{mode:'expand'},'Войска ищут свободную территорию.');
+$('armyDefend').onclick=()=>action('/api/army/order',{mode:'defend'},'Войска возвращаются к штабу.');
+$('armyAttack').onclick=()=>{armyTargeting=!armyTargeting;updateUI();toast(armyTargeting?'Нажмите на цель на карте.':'Выбор цели отменён.');};
 $("devLogin").onclick = async () => {
   const result = await action("/api/auth/dev", { name: $("devName").value.trim() || "Командир", fingerprint: await fingerprint() });
   if (result) await refreshAuth();
@@ -1821,8 +1847,8 @@ window.addEventListener("load", setupTelegram);
 async function pollWorld() {
   clearTimeout(pollTimer);
   if (document.hidden || stopped) return;
-  await refreshState();
-  pollTimer = setTimeout(pollWorld, Math.min(30000, 5000 * 2 ** Math.min(connectionErrors, 3)));
+  if(account)await refreshState();else await refreshTiles();
+  pollTimer = setTimeout(pollWorld, Math.min(30000, 2000 * 2 ** Math.min(connectionErrors, 3)));
 }
 new ResizeObserver(fit).observe($("mapViewport"));
 function frame(now) {
@@ -1851,9 +1877,10 @@ async function init() {
   try {
     await initAuth();
     await refreshLeaderboard().catch(() => {});
+    if(!account){const first=leaderboard.find(p=>p.baseCell);if(first)focusAt(...cellToLatLng(first.baseCell),2048);else home();await refreshTiles();}
     $("mapLoading").hidden = true;
     if (account && !model?.player && !welcomeDismissed) $("spawnCard").hidden = false;
-    pollTimer = setTimeout(pollWorld, 5000);
+    pollTimer = setTimeout(pollWorld, 2000);
     setInterval(() => { if (!document.hidden && model?.player) updateUI(); }, 1000);
   } catch (e) {
     $("mapLoading").innerHTML = '<span>Не удалось открыть мир.</span><button id="retryConnect" class="secondary-button">Повторить</button>';

@@ -16,6 +16,7 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
     ['/api/daily/claim',id=>service.claimDaily(id)],
     ['/api/crystals/spend',(id,body)=>service.spendCrystals(id,body)],
     ['/api/abilities/use',(id,body)=>service.useAbility(id,body)],
+    ['/api/army/order',(id,body)=>service.commandArmy(id,body)],
     ['/api/player/customization',(id,body)=>service.updateCustomization(id,body)],
     ['/api/referrals/claim',id=>service.claimReferralEnergy(id)],
   ]);
@@ -29,7 +30,7 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
         if(path==='/api/health') {
           if(request.method!=='GET')throw new HttpError(405,'Метод не поддерживается.');
           await store.get('health:readiness');
-          return json({ok:true,version:2,worldVersion:CONFIG.WORLD_VERSION,storage:'persistent',timeAuthority:'server',serverTime:clock()});
+          return json({ok:true,version:2,worldVersion:CONFIG.WORLD_VERSION,storage:'persistent',timeAuthority:'server',gameplay:'npc-v1',landscape:'fantasy-v1',webGuest:true,serverTime:clock()});
         }
         if(path==='/api/config'&&request.method==='GET')return json({worldVersion:CONFIG.WORLD_VERSION,region:CONFIG.REGION,factions:FACTIONS,tileResolution:5,cellResolution:8,pollMs:CONFIG.TILE_POLL_INTERVAL_MS,rotation:{crystals:CONFIG.ROTATE_CRYSTAL_COST,cooldownHours:CONFIG.ROTATE_COOLDOWN_HOURS},terrain:{approximate:true,source:CONFIG.TERRAIN_SOURCE}});
         if(path==='/api/state'&&request.method==='GET') {const {account}=await requireAuth(request,env,store);return json(await service.state(account.id));}
@@ -42,9 +43,9 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
           if(!versions||typeof versions!=='object'||Array.isArray(versions))throw new HttpError(400,'Некорректные версии тайлов.');
           // Public world geometry only: no account-specific state in the CDN key.
           const result=await service.tiles({parents,versions});
-          const etag='W/"'+CONFIG.WORLD_VERSION+':'+result.tiles.map(t=>t.parent+'='+t.version).join(',')+'"';
-          if(request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers:{ETag:etag,'Cache-Control':'public, max-age=5, s-maxage=5'}});
-          return json(result,200,{'Cache-Control':'public, max-age=5, s-maxage=5, stale-while-revalidate=5',ETag:etag});
+          // Armies move and lose HP even when a tile's ownership revision stays
+          // unchanged. A territory-only ETag would freeze public spectator NPCs.
+          return json(result,200,{'Cache-Control':'no-store'});
         }
         if(path==='/api/tiles'&&request.method==='POST') {
           const {account}=await requireAuth(request,env,store,{write:true});
