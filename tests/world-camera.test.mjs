@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { fileURLToPath } from 'node:url';
 import { latLngToCell, cellToParent, cellToLatLng } from 'h3-js';
 import { createWorldCamera, geographicPosition, wrapLongitude, panWorld, anchorWorld } from '../src/client/world-camera.js';
 import { createGlobeRenderer } from '../src/client/globe-renderer.js';
@@ -75,7 +76,7 @@ test('overview markers cannot be hit through the globe and remain clickable in r
  const p=flat.project(group.lat,group.lng);assert.ok(hitMapOverview(overview,flat.project,1280,800,p.x,p.y));
 });
 test('globe uses the same terrain texture with bounded pixel work and no WebGL',async()=>{
- const image=await loadImage(new URL('../src/client/assets/terrain/world-overview.webp',import.meta.url).pathname);Object.defineProperty(image,'complete',{value:true});Object.defineProperty(image,'naturalWidth',{value:image.width});
+ const image=await loadImage(fileURLToPath(new URL('../src/client/assets/terrain/world-overview.webp',import.meta.url)));Object.defineProperty(image,'complete',{value:true});Object.defineProperty(image,'naturalWidth',{value:image.width});
  const c=createWorldCamera({...options,width:5120,height:2880}),canvas=createCanvas(c.width,c.height),renderer=createGlobeRenderer({canvasFactory:()=>createCanvas(1,1)});
  const idle=renderer.draw(canvas.getContext('2d'),c,{image}),moving=renderer.draw(canvas.getContext('2d'),c,{image,moving:true});
  assert.ok(idle.pixels<242000);assert.ok(moving.pixels<92000);assert.ok(moving.pixels<idle.pixels);const pixel=canvas.getContext('2d').getImageData(c.width/2,c.height/2,1,1).data;assert.equal(pixel[3],255);assert.ok(pixel[1]>0);

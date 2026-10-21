@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { createCanvas } from '@napi-rs/canvas';
 import { createWorldCamera } from '../src/client/world-camera.js';
@@ -45,7 +46,7 @@ test('a camera change does not begin generation for the previous viewport after 
 test('the actual worker transfers the same terrain pixels as the shared pure renderer',async()=>{
  const source=await readFile(new URL('../src/client/terrain-worker.js',import.meta.url),'utf8');
  const wrapper=`import{parentPort}from'node:worker_threads';globalThis.self={postMessage:(data,transfer)=>parentPort.postMessage(data,transfer)};${source}\nparentPort.on('message',data=>self.onmessage({data}));`;
- const output=await build({stdin:{contents:wrapper,resolveDir:new URL('../src/client',import.meta.url).pathname},bundle:true,write:false,platform:'node',format:'cjs',logLevel:'silent'}),worker=new Worker(output.outputFiles[0].text,{eval:true});
+ const output=await build({stdin:{contents:wrapper,resolveDir:fileURLToPath(new URL('../src/client',import.meta.url))},bundle:true,write:false,platform:'node',format:'cjs',logLevel:'silent'}),worker=new Worker(output.outputFiles[0].text,{eval:true});
  try{const tile={...tiles(camera(32))[0],pixels:64},response=new Promise((resolve,reject)=>{worker.once('message',resolve);worker.once('error',reject);});worker.postMessage({id:7,tile});const result=await response;assert.equal(result.id,7);assert.deepEqual(result.data,renderTerrainRaster(tile).data);assert.equal(result.data.length,64*64*4);}finally{await worker.terminate();}
 });
 test('averaged cartographic colors suppress high frequency terrain noise and remain deterministic',()=>{
