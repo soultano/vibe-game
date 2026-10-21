@@ -51,18 +51,37 @@ export function createTargetGuide(){
   const data=view.targetData,next=[units.map(u=>u.key+u.cell+u.type).join('|'),mode,view.revision,Math.floor(data.now/1500)].join(':');
   if(next!==key){
    key=next;shapes=[];
-   // Screen-bounded candidates; no path search or whole-world scans per frame.
-   const radius=Math.min(12,Math.ceil(Math.max(view.width,view.height)/Math.max(20,view.footprintCell(view.centerCell).width))+2);
+   const radius=Math.min(10,Math.ceil(Math.max(view.width,view.height)/Math.max(20,view.footprintCell(view.centerCell).width))+1);
    for(const cell of gridDisk(view.centerCell,radius)){
     const p=view.projectCell(cell);if(!p||p.x<-50||p.y<-50||p.x>view.width+50||p.y>view.height+50)continue;
-    const result=groupTarget(units,mode,cell,data);shapes.push({cell,result,polygon:view.shapeCell(cell)});if(shapes.length>=192)break;
+    const result=groupTarget(units,mode,cell,data);
+    // Prioritize visible reachable targets; avoid cluttering with blocked cells
+    if(result.ok||shapes.length<40){
+     shapes.push({cell,result,polygon:view.shapeCell(cell)});
+     if(shapes.length>=160)break;
+    }
    }
   }
-  ctx.save();ctx.lineWidth=1.5;
+  ctx.save();
   for(const{result,polygon}of shapes){
-   if(!polygon?.length)continue;ctx.beginPath();polygon.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();
-   const color=!result.ok?'#71808a':result.kind==='enemy'?'#ff705d':mode==='capture'?'#f6d16b':'#6ee9b0';
-   ctx.fillStyle=color+(result.ok?'32':'0c');ctx.strokeStyle=color+(result.ok?'ba':'35');ctx.fill();ctx.stroke();
+   if(!polygon?.length)continue;
+   ctx.beginPath();
+   polygon.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+   ctx.closePath();
+   if(result.ok){
+    const color=result.kind==='enemy'?'#ef4444':mode==='capture'?'#f59e0b':'#10b981';
+    ctx.lineWidth=2;
+    ctx.fillStyle=color+(result.kind==='enemy'?'45':'35');
+    ctx.strokeStyle=color;
+    ctx.fill();
+    ctx.stroke();
+   }else if(shapes.length<30){
+    ctx.lineWidth=1;
+    ctx.fillStyle='#64748b0a';
+    ctx.strokeStyle='#64748b25';
+    ctx.fill();
+    ctx.stroke();
+   }
   }
   ctx.restore();
  },clear(){key='';shapes=[];}};

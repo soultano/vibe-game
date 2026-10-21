@@ -9,11 +9,15 @@ export function createTelegramShell({getApp,launchData,style,onViewport=()=>{},o
   if(Number.isFinite(height)&&height>0)style.setProperty('--viewport-height',height+'px');
   onViewport();
  }
+ function lockSwipes(){
+  const app=getApp();if(!app)return;
+  try{app.ready?.();app.expand?.();}catch{}
+  try{if(supported(app,'7.7'))app.disableVerticalSwipes?.();}catch{}
+ }
  function setup(){
   const app=getApp();if(!app||!(launchData||app.initData))return;
   if(bound===app)return;bound=app;
-  try{app.ready?.();app.expand?.();}catch{}
-  try{if(supported(app,'7.7'))app.disableVerticalSwipes?.();}catch{}
+  lockSwipes();
   try{app.setHeaderColor?.('#080f19');app.setBackgroundColor?.('#080f19');}catch{}
   app.BackButton?.onClick?.(onBack);
   app.onEvent?.('viewportChanged',viewport);
@@ -22,5 +26,5 @@ export function createTelegramShell({getApp,launchData,style,onViewport=()=>{},o
   app.onEvent?.('deactivated',()=>onActivity(false));
   viewport();
  }
- return{setup,backVisible(show){const back=getApp()?.BackButton;try{show?back?.show?.():back?.hide?.();}catch{}}};
+ return{setup,lockSwipes,backVisible(show){const back=getApp()?.BackButton;try{show?back?.show?.():back?.hide?.();}catch{}}};
 }

@@ -931,3 +931,120 @@ html,body,.game,.map-viewport{overscroll-behavior:none}
   color: #38bdf8;
   filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6));
 }
+
+/* Panel Backdrop & Mutually Exclusive Sheet Manager */
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 10, 20, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 28;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.game.surface-open .panel-backdrop {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Tactical Targeting Mode Banner */
+.targeting-banner {
+  position: fixed;
+  top: calc(var(--top) + 68px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: #1e1114ea;
+  border: 1px solid #ef4444;
+  box-shadow: 0 8px 30px rgba(239, 68, 68, 0.45);
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.targeting-banner button {
+  background: #ef4444;
+  color: #fff;
+  border: 0;
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.targeting-banner button:hover {
+  background: #dc2626;
+}
+
+/* Distinct Action Buttons for Units */
+#unit-attack {
+  border-color: #ef444499;
+  background: linear-gradient(180deg, #4c1d24, #2a1014);
+}
+#unit-attack b {
+  color: #f87171;
+}
+#unit-attack:hover, #unit-attack[aria-pressed=true] {
+  background: #7f1d1d !important;
+  border-color: #f87171 !important;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+
+#unit-capture {
+  border-color: #f59e0b99;
+  background: linear-gradient(180deg, #453215, #261b0a);
+}
+#unit-capture b {
+  color: #fbbf24;
+}
+#unit-capture:hover, #unit-capture[aria-pressed=true] {
+  background: #78350f !important;
+  border-color: #fbbf24 !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+}
+
+#unit-move {
+  border-color: #10b98199;
+  background: linear-gradient(180deg, #1b3d2f, #0d221a);
+}
+#unit-move b {
+  color: #34d399;
+}
+#unit-move:hover, #unit-move[aria-pressed=true] {
+  background: #065f46 !important;
+  border-color: #34d399 !important;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+}
+
+/* Mobile Cleanups */
+@media (max-width: 760px) {
+  #unitSelectionHint, #unitGroupsHint, #unitHealthReason {
+    display: none !important;
+  }
+  .unit-panel {
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.85);
+  }
+  .unit-command-grid button {
+    min-height: 48px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .operation-label {
+    display: none !important;
+  }
+  .world-intel {
+    display: none !important;
+  }
+  .map-readout {
+    display: none !important;
+  }
+}
+

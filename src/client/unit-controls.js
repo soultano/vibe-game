@@ -43,7 +43,7 @@ export function createUnitControls({$,createQueue,getPlayer,getUnits,getView,sen
   }
   const order=unit?.order,orders=group.filter(u=>u.order),complete=orders.filter(u=>u.order.status==='complete').length;
   const escort=multiple&&group.some(u=>u.type==='air')&&group.some(u=>u.type!=='air');
-  const status=busy?'Передаём общий приказ…':groupSelecting?'Добавляйте или убирайте бойцов касанием. Затем нажмите нужную команду.':!unit?'Выберите бойца. Удержание включает выбор нескольких.':unit.hp<=0?'Отряд погиб · ожидает возрождения':targetMode?hint||({move:'Зелёные гексы — доступные цели. Нажмите на нужный.',attack:'Красные — противник, зелёные — движение с атакой. Серые недоступны.',capture:escort?'Золотые — захват наземными бойцами. Авиация прикроет цель.':'Золотые — доступный захват рядом с вашей границей. Выберите гекс.'}[targetMode]):multiple?orders.length?`С приказом: ${orders.length}/${group.length} · достигли цели: ${complete}${orders.some(u=>u.order.status==='blocked')?' · '+(REASONS[orders.find(u=>u.order.status==='blocked').order.reason]||'Есть блокировка'):''}`:'Группа готова. Выберите команду.':order?`${STATUSES[order.status]||'Приказ принят'}${order.reason?' · '+(REASONS[order.reason]||'Укажите другую цель'):''}`:'Автономный отряд · ждёт вашего приказа';
+  const status=busy?'Передаём общий приказ…':groupSelecting?'Добавляйте или убирайте бойцов касанием. Затем нажмите нужную команду.':!unit?'Выберите бойца. Удержание включает выбор нескольких.':unit.hp<=0?'Отряд погиб · ожидает возрождения':targetMode?hint||({move:'Нажмите на гекс, куда переместить отряд.',attack:'Нажмите на вражеский отряд или гекс для атаки.',capture:escort?'Золотые гексы — захват земли. Авиация прикроет бойцов.':'Нажмите на золотой гекс у границы для захвата.'}[targetMode]):multiple?orders.length?`С приказом: ${orders.length}/${group.length} · достигли цели: ${complete}${orders.some(u=>u.order.status==='blocked')?' · '+(REASONS[orders.find(u=>u.order.status==='blocked').order.reason]||'Есть блокировка'):''}`:'Группа готова. Выберите команду.':order?`${STATUSES[order.status]||'Приказ принят'}${order.reason?' · '+(REASONS[order.reason]||'Укажите другую цель'):''}`:'Отряд готов · нажмите на цель на карте';
   setText('unitOrderStatus',status);
   const clock=getView().now??Date.now();
   const temporary=unit&&(unit.type!=='infantry'||Number(unit.key.split(':').at(-1))>=3);
@@ -105,6 +105,14 @@ export function createUnitControls({$,createQueue,getPlayer,getUnits,getView,sen
   if(right){if(!selected.size)return false;const hit=hitUnit(poses,x,y),enemy=hit&&hit.owner!==player.id&&hit.hp>0?hit:view.units.find(u=>u.owner!==player.id&&u.cell===cell&&u.hp>0),mode=enemy||ownerAt(cell)&&ownerAt(cell)!==player.id?'attack':'move',goal=enemy?.cell||cell;return append||queue.active()?queue.add(mode,goal):issue(mode,goal);}
   if(targetMode&&selected.size){const enemy=targetMode==='attack'?hitUnit(poses,x,y):null,goal=enemy&&enemy.owner!==player.id?enemy.cell:cell;return append||queue.active()?queue.add(targetMode,goal):issue(targetMode,goal);}
   if(own){select(own.key);return true;}
+  // Smart Direct Tap: if player has squad selected and taps enemy unit or enemy cell, issue attack
+  if(selected.size){
+   const hit=hitUnit(poses,x,y),enemy=hit&&hit.owner!==player.id&&hit.hp>0?hit:view.units.find(u=>u.owner!==player.id&&u.cell===cell&&u.hp>0);
+   if(enemy||(ownerAt(cell)&&ownerAt(cell)!==player.id)){
+    const goal=enemy?.cell||cell;
+    return append||queue.active()?queue.add('attack',goal):issue('attack',goal);
+   }
+  }
   if(groupSelecting){finishSelection();return true;}
   if(opened){close();return true;}return false;
  }
@@ -127,7 +135,22 @@ export function createUnitControls({$,createQueue,getPlayer,getUnits,getView,sen
   for(const unit of group.slice(0,8))if(unit.order){const goal=unit.order.cell,goalMarker=!goals.has(goal);goals.add(goal);drawUnitOrder(ctx,unit,{...view,queueMarkers,routeStart:byId.get(unit.key),goalMarker,orderLabel:group.length>1?`${MODES[unit.order.mode]} · ${group.length}`:null});}
   queue.draw(ctx,view);
   ctx.save();ctx.strokeStyle='#beff9c';ctx.lineWidth=3;
-  for(const pose of poses){ctx.beginPath();ctx.ellipse(pose.x,pose.y,pose.span*.48,pose.span*.19,0,0,Math.PI*2);ctx.stroke();}ctx.restore();
+  for(const pose of poses){ctx.beginPath();ctx.ellipse(pose.x,pose.y,pose.span*.48,pose.span*.19,0,0,Math.PI*2);ctx.stroke();}
+  // Draw clear attack reticles on visible enemies when attack mode is active
+  if(targetMode==='attack'){
+   const allPoses=layoutTroops(view.units,view),player=getPlayer();
+   for(const pose of allPoses){
+    if(pose.unit.owner&&pose.unit.owner!==player?.id&&pose.unit.hp>0){
+     ctx.strokeStyle='#ef4444';ctx.lineWidth=2;
+     ctx.beginPath();ctx.arc(pose.x,pose.y-pose.span*.3,pose.span*.45,0,Math.PI*2);ctx.stroke();
+     ctx.beginPath();
+     ctx.moveTo(pose.x-pose.span*.6,pose.y-pose.span*.3);ctx.lineTo(pose.x+pose.span*.6,pose.y-pose.span*.3);
+     ctx.moveTo(pose.x,pose.y-pose.span*.3-pose.span*.6);ctx.lineTo(pose.x,pose.y-pose.span*.3+pose.span*.6);
+     ctx.stroke();
+    }
+   }
+  }
+  ctx.restore();
  }
  const queue=createQueue({$,getUnits:chosen,isBusy:()=>busy,getView,arm,notify,submit:orders=>issue(null,null,{orders,append:true}),changed:()=>{guide.clear();update();invalidate();}});
  const gestures=createUnitGestures({getView,getPlayer,ownUnits,hitUnit,layoutTroops,beginSelection,select,selectMany,open,invalidate,isBusy:()=>busy});

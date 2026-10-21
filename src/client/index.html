@@ -40,9 +40,12 @@
   <section class="map-viewport" id="mapViewport" aria-label="Карта мира">
     <canvas id="worldCanvas" tabindex="0" aria-label="Карта мира: перетаскивайте для перемещения и меняйте масштаб кнопками"></canvas><canvas id="troopsCanvas" class="troops-layer" aria-hidden="true" hidden></canvas>
     <div class="map-tooltip" id="mapTooltip" hidden></div>
-    <div class="map-loading" id="mapLoading"><span class="loader"></span><span>Открываем карту…</span></div>
+<div class="map-loading" id="mapLoading">
+<span class="loader"></span><span>Открываем карту…</span></div>
   </section>
 
+  <div id="panelBackdrop" class="panel-backdrop" hidden></div>
+  <div id="targetingBanner" class="targeting-banner surface" hidden><span>⚔ Режим атаки: выберите цель на карте</span><button id="cancelTargetBannerBtn" type="button" aria-label="Отмена">✕ Отмена</button></div>
   <header class="map-header">
     <a class="brand surface" href="/" aria-label="Pixel Dominion"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>PIXEL <b>DOMINION</b><small id="brandSub">ТАКТИЧЕСКАЯ СТРАТЕГИЯ</small></span></a>
     <div class="resource-bar surface" id="resourceBar" aria-label="Ваши ресурсы" hidden>

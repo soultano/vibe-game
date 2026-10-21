@@ -99,11 +99,11 @@ async function ensureControlGroups(){
 async function ensureUnitControls(){
  if(!unitControlsPromise)unitControlsPromise=Promise.all([import('./unit-controls.js'),import('./unit-queue.js')]).then(async([{createUnitControls},{createUnitQueue}])=>{
   unitControls=createUnitControls({$,createQueue:createUnitQueue,getPlayer:()=>model?.player,getUnits:()=>battlefield.units(serverNow()),getView:unitCommandView,
-   send:input=>action(input.unitIds?'/api/army/unit-orders':'/api/army/unit-order',input,input.orders?`Очередь принята: ${input.orders.length} приказов.`:input.unitIds?`Приказ группе принят: ${input.unitIds.length}.`:'Приказ отряду принят.'),notify:toast,invalidate:paint,onChange:()=>{if(!unitControls?.isOpen())unitGroups?.cancel();surfaces.sync();},
+   send:input=>action(input.unitIds?'/api/army/unit-orders':'/api/army/unit-order',input,input.orders?`Очередь принята: ${input.orders.length} приказов.`:input.unitIds?`Приказ группе принят: ${input.unitIds.length}.`:'Приказ отряду принят.'),notify:toast,invalidate:paint,onChange:()=>{if(!unitControls?.isOpen())unitGroups?.cancel();const tm=unitControls?.state().targetMode;const banner=$('targetingBanner');if(banner){banner.hidden=!tm;if(tm){const s=banner.querySelector('span');if(s)s.textContent=tm==='attack'?'⚔ Режим атаки: нажмите на цель на карте':tm==='capture'?'⚑ Режим захвата: выберите золотой гекс':'↗ Режим движения: выберите гекс';}}surfaces.sync();},
    ownerAt:cell=>ownerCells().get(cell),onSelect:id=>{battlefield.select(id);unitGroups?.update();},
    focus:cell=>focusAt(...cellToLatLng(cell),Math.max(2048,zoom)),
    onOpen(){armyTargeting=false;selecting=false;selectedCells.clear();surfaces.closeAll('unitPanel');updateUI();}});
-  unitControls.update();await ensureControlGroups();paint();return unitControls;
+  if($('cancelTargetBannerBtn'))$('cancelTargetBannerBtn').onclick=()=>$('unitCancelTarget')?.onclick();unitControls.update();await ensureControlGroups();paint();return unitControls;
  }).catch(()=>{unitControlsPromise=null;toast('Не удалось загрузить управление отрядами. Повторите.',true);return null;});
  const controls=await unitControlsPromise;if(controls&&!unitGroups)await ensureControlGroups();return controls;
 }
@@ -286,6 +286,7 @@ const surfaces=createSurfaces({document,closeUnits:()=>unitControls?.reset(),clo
  $('profileButton').setAttribute('aria-expanded',String(!$('accountPanel').hidden));
  document.querySelectorAll('[data-open]').forEach(b=>b.setAttribute('aria-expanded',String(b.dataset.open===activePanel)));
  $('armySquads').setAttribute('aria-expanded',String(!!unitControls?.isOpen()));
+ if($('armyControls'))$('armyControls').hidden=!model?.player||mapPaused||!!unitControls?.isOpen();
  telegramShell.backVisible(mapPaused||!!unitControls?.isOpen());paint();
 }});
 function showDialog(id){surfaces.showDialog(id);}
@@ -669,11 +670,12 @@ function updateUI() {
   $("missionSteps").hidden = !!p;
   $('worldIntel').hidden=!!p;
   $("missionBtn").hidden = !p;
-  $("armyControls").hidden = !p;
+  $("armyControls").hidden = !p || surfaces.covered() || !!unitControls?.isOpen();
   if(p&&!unitControls)ensureUnitControls();
   unitControls?.update();
   unitGroups?.update();
   const armyUnits=p?.army?.units||[];
+  fogOfWar.update(p, armyUnits, selectedContinent);
   setText('conquestTotals', p ? `${fmt(p.pixels)} ячеек · доход ${p.netPerHour >= 0 ? '+' : ''}${p.netPerHour.toFixed(1)} ⚡/ч` : '');
   setText("armyStatus",armyTargeting?"Укажите цель на карте":armyUnits.some(u=>u.state==='attack')?"Войска ведут бой":armyUnits.some(u=>u.state==='capture')?"Закрепляемся на территории":armyUnits.some(u=>u.activity==='regroup')?"Перегруппировка на своей территории":armyUnits.some(u=>u.activity==='patrol')?"Патрулируем свою территорию":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономное продвижение к фронтиру");
   $("missionSteps").children[0]?.classList.toggle("current", !account);
@@ -1044,7 +1046,7 @@ function drawMap(now) {
     ctx.textAlign = "left";
     ctx.restore();
   }
-  fogOfWar.update(model?.player, model?.player?.army?.units, selectedContinent);
+
   fogOfWar.draw(ctx, { width: cw, height: ch, project, zoom, detailed: detailedMap(), now });
   if (mouse && placing && detailedMap()) {
     const p = atPoint(mouse.x, mouse.y), cell = latLngToCell(p.lat, p.lng, 8);
@@ -2144,13 +2146,17 @@ function setupTutorial() {
 const telegramShell=createTelegramShell({getApp:()=>window.Telegram?.WebApp,launchData:telegramLaunchData,style:document.documentElement.style,
  onViewport:fit,onBack:()=>surfaces.back(),onActivity(active){telegramActive=active;if(active){paint();pollWorld();}else{cancelMapGesture();unitControls?.queue.pause();clearTimeout(pollTimer);if(frameHandle!==null)cancelAnimationFrame(frameHandle);frameHandle=null;}}
 });
-function setupTelegram(){telegramShell.setup();surfaces.sync();}
+function setupTelegram(){telegramShell.setup();telegramShell.lockSwipes?.();surfaces.sync();}
+window.addEventListener("DOMContentLoaded", setupTelegram);
+window.addEventListener("pointerdown", () => telegramShell.lockSwipes?.(), { passive: true });
+canvas.addEventListener("touchstart", () => telegramShell.lockSwipes?.(), { passive: true });
 // SDK loading is optional for authentication and never blocks the game.
 window.addEventListener("load", setupTelegram);
 async function pollWorld() {
   clearTimeout(pollTimer);
   if (document.hidden || stopped||!telegramActive) return;
   if(account)await refreshState();else await refreshTiles();
+  fogOfWar.update(model?.player, model?.player?.army?.units, selectedContinent);
   pollTimer = setTimeout(pollWorld, Math.min(30000, mapDetail(zoom).pollMs * 2 ** Math.min(connectionErrors, 3)));
 }
 new ResizeObserver(fit).observe($("mapViewport"));
