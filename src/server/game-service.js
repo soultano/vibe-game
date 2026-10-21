@@ -11,8 +11,9 @@ import { traversable, adjacentCells } from '../shared/landscape.js';
 import { aggregateOverview, mapEntry } from './map-overview.js';
 import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.js';
 export { CATALOG } from '../shared/catalog.js';
-import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile } from '../shared/geography.js';
+import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile, cellIsLand } from '../shared/geography.js';
 import { isClanHallCell } from '../shared/clan-hall.js';
+import { validateSettlementPlacement, CONTINENTS, getContinent } from '../shared/continents.js';
 import { UNIT_GROUP_LIMIT, UNIT_CONTROL_SLOTS, UNIT_ORDER_LIMIT, TARGET_ORDER_MODES, remainingOrders, controlGroups, groupOrderMode } from '../shared/unit-orders.js';
 import { playerProfile, promotionUrl } from '../shared/player-profile.js';
 
@@ -618,7 +619,9 @@ export class GameService {
     fail(accountId, 'Войдите через Google или Telegram.', 401, 'AUTH_REQUIRED');
     const { cell, faction = 'protocol', azimuth = 0 } = input;
     fail(!isClanHallCell(cell), 'Территория Великого Кланхолла защищена. Ивент откроется в следующем сезоне.', 403, 'EVENT_LOCKED');
-    fail(validCell(cell) && validatePlayableCell(cell), 'База должна находиться на суше в стартовом регионе Ташкента.');
+    fail(validCell(cell) && cellIsLand(cell), 'База должна находиться на суше.');
+    const preliminaryCheck = validateSettlementPlacement(cell, { continentId: input.continent });
+    fail(validatePlayableCell(cell) || preliminaryCheck.allowed, preliminaryCheck.reason || 'База должна находиться на суше в стартовом регионе Ташкента или выбранного материка.', 403, 'OUTSIDE_SETTLEMENT');
     if(this.config.npcEnabled)fail(traversable(cell),'Штаб нельзя поставить в воде. Выберите берег или сушу.');
     fail(Number.isFinite(azimuth), 'Азимут должен быть числом.');
     fail(Object.values(FACTIONS).some(f => factionId(f) === faction), 'Неизвестная фракция.');
@@ -627,6 +630,11 @@ export class GameService {
       const account = await tx.get(`account:${accountId}`);
       fail(account, 'Аккаунт не найден. Войдите заново.', 401, 'AUTH_REQUIRED');
       const players = await this.loadPlayers(tx, [{ cell, radiusRings: 0 }]);
+      const settlementCheck = validateSettlementPlacement(cell, { 
+        existingBases: players.map(p => p.baseCell), 
+        continentId: input.continent 
+      });
+      fail(settlementCheck.allowed || validatePlayableCell(cell), settlementCheck.reason || 'В диких землях нет связи с экспедицией. Стройте штаб рядом с зоной высадки или базами других командиров, либо выберите другой материк.', 403, 'OUTSIDE_SETTLEMENT');
       const fingerprintHash = account.fingerprintHash || (input.fingerprint ? await hash(String(input.fingerprint).slice(0, 256)) : null);
       const fingerprintKey = fingerprintHash ? `placement-device:${fingerprintHash}` : null;
       const fingerprintPlacement = fingerprintKey ? await tx.get(fingerprintKey) : null;

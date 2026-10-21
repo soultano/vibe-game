@@ -12,7 +12,7 @@ export function landscape(cell) {
   cache.set(cell,value);if(cache.size>12000)cache.delete(cache.keys().next().value);return value;
 }
 export function traversable(cell, type='infantry', baseCell=null) {
-  if (!validatePlayableCell(cell)) return false;
+  if (!cellIsLand(cell)) return false;
   // Existing headquarters remain reachable even when the new biomes put a lake
   // beneath them. Ground armies need a shore route; air can cross water.
   return type==='air' || cell===baseCell || !landscape(cell).water;

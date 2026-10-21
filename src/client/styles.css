@@ -801,3 +801,133 @@ html,body,.game,.map-viewport{overscroll-behavior:none}
 @media(pointer:coarse){.selection-help-desktop{display:none}.selection-help-touch{display:inline}}
 
 .public-player-stats{display:grid;gap:7px;margin:12px 0}.public-player-stats>div{display:flex;justify-content:space-between;gap:18px}.public-player-stats dt{font-size:11px;color:var(--muted)}.public-player-stats dd{margin:0;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}.promotion-link{display:inline-flex;flex-direction:column;align-items:flex-start;max-width:100%;white-space:normal;overflow-wrap:anywhere}.promotion-link small{margin:0 0 3px;font-size:9px;color:var(--muted);font-weight:400}.ranking-profile{border:0;padding:2px 0;background:transparent;color:var(--ink);font-weight:700;text-align:left;max-width:100%;white-space:normal;overflow-wrap:anywhere}.ranking-profile:hover{text-decoration:underline;color:var(--accent)}.ranking .promotion-link{font-size:11px;padding:5px 7px}.ranking-name{min-width:0}.public-player-dialog .promotion-link{width:100%;margin:8px 0 16px}.unit-purpose,.unit-health-reason{font-size:11px;line-height:1.45;margin:7px 0;color:#c5d5b7}.unit-health-reason{font-size:10px;color:#afc3af}.conquest-totals{font-size:12px;color:var(--accent);margin:6px 0}.conquest-notice{font-size:11px;line-height:1.4;margin:5px 0 10px}.conquest-notice:empty{display:none}
+
+
+/* Continent Selection & Landing Zones */
+.continent-selection-section {
+  margin: 12px 0 14px;
+}
+.continent-select-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  display: block;
+  margin-bottom: 8px;
+}
+.continent-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.continent-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+.continent-pill:hover {
+  background: var(--surface);
+  border-color: #38bdf888;
+}
+.continent-pill.active {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+.continent-notice {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Placement Hint Dropdown & Continent Switcher */
+.placement-hint-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.placement-top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.placement-continent-wrap {
+  position: relative;
+}
+.placement-cont-btn {
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 6px;
+  color: #38bdf8;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.placement-cont-btn:hover {
+  background: rgba(56, 189, 248, 0.3);
+}
+.placement-cont-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 100;
+  min-width: 200px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+}
+.placement-cont-menu button {
+  text-align: left;
+  background: none;
+  border: none;
+  color: #e2e8f0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .12s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.placement-cont-menu button:hover {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+}
+
+/* Fog of War & Recon HUD */
+.recon-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 10px;
+  height: 38px;
+  border-radius: 8px;
+}
+.recon-eye-icon {
+  font-size: 14px;
+  color: #38bdf8;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6));
+}

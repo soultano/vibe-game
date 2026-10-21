@@ -28,8 +28,12 @@ import { createTelegramShell } from './telegram-shell.js';
 import { createMapPreview } from './map-preview.js';
 import { profileStats, profileTooltip, promotionLink } from './player-profile.js';
 import { drawConquestSites, drawDamageIndicators } from './conquest-view.js';
+import { CONTINENTS, PRIMARY_CONTINENT, getContinent, validateSettlementPlacement, getContinentLandingRadiusKm } from "../shared/continents.js";
+import { FogOfWar } from "./fog-of-war.js";
 const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), displayCtx = canvas.getContext("2d", { alpha: false });
 let ctx = displayCtx;
+let selectedContinent = PRIMARY_CONTINENT;
+const fogOfWar = new FogOfWar();
 const mapLayer = document.createElement("canvas"), mapCtx = mapLayer.getContext("2d", { alpha: false });
 const nf = new Intl.NumberFormat("ru-RU"), fmt = (n) => nf.format(Math.floor(Number(n) || 0)), escape = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 let account = null, csrfToken = "", providers = {}, model = null, leaderboard = [], selectedFaction = "protocol", placing = false, selecting = false, selectedCells = /* @__PURE__ */ new Set();
@@ -779,7 +783,7 @@ function focusAt(lat, lng, nextZoom = 384) {
   scheduleTiles();
 }
 function home() {
-  const center = model?.player?.baseCell ? cellToLatLng(model.player.baseCell) : [CONFIG.REGION.center.lat, CONFIG.REGION.center.lng];
+  const center = model?.player?.baseCell ? cellToLatLng(model.player.baseCell) : [selectedContinent?.center.lat || CONFIG.REGION.center.lat, selectedContinent?.center.lng || CONFIG.REGION.center.lng];
   focusAt(...center,2048);
 }
 function fit() {
@@ -1009,10 +1013,48 @@ function drawMap(now) {
    if(castleDraw)castleDraw(ctx,{project,zoom,cw,ch,detailed:detailedMap(),now});
    else if(!castleLoading){castleLoading=true;import('./clan-hall-castle.js').then(m=>{castleDraw=m.drawClanHallCastle;invalidate();}).catch(()=>{castleLoading=false;});}
   }
+  if (placing) {
+    const cCenter = selectedContinent.center;
+    const cp = project(cCenter.lat, cCenter.lng);
+    const radKm = getContinentLandingRadiusKm(selectedContinent, leaderboard.length);
+    const pxRadius = Math.max(30, (radKm / 40000) * cw * (zoom / 4) * 2.8);
+    ctx.save();
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.5)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.arc(cp.x, cp.y, pxRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(56, 189, 248, 0.05)";
+    ctx.fill();
+    ctx.setLineDash([]);
+    ctx.font = "700 11px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
+    const beaconLabel = `📍 Высадка: ${selectedContinent.shortName} (${Math.round(radKm)} км)`;
+    const bw = ctx.measureText(beaconLabel).width + 16;
+    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(cp.x - bw / 2, cp.y - 24, bw, 20, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#38bdf8";
+    ctx.textAlign = "center";
+    ctx.fillText(beaconLabel, cp.x, cp.y - 10);
+    ctx.textAlign = "left";
+    ctx.restore();
+  }
+  fogOfWar.update(model?.player, model?.player?.army?.units, selectedContinent);
+  fogOfWar.draw(ctx, { width: cw, height: ch, project, zoom, detailed: detailedMap(), now });
   if (mouse && placing && detailedMap()) {
     const p = atPoint(mouse.x, mouse.y), cell = latLngToCell(p.lat, p.lng, 8);
     cellPath(cell);
-    ctx.fillStyle = cellIsLand(cell) ? "#6c9c7477" : "#c8847155";
+    const existingBases = [...profiles.values(), model?.player].filter(Boolean).map(p => p.baseCell);
+    const check = validateSettlementPlacement(cell, { existingBases, continentId: selectedContinent?.id });
+    ctx.fillStyle = check.allowed ? "#38bdf855" : "rgba(239, 68, 68, 0.4)";
+    ctx.strokeStyle = check.allowed ? "#38bdf8" : "#ef4444";
+    ctx.lineWidth = 2;
+    ctx.stroke();
     ctx.fill();
     const sprite = headquartersDisplaySprite(selectedFaction);
     if (readySprite(sprite)) {
@@ -1205,6 +1247,23 @@ canvas.addEventListener("pointermove", (e) => {
       $("mapTooltip").hidden = true;
     }
   }
+  if (detailedMap() && placing && mouse) {
+    const cell = latLngToCell(p.lat, p.lng, 8);
+    const existingBases = [...profiles.values(), model?.player].filter(Boolean).map(p => p.baseCell);
+    const check = validateSettlementPlacement(cell, { existingBases, continentId: selectedContinent?.id });
+    if (check.allowed) {
+      let html = '<div class="tooltip-header"><span style="color:#38bdf8">✓</span> <b>Зона высадки: ' + escape(selectedContinent.shortName) + '</b></div>';
+      html += '<small class="terrain-tooltip" style="color:#a5f3fc">Связь со штабом стабильна · Кликните для постройки базы</small>';
+      $("mapTooltip").innerHTML = html;
+    } else {
+      let html = '<div class="tooltip-header"><span style="color:#ef4444">⛔</span> <b>Дикие земли</b></div>';
+      html += '<small class="terrain-tooltip" style="color:#fca5a5">' + escape(check.reason || 'Слишком далеко от высадки людей!') + '</small>';
+      $("mapTooltip").innerHTML = html;
+    }
+    $("mapTooltip").style.left = Math.max(8, Math.min(cw - 280, mouse.x + 12)) + "px";
+    $("mapTooltip").style.top = Math.max(35, mouse.y - 48) + "px";
+    $("mapTooltip").hidden = false;
+  }
   if (placing) invalidate();
 });
 canvas.addEventListener("pointerup", async (e) => {
@@ -1249,6 +1308,13 @@ canvas.addEventListener("pointerup", async (e) => {
       focusAt(p.lat, p.lng, 2048);
       return;
     }
+    const existingBases = [...profiles.values(), model?.player].filter(Boolean).map(p => p.baseCell);
+    const check = validateSettlementPlacement(cell, { existingBases, continentId: selectedContinent?.id });
+    if (!check.allowed) {
+      beep(220);
+      toast(check.reason || "⛔ Дикие земли: Слишком далеко от высадки людей! Стройте рядом с зоной высадки или базами других игроков (до 35 км).", true);
+      return;
+    }
     const referrer = localStorage.getItem("pd_referrer") || undefined;
     const chosenColor = localStorage.getItem("pd_custom_color") || undefined;
     const result = await action("/api/base", { 
@@ -1257,7 +1323,8 @@ canvas.addEventListener("pointerup", async (e) => {
       faction: selectedFaction, 
       name: account.name,
       referrer,
-      color: chosenColor
+      color: chosenColor,
+      continent: selectedContinent.id
     }, "База основана. Сектор активирован.");
     if (result) {
       placing = false;
@@ -2098,11 +2165,76 @@ function frame(now) {
   }
   if (dirty || animated) requestFrame();
 }
+
+function initContinentPicker() {
+  const picker = $("continentPicker");
+  const menu = $("placementContMenu");
+  const badge = $("placementContBadge");
+  const contNotice = $("continentNotice");
+
+  function renderPicker() {
+    if (picker) {
+      picker.innerHTML = CONTINENTS.map(function(c) {
+        return '<button type="button" class="continent-pill ' + (c.id === selectedContinent.id ? 'active' : '') + '" data-cont="' + c.id + '">' +
+          '<span>' + c.flag + '</span> <span>' + escape(c.shortName) + '</span>' +
+        '</button>';
+      }).join('');
+
+      for (const btn of document.querySelectorAll('#continentPicker [data-cont]')) {
+        btn.onclick = function() { selectContinent(btn.dataset.cont); };
+      }
+    }
+
+    if (menu) {
+      menu.innerHTML = CONTINENTS.map(function(c) {
+        return '<button type="button" data-cont="' + c.id + '">' +
+          '<span>' + c.flag + '</span> <span>' + escape(c.name) + '</span>' +
+        '</button>';
+      }).join('');
+
+      for (const btn of document.querySelectorAll('#placementContMenu [data-cont]')) {
+        btn.onclick = function() {
+          selectContinent(btn.dataset.cont);
+          menu.hidden = true;
+        };
+      }
+    }
+  }
+
+  function selectContinent(id) {
+    selectedContinent = getContinent(id);
+    if (badge) badge.textContent = selectedContinent.flag + ' ' + selectedContinent.shortName;
+    if (contNotice) {
+      contNotice.textContent = selectedContinent.name + ': ' + (selectedContinent.isPrimary ? 'Основная высадка людей.' : 'Экспедиционный плацдарм.') + ' Зона обитания расширяется по мере роста числа командиров.';
+    }
+    renderPicker();
+    focusAt(selectedContinent.center.lat, selectedContinent.center.lng, 2048);
+    invalidate();
+  }
+
+  $("placementContBtn")?.addEventListener("click", function(e) {
+    e.stopPropagation();
+    if (menu) menu.hidden = !menu.hidden;
+  });
+
+  document.addEventListener("click", function() {
+    if (menu) menu.hidden = true;
+  });
+
+  $("fogReconBtn")?.addEventListener("click", function() {
+    beep(440);
+    toast("👁 Туман войны скрывает неизведанные земли. Отправляйте отряды войск в поход, чтобы открывать мир!", false);
+  });
+
+  renderPicker();
+}
+
 async function init() {
   captureReferralParam();
   initTheme();
   initLang();
   setupTutorial();
+  initContinentPicker();
   initCustomization();
   setupReferralDialogButtons();
   renderFactions();

@@ -51,6 +51,7 @@
       <button class="resource-pill crystal-pill" id="crystalsBtn" aria-label="Кристаллы и магазин"><svg><use href="#i-crystal"/></svg><strong id="crystals">0</strong></button>
     </div>
     <div class="header-actions">
+      <button class="surface recon-button" id="fogReconBtn" aria-label="Разведка и туман войны" title="Туман войны: отправляйте войска, чтобы открывать мир"><span class="recon-eye-icon">👁</span><span id="fogReconLabel">Туман</span></button>
       <button class="surface profile-button" id="profileButton" aria-controls="accountPanel" aria-expanded="false" aria-label="Ваш аккаунт"><svg><use href="#i-person"/></svg><span id="profileName">Войти</span></button>
     </div>
   </header>
@@ -116,6 +117,11 @@
     <div class="headquarters-preview"><img id="headquartersPreview" src="/assets/headquarters/protocol.webp" alt="Геоузел Протокола"><canvas id="spawnModelCanvas" class="model-canvas" tabindex="0" aria-label="Модель выбранной базы. Перетаскивайте или нажимайте стрелки влево и вправо для вращения" hidden></canvas><h3 id="headquartersName">Геоузел Протокола</h3><button id="spawnModelBtn" class="model-inspect-button">Осмотреть базу <span aria-hidden="true">↗</span></button></div>
     <div class="faction-picker" id="factionPicker"></div>
     <div class="faction-description" id="factionDescription"></div>
+    <div class="continent-selection-section">
+      <span class="continent-select-heading">🌍 Выберите материк для высадки:</span>
+      <div class="continent-picker" id="continentPicker" role="radiogroup" aria-label="Выбор материка"></div>
+      <p id="continentNotice" class="continent-notice">Основная высадка людей. Зона обитания расширяется по мере роста числа командиров.</p>
+    </div>
     <input id="startAzimuth" type="hidden" value="0">
     <button id="startBtn" class="primary-button">К месту высадки <span>↗</span></button>
   </section>
@@ -175,7 +181,20 @@
     <button id="logoutBtn" class="menu-item" hidden>Выйти <span>↗</span></button>
   </section>
 
-  <div class="placement-hint surface" id="placementHint" hidden><svg><use href="#i-target"/></svg><span><strong>РАЗВЕРНИТЕ ШТАБ</strong>Нажмите на свободную сушу вокруг Ташкента</span><button id="cancelPlacement" aria-label="Отменить выбор места"><svg><use href="#i-close"/></svg></button></div>
+  <div class="placement-hint surface" id="placementHint" hidden>
+    <svg><use href="#i-target"/></svg>
+    <div class="placement-hint-text">
+      <div class="placement-top-row">
+        <strong>РАЗВЕРНИТЕ ШТАБ</strong>
+        <div class="placement-continent-wrap">
+          <button id="placementContBtn" class="placement-cont-btn" type="button" title="Сменить материк"><span id="placementContBadge">🌍 Евразия</span> ▾</button>
+          <div id="placementContMenu" class="placement-cont-menu surface" hidden></div>
+        </div>
+      </div>
+      <span id="placementHintPrompt">Ставьте штаб в зоне высадки или рядом с базами людей (до 35 км)</span>
+    </div>
+    <button id="cancelPlacement" aria-label="Отменить выбор места"><svg><use href="#i-close"/></svg></button>
+  </div>
   <div class="selection-bar surface" id="selectionBar" hidden><span>Выбрано <b id="selectedCount">0</b></span><button id="abandonBtn" class="primary-button" disabled>Освободить</button><button id="cancelSelection" class="close-button" aria-label="Отменить выделение"><svg><use href="#i-close"/></svg></button></div>
 
   <nav class="map-dock surface" id="gameNav" aria-label="Главные действия" hidden>
