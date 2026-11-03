@@ -28,3 +28,12 @@ test('closing the login dialog aborts an outstanding poll and cannot attach its 
  let release;h.network.beforeRequest=async path=>{if(path==='/api/auth/telegram/bot/poll')await new Promise(resolve=>release=resolve);};
  const pending=poll(h);for(let i=0;i<20&&!release;i++)await new Promise(setImmediate);assert.ok(release);h.$('authModal').close();release();await pending;assert.equal(h.client.state().account,null);assert.equal(h.session.has('pd-session'),false);
 });
+test('custom-domain bot login survives an internal proxy hostname while still rejecting a different browser Origin',async()=>{
+ const h=await fixture(),internal='https://internal-deployment.vercel.app';
+ const me=await(await h.app.fetch(new Request(internal+'/api/auth/me',{headers:{origin}}))).json();
+ const headers={origin,'content-type':'application/json','x-login-token':me.loginToken,'x-csrf-token':me.csrfToken},fingerprint='custom-domain-proxy-test';
+ const started=await h.app.fetch(new Request(internal+'/api/auth/telegram/bot/start',{method:'POST',headers,body:JSON.stringify({fingerprint})}));assert.equal(started.status,200);const attempt=await started.json();
+ const body=JSON.stringify({attemptId:attempt.attemptId,pollToken:attempt.pollToken,fingerprint});
+ const poll=await h.app.fetch(new Request(internal+'/api/auth/telegram/bot/poll',{method:'POST',headers,body}));assert.equal(poll.status,200);assert.equal((await poll.json()).status,'waiting');
+ const foreign=await h.app.fetch(new Request(internal+'/api/auth/telegram/bot/poll',{method:'POST',headers:{...headers,origin:'https://foreign.vercel.app'},body}));assert.equal(foreign.status,403);
+});

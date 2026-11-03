@@ -491,7 +491,7 @@ export async function handleAuth(req, env, store) {
       const fingerprint=await fingerprintHash(body.fingerprint);
       if(path.endsWith('/start'))return json(await startBotLogin(store,{fingerprint,origin:appOrigin(req,env),botUsername:telegramUsername(env)}));
       const row=await readBotLogin(store,body.attemptId,body.pollToken,fingerprint);
-      if(row.value.origin!==new URL(req.url).origin)fail(403,'Продолжите вход на том сайте, где вы его начали.');
+      if(row.value.origin!==appOrigin(req,env))fail(403,'Продолжите вход на том сайте, где вы его начали.');
       if(row.value.status!=='approved')return json({status:row.value.status});
       const user=row.value.user,account=await accountFor(store,'telegram',String(user.id),[user.first_name,user.last_name].filter(Boolean).join(' '),fingerprint);
       const response=await signIn(req,env,store,account,false,'telegram-bot-used:'+body.attemptId);
