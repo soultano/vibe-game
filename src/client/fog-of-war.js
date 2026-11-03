@@ -131,6 +131,23 @@ export class FogOfWar {
       }
     }
 
+    // 4. Hero Vision: 3 hexes on foot, 4 hexes mounted
+    if (player?.hero?.cell && isValidCell(player.hero.cell)) {
+      const [lat, lng] = cellToLatLng(player.hero.cell);
+      const isMounted = !!player.hero.currentMount;
+      const sightRadiusKm = isMounted ? 16 : 11;
+      this.activeVisionSources.push({
+        lat,
+        lng,
+        radiusKm: sightRadiusKm,
+        kind: 'hero'
+      });
+      try {
+        const disk = gridDisk(player.hero.cell, player.hero.visionRadius || (isMounted ? 4 : 3));
+        for (const c of disk) this.exploredSet.add(c);
+      } catch {}
+    }
+
     // 4. Continent landing dropzone scout perimeter
     const cont = selectedContinent || PRIMARY_CONTINENT;
     if (cont?.center) {
@@ -242,14 +259,14 @@ export class FogOfWar {
       // 3. Subtle pulsing perimeter ring around base & landing beacon
       ctx.save();
       for (const src of this.activeVisionSources) {
-        if (src.kind !== 'base' && src.kind !== 'landing') continue;
+        if (src.kind !== 'base' && src.kind !== 'landing' && src.kind !== 'hero') continue;
         const p = project(src.lat, src.lng);
         if (p.x < -150 || p.x > width + 150 || p.y < -150 || p.y > height + 150) continue;
 
         const pixelRadius = Math.max(40, (src.radiusKm / 40000) * width * (zoom / 4) * 2.8);
         const pulse = 1 + Math.sin(now / 900) * 0.015;
 
-        ctx.strokeStyle = src.kind === 'base' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(245, 158, 11, 0.25)';
+        ctx.strokeStyle = src.kind === 'hero' ? 'rgba(234, 179, 8, 0.45)' : src.kind === 'base' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(245, 158, 11, 0.25)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 6]);
         ctx.beginPath();

@@ -83,6 +83,13 @@ export const STRINGS = {
     tut_prev: '← Назад',
     tut_skip: 'Пропустить',
     tut_finish: 'В бой! 🚀',
+
+    hero: 'Герой',
+    hero_level: 'Уровень Героя',
+    hero_mp: 'Очки движения (MP)',
+    hero_mounts: 'Маунты и стойло',
+    hero_taming: 'Укрощение',
+    hero_perks: 'Прокачка героя',
   },
   en: {
     brand_sub: 'TACTICAL STRATEGY',
@@ -162,6 +169,13 @@ export const STRINGS = {
     tut_prev: '← Back',
     tut_skip: 'Skip',
     tut_finish: 'To Battle! 🚀',
+
+    hero: 'Hero',
+    hero_level: 'Hero Level',
+    hero_mp: 'Movement Points (MP)',
+    hero_mounts: 'Mounts & Stable',
+    hero_taming: 'Taming',
+    hero_perks: 'Hero Perks',
   },
   uz: {
     brand_sub: 'TAKTIK STRATEGIYA',
@@ -241,6 +255,13 @@ export const STRINGS = {
     tut_prev: '← Orqaga',
     tut_skip: 'O‘tkazib yuborish',
     tut_finish: 'Jangga! 🚀',
+
+    hero: 'Qahramon',
+    hero_level: 'Qahramon darajasi',
+    hero_mp: 'Harakat nuqtalari (MP)',
+    hero_mounts: 'Ulovlar va otxona',
+    hero_taming: 'Bo‘ysundirish',
+    hero_perks: 'Qahramonni kuchaytirish',
   },
 };
 

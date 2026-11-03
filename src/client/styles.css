@@ -1048,3 +1048,394 @@ html,body,.game,.map-viewport{overscroll-behavior:none}
   }
 }
 
+/* ==========================================================================
+   Hero System & Mount Exploration Styles
+   ========================================================================== */
+
+.hero-hud-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  min-height: 38px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  position: relative;
+  cursor: pointer;
+}
+.hero-hud-button:hover {
+  border-color: #38bdf8;
+  background: linear-gradient(135deg, rgba(30, 58, 86, 0.95), rgba(15, 30, 50, 0.95));
+}
+.hero-hud-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.hero-hud-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+.hero-hud-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.1;
+}
+.hero-hud-row strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: #38bdf8;
+}
+.hero-hud-row small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.hero-hud-mp-track {
+  width: 58px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.hero-hud-mp-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  width: 100%;
+  transition: width 0.3s ease;
+}
+.hero-perk-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #000;
+  font-size: 11px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 8px #f59e0b;
+  animation: pulse-dot 1.5s infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Hero Panel Dialog */
+.hero-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: 85vh;
+  overflow-y: auto;
+  border-radius: 20px;
+  padding: 24px;
+}
+.hero-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.hero-avatar-crest {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.25) 0%, rgba(15, 23, 42, 0.8) 100%);
+  border: 2px solid rgba(56, 189, 248, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.hero-mode-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.hero-progress-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  margin-bottom: 16px;
+}
+.hero-bar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bar-header strong {
+  color: var(--ink);
+}
+.hero-bar-track {
+  width: 100%;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.hero-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.xp-fill {
+  background: linear-gradient(90deg, #8b5cf6, #a855f7);
+}
+.mp-fill {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.hero-perk-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.1));
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  margin-bottom: 16px;
+}
+.perk-alert-text {
+  font-size: 13px;
+  color: #fef3c7;
+}
+.perk-alert-text strong {
+  color: #f59e0b;
+}
+.hero-perk-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  background: #f59e0b;
+  color: #000;
+}
+.hero-perk-btn:hover {
+  background: #fbbf24;
+}
+
+.hero-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.hero-stat-card {
+  padding: 12px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hero-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.hero-stat-val {
+  font-size: 16px;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.hero-mount-section {
+  padding: 16px;
+  border-radius: 14px;
+  margin-bottom: 20px;
+}
+.hero-mount-section h3 {
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.hero-mount-slot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.mount-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+.hero-mount-slot strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.hero-mount-slot p {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hero-actions-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hero-move-action-btn {
+  width: 100%;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+}
+.hero-move-action-btn:hover {
+  background: linear-gradient(135deg, #0369a1, #075985);
+}
+
+/* Hero Level Up Dialog */
+.hero-levelup-dialog {
+  width: min(500px, calc(100vw - 32px));
+  border-radius: 20px;
+  padding: 24px;
+}
+.perks-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.perk-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--white);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.perk-card:hover {
+  border-color: #38bdf8;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.perk-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.perk-info {
+  flex: 1;
+}
+.perk-info strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 2px;
+  color: var(--ink);
+}
+.perk-info p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.3;
+}
+.perk-action {
+  font-size: 20px;
+  font-weight: 700;
+  color: #38bdf8;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+/* Hero Taming Dialog */
+.hero-taming-dialog {
+  width: min(460px, calc(100vw - 32px));
+  border-radius: 20px;
+  padding: 24px;
+}
+.tame-beast-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 14px;
+  margin: 16px 0;
+}
+.tame-beast-icon {
+  font-size: 36px;
+  line-height: 1;
+}
+.tame-tier-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+.taming-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  margin-bottom: 20px;
+}
+.tame-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.tame-chance {
+  font-size: 18px;
+  font-weight: 800;
+  color: #10b981;
+}
+.item-has {
+  color: #10b981;
+  font-weight: 600;
+}
+.item-missing {
+  color: #ef4444;
+  font-weight: 600;
+}
+.taming-rule-note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.taming-actions-row {
+  display: flex;
+  gap: 12px;
+}
+.taming-actions-row button {
+  flex: 1;
+}
+
+

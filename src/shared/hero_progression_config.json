@@ -1,0 +1,239 @@
+{
+  "version": "1.0.0",
+  "name": "Hero Progression & Mounts Configuration",
+  "base_movement_points": 1000,
+  "mounted_movement_points": 2000,
+  "vision_radius_base": 3,
+  "vision_radius_mounted_bonus": 1,
+  "max_level": 50,
+  "leadership_slots_by_level": {
+    "1": 1,
+    "3": 2,
+    "7": 3,
+    "20": 4
+  },
+  "base_stats": {
+    "attack": 0,
+    "defense": 0,
+    "intellect": 0
+  },
+  "terrain_mp_costs": {
+    "road": 75,
+    "grass": 100,
+    "plains": 100,
+    "forest": 125,
+    "sand": 150,
+    "swamp": 150,
+    "snow": 150,
+    "tundra": 140,
+    "jungle": 160,
+    "rock": 150,
+    "mountain": 200,
+    "water": 250
+  },
+  "pathfinder_penalty_reduction": 0.35,
+  "progression_curve": {
+    "formula": "100 * (level ^ 2.2) - 100",
+    "base_multiplier": 100,
+    "exponent": 2.2,
+    "offset": 100,
+    "milestone_levels": {
+      "1": { "totalXp": 0, "title": "Новичок", "unlocks": "Старт пешком, 1 слот армии, обзор 3 гекса" },
+      "2": { "totalXp": 250, "title": "Воитель", "unlocks": "+1 к Атаке и Защите" },
+      "3": { "totalXp": 620, "title": "Командир", "unlocks": "Открытие 2-го слота армии" },
+      "5": { "totalXp": 1750, "title": "Следопыт", "unlocks": "Навык «Следопыт» (снижение штрафов ландшафта)" },
+      "7": { "totalXp": 3300, "title": "Тактик", "unlocks": "Открытие 3-го слота армии" },
+      "10": { "totalXp": 7100, "title": "Укротитель", "unlocks": "Разблокировка навыка «Укрощение»; Доступ к маунтам 1-го ранга (2x скорость)" },
+      "15": { "totalXp": 16800, "title": "Кавалерист", "unlocks": "Маунты 2-го ранга (передвижение по болотам и снегу)" },
+      "20": { "totalXp": 31500, "title": "Владыка", "unlocks": "4-й слот армии, элитные маунты с аурой брони +5%" },
+      "30": { "totalXp": 78000, "title": "Легенда", "unlocks": "Легендарный ранг (летающие маунты, игнорирование преград)" },
+      "40": { "totalXp": 185000, "title": "Полководец", "unlocks": "Мастерское командование, +15% к урону всей армии" },
+      "50": { "totalXp": 420000, "title": "Аватар Войны", "unlocks": "Максимальный ранг Героя" }
+    }
+  },
+  "xp_sources": {
+    "fog_tile_reveal": 10,
+    "poi_discovery": 150,
+    "biome_discovery": 500,
+    "pvp_unit_cost_factor": 0.15,
+    "pvp_hero_level_bonus": 500,
+    "neutral_mob_tier_xp": {
+      "1": 20,
+      "2": 60,
+      "3": 200,
+      "4": 500
+    },
+    "neutral_mob_count_exponent": 0.85
+  },
+  "taming": {
+    "gate_level": 10,
+    "base_chance": 0.40,
+    "chance_per_level_above_10": 0.02,
+    "required_item": "taming_lasso",
+    "item_name": "Лассо укротителя"
+  },
+  "mounts": {
+    "horse": {
+      "id": "horse",
+      "name": "Боевой конь",
+      "tier": 1,
+      "min_level": 10,
+      "speed_multiplier": 2.0,
+      "icon": "🐎",
+      "sprite": "horse",
+      "description": "Верховой скакун. Увеличивает скорость перемещения в 2 раза (+100%). Не тратит лишних сил на равнинах.",
+      "terrain_ignore": ["plains", "grass", "road"]
+    },
+    "wolf": {
+      "id": "wolf",
+      "name": "Степной лютоволк",
+      "tier": 1,
+      "min_level": 10,
+      "speed_multiplier": 2.0,
+      "icon": "🐺",
+      "sprite": "wolf",
+      "description": "Свирепый верховой волк. 2x скорость по суше и степям.",
+      "terrain_ignore": ["plains", "grass", "road", "sand"]
+    },
+    "steppe_lizard": {
+      "id": "steppe_lizard",
+      "name": "Степной ящер",
+      "tier": 1,
+      "min_level": 10,
+      "speed_multiplier": 2.0,
+      "icon": "🦎",
+      "sprite": "lizard",
+      "description": "Пустынный рептилоид-скакун. Превосходно двигается по песку и равнинам.",
+      "terrain_ignore": ["plains", "grass", "sand"]
+    },
+    "armored_boar": {
+      "id": "armored_boar",
+      "name": "Бронированный вепрь",
+      "tier": 2,
+      "min_level": 15,
+      "speed_multiplier": 2.2,
+      "icon": "🐗",
+      "sprite": "boar",
+      "description": "Тяжелобронированный клыкастый зверь. Игнорирует грязь и снег, даёт +5% защиты армии.",
+      "terrain_ignore": ["mud", "swamp", "snow", "tundra"],
+      "army_armor_bonus": 0.05
+    },
+    "gryphon": {
+      "id": "gryphon",
+      "name": "Королевский грифон",
+      "tier": 2,
+      "min_level": 15,
+      "speed_multiplier": 2.2,
+      "icon": "🦅",
+      "sprite": "gryphon",
+      "description": "Горный полулев-полуорёл. Легко преодолевает болота и снег, воодушевляет армию (+5% защиты).",
+      "terrain_ignore": ["mud", "swamp", "snow", "rock"],
+      "army_armor_bonus": 0.05
+    },
+    "cave_bear": {
+      "id": "cave_bear",
+      "name": "Пещерный медведь",
+      "tier": 2,
+      "min_level": 15,
+      "speed_multiplier": 2.2,
+      "icon": "🐻",
+      "sprite": "bear",
+      "description": "Могучий зверь севера. Игнорирует суровый ландшафт и дарует устойчивость армии (+5% брони).",
+      "terrain_ignore": ["mud", "swamp", "snow", "tundra"],
+      "army_armor_bonus": 0.05
+    },
+    "wyvern": {
+      "id": "wyvern",
+      "name": "Грозовая виверна",
+      "tier": 3,
+      "min_level": 30,
+      "speed_multiplier": 2.5,
+      "icon": "🐉",
+      "sprite": "wyvern",
+      "description": "Крылатый громовой дракон. Полёт: свободное перемещение через горы, реки и непроходимые препятствия!",
+      "flying": true
+    },
+    "dragon": {
+      "id": "dragon",
+      "name": "Древний дракон",
+      "tier": 3,
+      "min_level": 30,
+      "speed_multiplier": 2.5,
+      "icon": "🐲",
+      "sprite": "dragon",
+      "description": "Повелитель небес. Игнорирует любой рельеф и воду, летит со скоростью +150%.",
+      "flying": true
+    },
+    "phoenix": {
+      "id": "phoenix",
+      "name": "Огненный феникс",
+      "tier": 3,
+      "min_level": 30,
+      "speed_multiplier": 2.5,
+      "icon": "🔥",
+      "sprite": "phoenix",
+      "description": "Птица первозданного огня. Абсолютный полёт и величайшая скорость исследования мира.",
+      "flying": true
+    }
+  },
+  "perks": {
+    "attack": {
+      "id": "attack",
+      "name": "Военное искусство",
+      "description": "+5% к урону всей армии в бою",
+      "icon": "⚔️"
+    },
+    "defense": {
+      "id": "defense",
+      "name": "Защитная тактика",
+      "description": "+5% к снижению входящего урона армии",
+      "icon": "🛡️"
+    },
+    "speed": {
+      "id": "speed",
+      "name": "Стремительный марш",
+      "description": "+150 Очков Движения (MP) к запасу героя",
+      "icon": "⚡"
+    },
+    "intellect": {
+      "id": "intellect",
+      "name": "Мудрость стратега",
+      "description": "+10% к получаемому опыту героя (XP)",
+      "icon": "🧠"
+    }
+  },
+  "pois": {
+    "mine": {
+      "type": "mine",
+      "name": "Древняя шахта кристаллов",
+      "icon": "⛏️",
+      "xp": 150,
+      "reward_crystals": 15,
+      "message": "Вы обнаружили заброшенную шахту и добыли 15 кристаллов!"
+    },
+    "shrine": {
+      "type": "shrine",
+      "name": "Святилище ветров",
+      "icon": "⛩️",
+      "xp": 150,
+      "reward_mp": 400,
+      "message": "Древний алтарь благословляет героя, восстанавливая +400 MP!"
+    },
+    "obelisk": {
+      "type": "obelisk",
+      "name": "Тайный обелиск предков",
+      "icon": "🗿",
+      "xp": 150,
+      "reward_xp_bonus": 100,
+      "message": "Вы расшифровали письмена обелиска и постигли тайны предков (+250 XP суммарно)!"
+    },
+    "ruins": {
+      "type": "ruins",
+      "name": "Руины забытой цивилизации",
+      "icon": "🏛️",
+      "xp": 150,
+      "reward_item": "taming_lasso",
+      "message": "В руинах найден ценный артефакт: Лассо укротителя!"
+    }
+  }
+}

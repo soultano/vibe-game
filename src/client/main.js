@@ -30,6 +30,7 @@ import { profileStats, profileTooltip, promotionLink } from './player-profile.js
 import { drawConquestSites, drawDamageIndicators } from './conquest-view.js';
 import { CONTINENTS, PRIMARY_CONTINENT, getContinent, validateSettlementPlacement, getContinentLandingRadiusKm } from "../shared/continents.js";
 import { FogOfWar } from "./fog-of-war.js";
+import { HeroView } from "./hero-view.js";
 const $ = (id) => document.getElementById(id), canvas = $("worldCanvas"), displayCtx = canvas.getContext("2d", { alpha: false });
 let ctx = displayCtx;
 let selectedContinent = PRIMARY_CONTINENT;
@@ -286,7 +287,7 @@ const surfaces=createSurfaces({document,closeUnits:()=>unitControls?.reset(),clo
  $('profileButton').setAttribute('aria-expanded',String(!$('accountPanel').hidden));
  document.querySelectorAll('[data-open]').forEach(b=>b.setAttribute('aria-expanded',String(b.dataset.open===activePanel)));
  $('armySquads').setAttribute('aria-expanded',String(!!unitControls?.isOpen()));
- if($('armyControls'))$('armyControls').hidden=!model?.player||mapPaused||!!unitControls?.isOpen();
+ if($('armyControls'))$('armyControls').hidden=!model?.player||!!unitControls?.isOpen();
  telegramShell.backVisible(mapPaused||!!unitControls?.isOpen());paint();
 }});
 function showDialog(id){surfaces.showDialog(id);}
@@ -392,6 +393,7 @@ async function api(path, body, options = {}) {
   if (result.sessionToken) { saveSession(result.sessionToken); loginToken = ''; }
   return result;
 }
+const heroView = new HeroView({ $, api, toast, paint, showDialog, getPlayer: () => model?.player, surfaces });
 async function action(path, body, message) {
   const generation = authGeneration, id = account?.id;
   try {
@@ -670,12 +672,13 @@ function updateUI() {
   $("missionSteps").hidden = !!p;
   $('worldIntel').hidden=!!p;
   $("missionBtn").hidden = !p;
-  $("armyControls").hidden = !p || surfaces.covered() || !!unitControls?.isOpen();
+  $("armyControls").hidden = !p || !!unitControls?.isOpen();
   if(p&&!unitControls)ensureUnitControls();
   unitControls?.update();
   unitGroups?.update();
   const armyUnits=p?.army?.units||[];
   fogOfWar.update(p, armyUnits, selectedContinent);
+  heroView?.updateHUD(p);
   setText('conquestTotals', p ? `${fmt(p.pixels)} ячеек · доход ${p.netPerHour >= 0 ? '+' : ''}${p.netPerHour.toFixed(1)} ⚡/ч` : '');
   setText("armyStatus",armyTargeting?"Укажите цель на карте":armyUnits.some(u=>u.state==='attack')?"Войска ведут бой":armyUnits.some(u=>u.state==='capture')?"Закрепляемся на территории":armyUnits.some(u=>u.activity==='regroup')?"Перегруппировка на своей территории":armyUnits.some(u=>u.activity==='patrol')?"Патрулируем свою территорию":p?.army?.order?.mode==='defend'?"Охрана штаба":"Автономное продвижение к фронтиру");
   $("missionSteps").children[0]?.classList.toggle("current", !account);
@@ -1097,6 +1100,7 @@ function draw(now) {
   }
   drawAbilityBursts(now);
   drawTroops(now);
+  heroView?.draw(ctx, { width: cw, height: ch, project, zoom, detailed: detailedMap(), now });
   if (detailedMap() && !mapPaused) {
     const view = unitCommandView(), units = view.units;
     drawConquestSites(ctx, units.filter(unit => unit.capture), view, serverNow());
@@ -1217,9 +1221,11 @@ canvas.addEventListener("pointermove", (e) => {
   mouse = pointFor(e);
   const p = atPoint(mouse.x, mouse.y);
   if(!p.valid)return;
-  if(unitControls?.state().targetMode){unitControls.hover(latLngToCell(p.lat,p.lng,8));$('mapTooltip').hidden=true;return;}
+  const cell = latLngToCell(p.lat, p.lng, 8);
+  if (heroView && heroView.isHeroMoveMode) heroView.setHoverCell(cell);
+  if(unitControls?.state().targetMode){unitControls.hover(cell);$('mapTooltip').hidden=true;return;}
   if (detailedMap() && !placing) {
-    const cell = latLngToCell(p.lat, p.lng, 8), owner = ownerCells().get(cell), known = playerById(owner);
+    const owner = ownerCells().get(cell), known = playerById(owner);
     if (isClanHallCell(cell)) {
       let html = `<div class="tooltip-header"><span style="color:#f59e0b">🏰</span> <b>${escape(CLAN_HALL_CENTER_COORDS.name)}</b> <small style="color:#ef4444">(${escape(CLAN_HALL_CENTER_COORDS.subtitle)})</small></div>`;
       html += `<div style="font-size:11px;color:#fbbf24;margin-top:2px;font-weight:600;">🔒 ${escape(CLAN_HALL_CENTER_COORDS.eventShortMessage)}</div>`;
@@ -1300,6 +1306,10 @@ canvas.addEventListener("pointerup", async (e) => {
     showDialog("clanHallDialog");
     toast(CLAN_HALL_CENTER_COORDS.eventMessage, false);
     return;
+  }
+  if (heroView) {
+    const handled = await heroView.handleCellClick(cell);
+    if (handled) return;
   }
   if (armyTargeting && model?.player) {
     if(!detailedMap()){focusAt(p.lat,p.lng,2048);return;}
@@ -2146,7 +2156,10 @@ function setupTutorial() {
 const telegramShell=createTelegramShell({getApp:()=>window.Telegram?.WebApp,launchData:telegramLaunchData,style:document.documentElement.style,
  onViewport:fit,onBack:()=>surfaces.back(),onActivity(active){telegramActive=active;if(active){paint();pollWorld();}else{cancelMapGesture();unitControls?.queue.pause();clearTimeout(pollTimer);if(frameHandle!==null)cancelAnimationFrame(frameHandle);frameHandle=null;}}
 });
-function setupTelegram(){telegramShell.setup();telegramShell.lockSwipes?.();surfaces.sync();}
+function setupTelegram(){
+  telegramShell.setup();
+  surfaces.sync();
+}
 window.addEventListener("DOMContentLoaded", setupTelegram);
 window.addEventListener("pointerdown", () => telegramShell.lockSwipes?.(), { passive: true });
 canvas.addEventListener("touchstart", () => telegramShell.lockSwipes?.(), { passive: true });

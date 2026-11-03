@@ -5,6 +5,7 @@ import { troopDeployment } from '../shared/troops.js';
 import { sectorAllows, captureHash } from '../shared/geography.js';
 import { adjacentCells, landscape, traversable } from '../shared/landscape.js';
 import { CAPTURE_DEPLOY_MS } from '../shared/conquest.js';
+import { HERO_CONFIG, calculateNeutralMobXp, calculatePvpUnitXp, awardHeroXp, globalHeroEvents, HERO_EVENTS } from '../shared/hero-engine.js';
 
 export const NPC_RULES = Object.freeze({ stepMs:500, maxCatchupMs:60000, captureMs:CAPTURE_DEPLOY_MS, respawnMs:18000,
   classes:{ infantry:{hp:100,damage:16,range:1,speed:3300,cooldown:1000},
@@ -140,7 +141,12 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
           if(at>=(unit.nextAttackAt||0)){
             const cover=target.type==='air'?0:terrain(target.cell).cover;
             const shield=all.some(ally=>ally.owner===target.owner&&ally.hp>0&&ally.faction==='protocol'&&ally.type==='ultimate'&&distance(ally.cell,target.cell)<=2)?.7:1;
-            const damage=Math.max(1,Math.round(spec.damage*(1-cover)*shield*(unit.neutral?.65:1)));
+            const attackerHero = byId.get(unit.owner)?.hero;
+            const defenderHero = byId.get(target.owner)?.hero;
+            const heroAttackBonus = attackerHero?.stats?.attack ? (1 + attackerHero.stats.attack * 0.05) : 1;
+            const heroDefenseReduction = defenderHero?.stats?.defense ? Math.max(0.2, 1 - defenderHero.stats.defense * 0.05) : 1;
+            const mountArmorBonus = defenderHero?.currentMount && HERO_CONFIG.mounts[defenderHero.currentMount]?.army_armor_bonus ? 0.95 : 1;
+            const damage=Math.max(1,Math.round(spec.damage*(1-cover)*shield*(unit.neutral?.65:1) * heroAttackBonus * heroDefenseReduction * mountArmorBonus));
             const encounter=[`${unit.id}@${unit.life||0}`,`${target.id}@${target.life||0}`].sort().join('|');
             for(const ownerId of new Set([unit.owner,target.owner])) {
               const combatant=byId.get(ownerId),combatArmy=armies.get(ownerId);
@@ -159,7 +165,23 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
             const victimArmy=armies.get(target.owner);
             if(victimArmy)event(victimArmy,{kind:'damage',at,unitId:target.id,sourceId:unit.id,sourceName,cell:target.cell,damage:target.lastDamage.amount});
             if(!target.hp){
-              const attacker=byId.get(unit.owner);if(attacker)attacker.unitsDefeated=(attacker.unitsDefeated||0)+1;
+              const attacker=byId.get(unit.owner);
+              if(attacker){
+                attacker.unitsDefeated=(attacker.unitsDefeated||0)+1;
+                if(attacker.hero){
+                  if(target.neutral){
+                    const mobXp=calculateNeutralMobXp(1,1);
+                    awardHeroXp(attacker.hero,mobXp);
+                    attacker.hero.mobsDefeated=(attacker.hero.mobsDefeated||0)+1;
+                    globalHeroEvents.emit(HERO_EVENTS.EVENT_BATTLE_END,{hero:attacker.hero,xpGained:mobXp,target:'neutral'});
+                  }else{
+                    const pvpXp=calculatePvpUnitXp(spec.hp||100);
+                    awardHeroXp(attacker.hero,pvpXp);
+                    attacker.hero.playersDefeated=(attacker.hero.playersDefeated||0)+1;
+                    globalHeroEvents.emit(HERO_EVENTS.EVENT_BATTLE_END,{hero:attacker.hero,xpGained:pvpXp,target:'pvp_unit'});
+                  }
+                }
+              }
               target.path=[];delete target.move;state(target,'death',at);event(army,{kind:'death',at,unitId:target.id,cell:target.cell});
             }
           }continue;

@@ -22,6 +22,10 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
     ['/api/army/unit-groups',(id,body)=>service.saveUnitGroup(id,body)],
     ['/api/player/customization',(id,body)=>service.updateCustomization(id,body)],
     ['/api/referrals/claim',id=>service.claimReferralEnergy(id)],
+    ['/api/hero/move',(id,body)=>service.moveHero(id,body)],
+    ['/api/hero/tame',(id,body)=>service.tameMount(id,body)],
+    ['/api/hero/perk',(id,body)=>service.selectHeroPerk(id,body)],
+    ['/api/hero/mount',(id,body)=>service.toggleHeroMount(id,body)],
   ]);
   return {
     service,

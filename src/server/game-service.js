@@ -16,6 +16,13 @@ import { isClanHallCell } from '../shared/clan-hall.js';
 import { validateSettlementPlacement, CONTINENTS, getContinent } from '../shared/continents.js';
 import { UNIT_GROUP_LIMIT, UNIT_CONTROL_SLOTS, UNIT_ORDER_LIMIT, TARGET_ORDER_MODES, remainingOrders, controlGroups, groupOrderMode } from '../shared/unit-orders.js';
 import { playerProfile, promotionUrl } from '../shared/player-profile.js';
+import {
+  HERO_CONFIG, HERO_STATES, HERO_EVENTS, globalHeroEvents,
+  createDefaultHero, getMaxMovementPoints, calculateStepMpCost,
+  awardHeroXp, calculateTamingChance, getDeterministicPoi, getWildMountAt,
+  getLeadershipSlots
+} from '../shared/hero-engine.js';
+import { landscape } from '../shared/landscape.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -162,7 +169,20 @@ export class GameService {
     const { fingerprintHash, seed, captureDebts, captureCursors, levelTimeline, energyPixels, energyTerrainAverage,
       stripeCustomerId, stripeSubscriptionId, borderCells, frontierBirths, abilities, abilityReceipts, army, ...safe } = player;
     const multiplier = captureMultiplierAt(player, now);
+    player.hero ??= createDefaultHero(player.id, player.baseCell, player.name, player.faction);
+    const hero = player.hero;
+    const maxMp = getMaxMovementPoints(hero);
+    const lastMpUpdate = hero.mpLastUpdate || player.tLast || now;
+    const elapsedSeconds = Math.max(0, (now - lastMpUpdate) / 1000);
+    if (elapsedSeconds > 0) {
+      hero.mp = Math.min(maxMp, (hero.mp ?? maxMp) + Math.round(elapsedSeconds * 2.5));
+      hero.mpLastUpdate = now;
+    }
+    hero.maxMp = maxMp;
+    hero.leadership = getLeadershipSlots(hero.level);
+
     return { ...safe, pixels: Math.floor(player.pixels), cap: stats.cap, sectorAngle: stats.sectorAngle ?? stats.angle,
+      hero: player.hero,
       capturePerHour: stats.capturePerHour * multiplier, baseCapturePerHour: stats.capturePerHour,
       captureMultiplier: multiplier, netPerHour: net, grossPerHour: gross,
       troops: troopDeployment(player, now), frontier: (borderCells ?? [player.baseCell]).slice(0, 8),
@@ -182,6 +202,7 @@ export class GameService {
   async model(tx, accountId, now, conflicts = []) {
     const player = await tx.get(`player:${accountId}`);
     return { serverTime: now, seasonId: this.config.seasonId, player: this.publicPlayer(player, now),
+      tamingResult: player?.tamingResult,
       factions: Object.values(FACTIONS), conflicts, region: CONFIG.REGION,
       notices: ['Общий серверный мир. Захват и экономика считаются по серверному времени.',
         'Карта рельефа и баланс предварительные; покупка второй базы и передача ресурсов отключены.'] };
@@ -408,6 +429,165 @@ export class GameService {
       player.unitGroupsVersion=(player.unitGroupsVersion||0)+1;
       await tx.put(`player:${accountId}`,player);
       return {unitGroups:player.unitGroups,unitGroupsVersion:player.unitGroupsVersion};
+    });
+  }
+
+  async moveHero(accountId, input = {}) {
+    fail(accountId, 'Необходим вход.', 401, 'AUTH_REQUIRED');
+    const destination = input.destination || input.cell;
+    fail(destination && validCell(destination), 'Укажите правильную ячейку назначения.');
+    return this.action(accountId, async (p, tx, now) => {
+      p.hero ??= createDefaultHero(p.id, p.baseCell, p.name, p.faction);
+      const hero = p.hero;
+      const maxMp = getMaxMovementPoints(hero);
+      const lastMpUpdate = hero.mpLastUpdate || now;
+      const elapsedSeconds = Math.max(0, (now - lastMpUpdate) / 1000);
+      if (elapsedSeconds > 0) {
+        hero.mp = Math.min(maxMp, (hero.mp ?? maxMp) + Math.round(elapsedSeconds * 2.5));
+        hero.mpLastUpdate = now;
+      }
+
+      const waypoints = Array.isArray(input.waypoints) && input.waypoints.length > 0
+        ? input.waypoints
+        : [destination];
+
+      let totalCost = 0;
+      for (const cell of waypoints) {
+        totalCost += calculateStepMpCost(cell, hero);
+      }
+      fail(hero.mp >= totalCost, `Недостаточно очков движения: нужно ${totalCost} MP, осталось ${hero.mp} MP.`);
+
+      hero.mp -= totalCost;
+      hero.cell = destination;
+      hero.state = hero.currentMount ? HERO_STATES.MOVING_MOUNTED : HERO_STATES.MOVING_WALK;
+
+      let xpGained = 0;
+      const discoveredPois = [];
+      const discoveredBiomes = [];
+
+      for (const stepCell of waypoints) {
+        const poi = getDeterministicPoi(stepCell);
+        if (poi && !hero.discoveredPois.includes(stepCell)) {
+          hero.discoveredPois.push(stepCell);
+          discoveredPois.push(poi);
+          xpGained += poi.xp;
+          if (poi.reward?.reward_crystals) p.crystals = (p.crystals || 0) + poi.reward.reward_crystals;
+          if (poi.reward?.reward_mp) hero.mp = Math.min(maxMp, hero.mp + poi.reward.reward_mp);
+          if (poi.reward?.reward_xp_bonus) xpGained += poi.reward.reward_xp_bonus;
+          if (poi.reward?.reward_item && !hero.inventory.includes(poi.reward.reward_item)) {
+            hero.inventory.push(poi.reward.reward_item);
+          }
+          globalHeroEvents.emit(HERO_EVENTS.EVENT_POI_DISCOVERED, { hero, poi });
+        }
+
+        const ls = landscape(stepCell);
+        if (ls.climate && !hero.discoveredBiomes.includes(ls.climate)) {
+          hero.discoveredBiomes.push(ls.climate);
+          discoveredBiomes.push(ls.climate);
+          xpGained += HERO_CONFIG.xp_sources.biome_discovery;
+          globalHeroEvents.emit(HERO_EVENTS.EVENT_BIOME_DISCOVERED, { hero, biome: ls.climate });
+        }
+      }
+
+      const radius = hero.currentMount ? (HERO_CONFIG.vision_radius_base + HERO_CONFIG.vision_radius_mounted_bonus) : HERO_CONFIG.vision_radius_base;
+      const visionDisk = gridDisk(destination, radius);
+      hero.revealedCells ??= [];
+      let newTilesCount = 0;
+      for (const c of visionDisk) {
+        if (!hero.revealedCells.includes(c)) {
+          hero.revealedCells.push(c);
+          newTilesCount++;
+        }
+      }
+      if (hero.revealedCells.length > 3000) hero.revealedCells = hero.revealedCells.slice(-3000);
+      xpGained += newTilesCount * HERO_CONFIG.xp_sources.fog_tile_reveal;
+
+      if (xpGained > 0) {
+        awardHeroXp(hero, xpGained);
+      }
+
+      hero.state = HERO_STATES.IDLE;
+      globalHeroEvents.emit(HERO_EVENTS.EVENT_HERO_MOVE, { hero, destination, mpCost: totalCost });
+    });
+  }
+
+  async tameMount(accountId, input = {}) {
+    fail(accountId, 'Необходим вход.', 401, 'AUTH_REQUIRED');
+    const targetCell = input.targetCell || input.cell;
+    fail(targetCell && validCell(targetCell), 'Укажите клетку с диким зверем.');
+    return this.action(accountId, async (p) => {
+      p.hero ??= createDefaultHero(p.id, p.baseCell, p.name, p.faction);
+      const hero = p.hero;
+      fail(hero.level >= HERO_CONFIG.taming.gate_level, `Укрощение доступно с ${HERO_CONFIG.taming.gate_level} уровня героя.`);
+      fail(distance(hero.cell, targetCell) <= 1, 'Подойдите вплотную к зверю (соседний гекс).');
+
+      const wild = getWildMountAt(targetCell);
+      fail(wild, 'На этом гексе нет диких зверей для приручения.');
+      const mount = HERO_CONFIG.mounts[wild.mountId];
+      fail(mount, 'Неизвестный маунт.');
+      fail(hero.level >= mount.min_level, `Для приручения этого зверя (${mount.name}) необходим ${mount.min_level} уровень.`);
+      fail(hero.inventory.includes(HERO_CONFIG.taming.required_item), `Для поимки требуется ${HERO_CONFIG.taming.item_name} в инвентаре.`);
+
+      hero.state = HERO_STATES.TAMING;
+      const chance = calculateTamingChance(hero.level);
+      const roll = Math.random();
+      const success = roll <= chance;
+
+      if (success) {
+        const itemIdx = hero.inventory.indexOf(HERO_CONFIG.taming.required_item);
+        if (itemIdx >= 0) hero.inventory.splice(itemIdx, 1);
+
+        hero.currentMount = mount.id;
+        hero.equippedMount = mount.id;
+        hero.mountsOwned ??= [];
+        if (!hero.mountsOwned.includes(mount.id)) hero.mountsOwned.push(mount.id);
+        hero.visionRadius = HERO_CONFIG.vision_radius_base + HERO_CONFIG.vision_radius_mounted_bonus;
+        hero.mp = getMaxMovementPoints(hero);
+
+        awardHeroXp(hero, 300);
+        globalHeroEvents.emit(HERO_EVENTS.EVENT_TAMING_SUCCESS, { hero, mount });
+      }
+      hero.state = HERO_STATES.IDLE;
+      p.tamingResult = { success, mount: mount.name, chance: Math.round(chance * 100) };
+    });
+  }
+
+  async selectHeroPerk(accountId, input = {}) {
+    fail(accountId, 'Необходим вход.', 401, 'AUTH_REQUIRED');
+    const perkId = input.perkId;
+    fail(HERO_CONFIG.perks[perkId], 'Неизвестный перк.');
+    return this.action(accountId, async (p) => {
+      p.hero ??= createDefaultHero(p.id, p.baseCell, p.name, p.faction);
+      const hero = p.hero;
+      fail(hero.pendingPerks > 0, 'Нет доступных очков перков.');
+      hero.pendingPerks -= 1;
+      hero.perks ??= [];
+      hero.perks.push(perkId);
+      if (perkId === 'attack') hero.stats.attack = (hero.stats.attack || 0) + 1;
+      if (perkId === 'defense') hero.stats.defense = (hero.stats.defense || 0) + 1;
+      if (perkId === 'intellect') hero.stats.intellect = (hero.stats.intellect || 0) + 1;
+      if (perkId === 'speed') {
+        hero.baseMp += 150;
+        hero.mp += 150;
+      }
+    });
+  }
+
+  async toggleHeroMount(accountId, input = {}) {
+    fail(accountId, 'Необходим вход.', 401, 'AUTH_REQUIRED');
+    const mountId = input.mountId;
+    return this.action(accountId, async (p) => {
+      p.hero ??= createDefaultHero(p.id, p.baseCell, p.name, p.faction);
+      const hero = p.hero;
+      if (!mountId || hero.currentMount === mountId) {
+        hero.currentMount = null;
+        hero.visionRadius = HERO_CONFIG.vision_radius_base;
+      } else {
+        fail((hero.mountsOwned || []).includes(mountId) || hero.equippedMount === mountId, 'Этот маунт ещё не приручен.');
+        hero.currentMount = mountId;
+        hero.equippedMount = mountId;
+        hero.visionRadius = HERO_CONFIG.vision_radius_base + HERO_CONFIG.vision_radius_mounted_bonus;
+      }
     });
   }
 
@@ -666,7 +846,8 @@ export class GameService {
         color: (typeof input.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(input.color.trim())) ? input.color.trim() : null,
         customLink: null, customLinkTitle: null,
         referralsCount: 0, reserveEnergy: 0, claimedReserveEnergy: 0,
-        battlesWon: 0, achievements: [] };
+        battlesWon: 0, achievements: [],
+        hero: createDefaultHero(accountId, cell, name, faction) };
       if(this.config.npcEnabled){player.army=createArmy(player,now);reconcileArmy(player.army,player,now);}
       if (input.referrer && typeof input.referrer === 'string' && input.referrer !== accountId) {
         const referrer = await tx.get(`player:${input.referrer}`);

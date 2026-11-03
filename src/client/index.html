@@ -54,6 +54,17 @@
       <button class="resource-pill crystal-pill" id="crystalsBtn" aria-label="Кристаллы и магазин"><svg><use href="#i-crystal"/></svg><strong id="crystals">0</strong></button>
     </div>
     <div class="header-actions">
+      <button class="surface hero-hud-button" id="heroHudBtn" aria-label="Ваш Герой" title="Герой, исследование и маунты" hidden>
+        <span class="hero-hud-icon" id="heroHudIcon">🧙‍♂️</span>
+        <div class="hero-hud-info">
+          <div class="hero-hud-row">
+            <strong id="heroHudLvl">Ур.1</strong>
+            <small id="heroHudMp">1000 MP</small>
+          </div>
+          <div class="hero-hud-mp-track"><div class="hero-hud-mp-bar" id="heroHudMpBar"></div></div>
+        </div>
+        <span class="hero-perk-dot" id="heroPerkDot" hidden title="Доступны очки навыков!">!</span>
+      </button>
       <button class="surface recon-button" id="fogReconBtn" aria-label="Разведка и туман войны" title="Туман войны: отправляйте войска, чтобы открывать мир"><span class="recon-eye-icon">👁</span><span id="fogReconLabel">Туман</span></button>
       <button class="surface profile-button" id="profileButton" aria-controls="accountPanel" aria-expanded="false" aria-label="Ваш аккаунт"><svg><use href="#i-person"/></svg><span id="profileName">Войти</span></button>
     </div>
@@ -378,6 +389,148 @@
 
   <div class="clanhall-actions">
     <button id="closeClanHallBtn" class="primary-button clanhall-btn" data-close="clanHallDialog">Понятно, ждём Сезон 2!</button>
+  </div>
+</dialog>
+<!-- Hero Panel Dialog -->
+<dialog id="heroPanel" class="floating-card hero-dialog">
+  <button class="close-button" data-close="heroPanel" aria-label="Закрыть панель героя"><svg><use href="#i-close"/></svg></button>
+  <div class="hero-modal-header">
+    <div class="hero-avatar-crest" id="heroPanelAvatar">🧙‍♂️</div>
+    <div>
+      <span class="eyebrow" id="heroPanelSubtitle">Герой · Уровень 1</span>
+      <h2 id="heroPanelTitle">Командир</h2>
+      <div class="hero-mode-badge" id="heroModeBadge">🚶 Пеший режим · Скорость 1.0x</div>
+    </div>
+  </div>
+
+  <div class="hero-progress-bars surface">
+    <div class="hero-bar-group">
+      <div class="bar-header"><span>Опыт (XP):</span><strong id="heroXpText">0 / 250 XP</strong></div>
+      <div class="hero-bar-track"><div class="hero-bar-fill xp-fill" id="heroXpBar" style="width: 0%;"></div></div>
+    </div>
+    <div class="hero-bar-group">
+      <div class="bar-header"><span>Очки движения (MP):</span><strong id="heroMpText">1000 / 1000 MP</strong></div>
+      <div class="hero-bar-track"><div class="hero-bar-fill mp-fill" id="heroMpBar" style="width: 100%;"></div></div>
+    </div>
+  </div>
+
+  <div class="hero-perk-alert surface" id="heroPerkAlert" hidden>
+    <div class="perk-alert-text">
+      <span>✨ Новые навыки: </span>
+      <strong id="heroPendingPerksCount">1</strong> очков доступно!
+    </div>
+    <button class="primary-button hero-perk-btn" id="heroPerkBtn">Прокачать ↗</button>
+  </div>
+
+  <div class="hero-stats-grid">
+    <div class="hero-stat-card surface">
+      <span class="hero-stat-label">⚔️ Атака армии</span>
+      <strong class="hero-stat-val" id="heroStatAttack">+5%</strong>
+    </div>
+    <div class="hero-stat-card surface">
+      <span class="hero-stat-label">🛡️ Защита армии</span>
+      <strong class="hero-stat-val" id="heroStatDefense">+0%</strong>
+    </div>
+    <div class="hero-stat-card surface">
+      <span class="hero-stat-label">🧠 Интеллект (XP)</span>
+      <strong class="hero-stat-val" id="heroStatIntellect">+0%</strong>
+    </div>
+    <div class="hero-stat-card surface">
+      <span class="hero-stat-label">👁️ Обзор тумана</span>
+      <strong class="hero-stat-val" id="heroStatVision">3 гекса</strong>
+    </div>
+    <div class="hero-stat-card surface">
+      <span class="hero-stat-label">🚩 Вместимость</span>
+      <strong class="hero-stat-val" id="heroStatLeadership">1 / 4 слота</strong>
+    </div>
+  </div>
+
+  <div class="hero-mount-section surface">
+    <h3>Стойло маунтов</h3>
+    <div class="hero-mount-slot" id="heroMountSlot">
+      <!-- Dynamic mount info -->
+    </div>
+    <div class="hero-mount-actions">
+      <button class="secondary-button" id="heroMountToggleBtn" hidden>Оседлать</button>
+    </div>
+  </div>
+
+  <div class="hero-actions-row">
+    <button class="primary-button hero-move-action-btn" id="heroMoveBtn" data-close="heroPanel">
+      <span>🧙‍♂️ Отправить в поход по карте</span>
+    </button>
+  </div>
+</dialog>
+<!-- Hero Level Up Dialog -->
+<dialog id="heroLevelUpDialog" class="floating-card hero-levelup-dialog">
+  <button class="close-button" data-close="heroLevelUpDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button>
+  <span class="eyebrow">Прокачка Героя</span>
+  <h2>Выберите улучшение</h2>
+  <p class="card-description">За каждый полученный уровень вы можете усилить боевые качества героя или ускорить армию.</p>
+
+  <div class="perks-grid">
+    <button class="perk-card surface" id="perk_attack">
+      <span class="perk-icon">⚔️</span>
+      <div class="perk-info">
+        <strong>Атака полководца</strong>
+        <p>+5% к урону всей вашей армии в бою</p>
+      </div>
+      <span class="perk-action">+</span>
+    </button>
+    <button class="perk-card surface" id="perk_defense">
+      <span class="perk-icon">🛡️</span>
+      <div class="perk-info">
+        <strong>Железная дисциплина</strong>
+        <p>+5% к защите отрядов (снижение входящего урона)</p>
+      </div>
+      <span class="perk-action">+</span>
+    </button>
+    <button class="perk-card surface" id="perk_speed">
+      <span class="perk-icon">⚡</span>
+      <div class="perk-info">
+        <strong>Быстрый марш</strong>
+        <p>+100 к максимальным очкам движения (MP)</p>
+      </div>
+      <span class="perk-action">+</span>
+    </button>
+    <button class="perk-card surface" id="perk_intellect">
+      <span class="perk-icon">🧠</span>
+      <div class="perk-info">
+        <strong>Стратегический гений</strong>
+        <p>+10% к получаемому героем опыту (XP) за любые действия</p>
+      </div>
+      <span class="perk-action">+</span>
+    </button>
+  </div>
+</dialog>
+<!-- Hero Taming Dialog -->
+<dialog id="heroTamingDialog" class="floating-card hero-taming-dialog">
+  <button class="close-button" data-close="heroTamingDialog" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button>
+  <span class="eyebrow">Дикая природа</span>
+  <h2>Укрощение зверя</h2>
+  <div class="tame-beast-hero surface">
+    <span class="tame-beast-icon" id="tameBeastIcon">🐎</span>
+    <div>
+      <h3 id="tameBeastName">Степной Скакун</h3>
+      <span class="tame-tier-badge" id="tameBeastTier">Ранг 1</span>
+    </div>
+  </div>
+
+  <div class="taming-conditions surface">
+    <div class="tame-row">
+      <span>Шанс укрощения:</span>
+      <strong class="tame-chance" id="tameChanceVal">40%</strong>
+    </div>
+    <div class="tame-row">
+      <span>Необходимо:</span>
+      <span id="tameItemStatus">✓ В наличии</span>
+    </div>
+    <p class="taming-rule-note">Верховая езда доступна с 10-го уровня. При успехе маунт увеличивает скорость в 2 раза и расширяет обзор!</p>
+  </div>
+
+  <div class="taming-actions-row">
+    <button class="primary-button" id="confirmTameBtn">🪢 Бросить лассо (Приручить)</button>
+    <button class="secondary-button" id="cancelTameBtn">Отмена</button>
   </div>
 </dialog>
 <script type="module" src="/main.js"></script>
