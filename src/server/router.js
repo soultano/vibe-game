@@ -19,6 +19,7 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
     ['/api/army/order',(id,body)=>service.commandArmy(id,body)],
     ['/api/army/unit-order',(id,body)=>service.commandUnit(id,body)],
     ['/api/army/unit-orders',(id,body)=>service.commandUnits(id,body)],
+    ['/api/army/queue-edit',(id,body)=>service.editUnitQueues(id,body)],
     ['/api/army/unit-groups',(id,body)=>service.saveUnitGroup(id,body)],
     ['/api/player/customization',(id,body)=>service.updateCustomization(id,body)],
     ['/api/referrals/claim',id=>service.claimReferralEnergy(id)],
@@ -37,7 +38,7 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
         if(path==='/api/health') {
           if(request.method!=='GET')throw new HttpError(405,'Метод не поддерживается.');
           await store.get('health:readiness');
-          return json({ok:true,version:2,worldVersion:CONFIG.WORLD_VERSION,storage:'persistent',timeAuthority:'server',gameplay:'npc-v1',landscape:'fantasy-v1',webGuest:false,authentication:'telegram',mapLod:'v1',terrainLod:'pyramid-v2',worldView:'globe-flat-v1',climate:'zones-v1',actors:'living-v2',unitOrders:'v1',groupOrders:'v1',controlGroups:'v1',orderQueue:'v1',serverTime:clock()});
+          return json({ok:true,version:2,worldVersion:CONFIG.WORLD_VERSION,storage:'persistent',timeAuthority:'server',gameplay:'npc-v1',landscape:'fantasy-v1',webGuest:false,authentication:'telegram',mapLod:'v1',terrainLod:'pyramid-v2',worldView:'globe-flat-v1',climate:'zones-v1',actors:'living-v2',unitOrders:'v1',groupOrders:'v1',controlGroups:'v1',orderQueue:'v1',queueEditing:'v1',telegramBotLogin:'v1',serverTime:clock()});
         }
         if(path==='/api/config'&&request.method==='GET')return json({worldVersion:CONFIG.WORLD_VERSION,region:CONFIG.REGION,factions:FACTIONS,tileResolution:5,cellResolution:8,pollMs:CONFIG.TILE_POLL_INTERVAL_MS,rotation:{crystals:CONFIG.ROTATE_CRYSTAL_COST,cooldownHours:CONFIG.ROTATE_COOLDOWN_HOURS},terrain:{approximate:true,source:CONFIG.TERRAIN_SOURCE}});
         if(path==='/api/state'&&request.method==='GET') {const {account}=await requireAuth(request,env,store);return json(await service.state(account.id));}
@@ -82,7 +83,7 @@ export function createApp({store,env={},clock=()=>Date.now(),serveAsset}) {
           return json(receipt?await service.applyPurchase(receipt):{received:true,ignored:true});
         }
         if(path==='/api/telegram/webhook') {
-          return await handleTelegramWebhook(request,env);
+          return await handleTelegramWebhook(request,env,store);
         }
         if(mutationRoutes.has(path)) {
           if(request.method!=='POST')throw new HttpError(405,'Изменение мира требует POST.');

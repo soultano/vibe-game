@@ -14,7 +14,7 @@ export function hitUnit(poses,x,y,owner){
   return{...p,hit:dx*dx+dy*dy};
  }).filter(p=>p.hit<=1).sort((a,b)=>a.hit-b.hit||b.y-a.y)[0]?.unit||null;
 }
-export function createUnitControls({$,createQueue,getPlayer,getUnits,getView,send,notify,invalidate,focus,ownerAt,onSelect=()=>{},onOpen=()=>{},onChange=()=>{}}){
+export function createUnitControls({$,createQueue,getPlayer,getUnits,getView,send,editQueue,notify,invalidate,focus,ownerAt,onSelect=()=>{},onOpen=()=>{},onChange=()=>{}}){
  let selected=new Set(),targetMode=null,opened=false,busy=false,rosterKey='',generation=0,hint='',groupSelecting=false;
  const guide=createTargetGuide();
  const ownUnits=()=>getUnits().filter(u=>u.owner===getPlayer()?.id&&!u.neutral);
@@ -152,7 +152,7 @@ export function createUnitControls({$,createQueue,getPlayer,getUnits,getView,sen
   }
   ctx.restore();
  }
- const queue=createQueue({$,getUnits:chosen,isBusy:()=>busy,getView,arm,notify,submit:orders=>issue(null,null,{orders,append:true}),changed:()=>{guide.clear();update();invalidate();}});
+ const queue=createQueue({$,getUnits:chosen,isBusy:()=>busy,getView,arm,notify,submit:orders=>issue(null,null,{orders,append:true}),edit:async edits=>{const epoch=generation;busy=true;update();try{return await editQueue(edits);}finally{if(epoch===generation){busy=false;update();invalidate();}}},changed:()=>{guide.clear();update();invalidate();}});
  const gestures=createUnitGestures({getView,getPlayer,ownUnits,hitUnit,layoutTroops,beginSelection,select,selectMany,open,invalidate,isBusy:()=>busy});
  const roster=$('unitRoster');
  roster.onclick=event=>{if(gestures.consumeRosterClick(event))return;const button=event.target.closest('[data-unit-id]');if(button)select(button.dataset.unitId,{additive:!!event.shiftKey||groupSelecting});};

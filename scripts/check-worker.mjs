@@ -11,6 +11,7 @@ import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { latLngToCell, cellToParent } from 'h3-js';
 import { createHash, createHmac } from 'node:crypto';
+import {telegramWebhookSecret} from '../src/server/telegram-bot-login.js';
 
 const project = resolve(import.meta.dirname, '..');
 const bundlePath = join(project, 'dist/server/index.js');
@@ -117,7 +118,9 @@ async function checkWorker() {
     const squadSource=await squadResponse.text();assert.ok(Buffer.byteLength(squadSource)<20000,'squad controls must fit 20 KB without model downloads');
     const queueModule=main.match(/import\("(\.\/chunks\/unit-queue-[^"]+\.js)"\)/)?.[1];assert.ok(queueModule,'queue planner must remain deferred');
     const queueResponse=await call(queueModule.slice(1));assert.equal(queueResponse.status,200);const queueSource=await queueResponse.text();assert.ok(Buffer.byteLength(queueSource)<6500,'queue planner must fit 6.5 KB');
-    assert.ok(await staticModuleBytes(squadModule.slice(1),squadSource)+await staticModuleBytes(queueModule.slice(1),queueSource)<32000,'all deferred tactical controls and their shared helpers must fit 32 KB');
+    const editorModule=main.match(/import\("(\.\/chunks\/queue-editor-[^"]+\.js)"\)/)?.[1];assert.ok(editorModule,'queue editing must stay deferred');
+    const editorResponse=await call(editorModule.slice(1));assert.equal(editorResponse.status,200);const editorSource=await editorResponse.text();assert.ok(Buffer.byteLength(editorSource)<6500,'queue editor must fit 6.5 KB');
+    assert.ok(await staticModuleBytes(squadModule.slice(1),squadSource)+await staticModuleBytes(queueModule.slice(1),queueSource)+await staticModuleBytes(editorModule.slice(1),editorSource)<36000,'deferred tactical controls, editor and shared helpers must fit 36 KB');
     const savedModule=main.match(/import\("(\.\/chunks\/control-groups-[^"]+\.js)"\)/)?.[1];
     assert.ok(savedModule,'saved control groups must be a separate deferred module');
     const savedResponse=await call(savedModule.slice(1));assert.equal(savedResponse.status,200);
@@ -189,9 +192,16 @@ async function checkWorker() {
     const sequence=[{mode:'move',cell:baseCell},{mode:'attack',cell:baseCell}];
     const queued=await call('/api/army/unit-orders',{method:'POST',headers:writeHeaders,body:JSON.stringify({unitIds:groupIds,orders:sequence,append:true})});assert.equal(queued.status,200);assert.ok((await queued.json()).player.army.units.filter(u=>groupIds.includes(u.id)).every(u=>u.order.mode==='move'&&u.orderQueue.at(-1).mode==='attack'));
     const queueReload=await call('/api/state',{headers:{authorization:writeHeaders.authorization}});assert.ok((await queueReload.json()).player.army.units.filter(u=>groupIds.includes(u.id)).every(u=>u.orderQueue?.length||u.order.mode==='attack'));
+    const beforeEdit=await(await call('/api/state',{headers:{authorization:writeHeaders.authorization}})).json();
+    const queueEdits=beforeEdit.player.army.units.filter(u=>groupIds.includes(u.id)).map(u=>({unitId:u.id,expectedKeys:u.order?.status==='complete'?[]:u.orderKeys,keys:[]}));
+    const edited=await call('/api/army/queue-edit',{method:'POST',headers:writeHeaders,body:JSON.stringify({edits:queueEdits})});assert.equal(edited.status,200);assert.ok((await edited.json()).player.army.units.filter(u=>groupIds.includes(u.id)).every(u=>u.order.mode==='hold'&&!u.orderQueue));
     const saved=await call('/api/army/unit-groups',{method:'POST',headers:writeHeaders,body:JSON.stringify({slot:1,unitIds:groupIds})});assert.equal(saved.status,200);assert.deepEqual((await saved.json()).unitGroups,[groupIds,[],[],[],[]]);
     const restored=await call('/api/state',{headers:{authorization:writeHeaders.authorization}});assert.deepEqual((await restored.json()).player.unitGroups[0],groupIds);
     const cleared=await call('/api/army/unit-groups',{method:'POST',headers:writeHeaders,body:JSON.stringify({slot:1,unitIds:[]})});assert.equal(cleared.status,200);assert.deepEqual((await cleared.json()).unitGroups,[[],[],[],[],[]]);
+    env.AUTH_FETCH=async()=>new Response(JSON.stringify({ok:true,result:{}}));
+    const botAttempt=await call('/api/auth/telegram/bot/start',{method:'POST',headers:writeHeaders,body:JSON.stringify({fingerprint:'worker-telegram-device'})});assert.equal(botAttempt.status,200);const attempt=await botAttempt.json();
+    const botConfirm=await call('/api/telegram/webhook',{method:'POST',headers:{'content-type':'application/json','x-telegram-bot-api-secret-token':await telegramWebhookSecret(botToken)},body:JSON.stringify({callback_query:{id:'worker-callback',data:'login:'+attempt.attemptId,from:{id:telegram.id,first_name:'Web player'},message:{message_id:1,chat:{id:telegram.id,type:'private'}}}})});assert.equal(botConfirm.status,200);
+    const botPoll=await call('/api/auth/telegram/bot/poll',{method:'POST',headers:writeHeaders,body:JSON.stringify({attemptId:attempt.attemptId,pollToken:attempt.pollToken,fingerprint:'worker-telegram-device'})});assert.equal(botPoll.status,200);assert.equal((await botPoll.json()).account.id,identity.account.id);
     assert.equal(db.prepare('SELECT count(*) AS count FROM _atomic_guard').get().count, 0);
     console.log(`Worker OK: HTML, ten WebP sprites, five GLBs and posters, lazy 3D chunk, download budgets, H3 config, SQL storage, host cookies, disabled dev auth, fresh NPC tile snapshots, 404 (${DB.counts.statements} real SQL statements).`);
   } finally { db.close(); }

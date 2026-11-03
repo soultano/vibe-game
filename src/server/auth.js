@@ -1,3 +1,4 @@
+import {startBotLogin,readBotLogin} from './telegram-bot-login.js';
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const CHALLENGE_MS = 20 * 60 * 1000;
 const OAUTH_MS = 10 * 60 * 1000;
@@ -479,12 +480,24 @@ export async function handleAuth(req, env, store) {
       if (session) await store.atomic({ checks: [{ key: session.key, version: session.version }], deletes: [session.key] });
       return json({ ok: true }, 200, { 'set-cookie': cookie(req, env, 'pd_session', '', 0) });
     }
-    if (!['/api/auth/guest', '/api/auth/dev', '/api/auth/telegram', '/api/auth/telegram/miniapp', '/api/auth/credentials/register', '/api/auth/credentials/login'].includes(path)) return json({ error: 'Маршрут авторизации не найден' }, 404);
+    if (!['/api/auth/guest', '/api/auth/dev', '/api/auth/telegram', '/api/auth/telegram/miniapp', '/api/auth/telegram/bot/start', '/api/auth/telegram/bot/poll', '/api/auth/credentials/register', '/api/auth/credentials/login'].includes(path)) return json({ error: 'Маршрут авторизации не найден' }, 404);
     if ((path === '/api/auth/guest' || path.startsWith('/api/auth/credentials/')) && !isLocalDevelopment(req, env)) return json({ error: 'Вход доступен только через Telegram.' }, 410);
     if (path === '/api/auth/dev' && !isLocalDevelopment(req, env)) return json({ error: 'Локальный тестовый вход отключён' }, 404);
     await preloginCsrf(req, env, store);
-    await throttle(req, env, store);
+    if(path!=='/api/auth/telegram/bot/poll')await throttle(req, env, store);
     const body = await readBody(req);
+    if(path.startsWith('/api/auth/telegram/bot/')){
+      if(!telegramEnabled(env))fail(503,'Вход через Telegram пока не настроен');
+      const fingerprint=await fingerprintHash(body.fingerprint);
+      if(path.endsWith('/start'))return json(await startBotLogin(store,{fingerprint,origin:appOrigin(req,env),botUsername:telegramUsername(env)}));
+      const row=await readBotLogin(store,body.attemptId,body.pollToken,fingerprint);
+      if(row.value.origin!==new URL(req.url).origin)fail(403,'Продолжите вход на том сайте, где вы его начали.');
+      if(row.value.status!=='approved')return json({status:row.value.status});
+      const user=row.value.user,account=await accountFor(store,'telegram',String(user.id),[user.first_name,user.last_name].filter(Boolean).join(' '),fingerprint);
+      const response=await signIn(req,env,store,account,false,'telegram-bot-used:'+body.attemptId);
+      await store.atomic({checks:[{key:'bot-login:'+body.attemptId,version:row.version}],puts:[{key:'bot-login:'+body.attemptId,value:{...row.value,status:'used'}}]});
+      return response;
+    }
     if (path === '/api/auth/guest') {
       const current = await getAuthContext(req, env, store); if (current) return await signIn(req, env, store, current.account);
       const fingerprint = await fingerprintHash(body.fingerprint);

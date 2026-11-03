@@ -108,6 +108,10 @@
     </div><button id="unitForgetGroup" class="text-button" type="button" hidden>Забыть группу</button></details>
     <div class="unit-queue-actions"><button id="unitCancelTarget" class="text-button" hidden>Отмена выбора цели</button><button id="unitQueueUndo" class="text-button" aria-label="Убрать последний приказ из очереди" hidden>↶</button></div>
     <p id="unitQueueInfo" class="unit-queue-info" hidden></p>
+    <details id="unitQueueEditor" class="queue-editor" hidden><summary id="unitQueueEditorTitle">Приказы</summary>
+      <div id="unitQueuePointActions" class="queue-point-actions" hidden><label>Позиция <select id="unitQueuePosition" aria-label="Позиция выбранного приказа"></select></label><button id="unitQueueDelete" type="button"><svg aria-hidden="true"><use href="#i-close"/></svg>Удалить</button></div>
+      <ol id="unitQueueList" aria-label="Редактирование точек маршрута"></ol><p id="unitQueueEditStatus" role="status" aria-live="polite"></p><button id="unitQueueEditRetry" type="button" hidden>Повторить сохранение</button>
+    </details>
     <p id="unitPurpose" class="unit-purpose"></p>
     <p id="unitHealthReason" class="unit-health-reason"></p>
     <p id="unitOrderStatus" class="unit-order-status" role="status" aria-live="polite"></p><p id="unitRouteInfo" class="unit-route-info"></p>
@@ -342,7 +346,6 @@
 <!-- Auth Modal Dialog -->
 <dialog id="authModal" class="floating-card auth-modal-dialog">
   <button class="close-button" id="closeAuthModalBtn" aria-label="Закрыть окно регистрации"><svg><use href="#i-close"/></svg></button>
-  <span class="eyebrow"><span class="status-light" aria-hidden="true"></span> КОМАНДНЫЙ ЦЕНТР</span>
   <h2 id="authModalTitle">Вход через Telegram</h2>
   <p class="auth-modal-prompt" id="authModalPrompt">Войдите через Telegram. На сайте и в Mini App откроются одна база и общий прогресс.</p>
 
@@ -352,7 +355,7 @@
       <span>Через Telegram</span>
     </button>
     <div id="modalTelegramWidget"></div>
-    <a id="telegramBotLink" class="bot-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть чат бота → нажать «Играть»</a>
+    <a id="telegramBotLink" class="bot-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть чат бота и нажать «Играть»</a>
 
     <button id="guestLogin" class="secondary-button auth-modal-btn" hidden>Играть без регистрации</button>
     <div id="devAuth" class="local-login" hidden><input id="devName" maxlength="24" value="Командир" aria-label="Имя командира" autocomplete="off"><button class="secondary-button" id="devLogin">Начать</button></div>

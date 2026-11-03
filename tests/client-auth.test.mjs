@@ -89,8 +89,10 @@ test('ordinary browser opens Telegram login in the current game window and share
   assert.equal(h.$('telegramBotLink').href, 'https://t.me/DominionTestBot');
   await h.click('modalTelegramBtn');
   assert.equal(h.sandbox.location.assigned, undefined, 'website login must keep the game on the website');
+  assert.match(h.$('telegramBotLink').href,/\?start=login_/);
+  h.sandbox.openTelegramWidget();
   assert.equal(h.$('modalTelegramWidget').children.length, 1);
-  await h.click('modalTelegramBtn');
+  h.sandbox.openTelegramWidget();
   assert.equal(h.$('modalTelegramWidget').children.length, 1);
   await h.sandbox.onTelegramAuth(widgetUser());
   assert.equal(h.client.state().account.provider, 'telegram');
@@ -123,11 +125,11 @@ test('local development can retry a failed guest login without Telegram', async 
 test('Telegram widget failure leaves its fallback and login retry accessible', async () => {
   const h = await createClientHarness({ ...options(), launchData: '' });
   await h.click('openAuthModalBtn');
-  await h.click('modalTelegramBtn');
+  h.sandbox.openTelegramWidget();
   h.$('modalTelegramWidget').children[0].onerror();
   assert.equal(h.$('modalTelegramWidget').children.length, 0);
   assert.match(h.$('modalAuthNotice').textContent, /ещё раз/);
-  await h.click('modalTelegramBtn');
+  h.sandbox.openTelegramWidget();
   assert.equal(h.$('modalTelegramWidget').children.length, 1);
   assert.equal(h.visible('telegramBotLink'), true);
   assert.equal(h.visible('guestLogin'), false);

@@ -1,6 +1,7 @@
 import { json, readJSON } from './http.js';
+import {validTelegramWebhook,handleBotLoginUpdate} from './telegram-bot-login.js';
 
-export async function handleTelegramWebhook(request, env) {
+export async function handleTelegramWebhook(request, env, store) {
   if (request.method !== 'POST') {
     return json({ error: 'Метод не поддерживается.' }, 405);
   }
@@ -9,6 +10,7 @@ export async function handleTelegramWebhook(request, env) {
   if (!botToken) {
     return json({ ok: false, error: 'Telegram bot token not configured' }, 503);
   }
+  if(!await validTelegramWebhook(request,env))return json({error:'Webhook не подтверждён.'},403);
 
   let update;
   try {
@@ -18,6 +20,12 @@ export async function handleTelegramWebhook(request, env) {
   }
 
   const message = update?.message;
+  const fetcher=typeof env.AUTH_FETCH==='function'?env.AUTH_FETCH:fetch;
+  async function send(method,body){
+    try{const response=await fetcher(`https://api.telegram.org/bot${botToken}/${method}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});const result=await response.json();if(!response.ok||!result.ok)throw 0;return result.result;}
+    catch{throw new Error('Telegram dispatch failed');}
+  }
+  if(store){try{if(await handleBotLoginUpdate(update,env,store,send))return json({ok:true});}catch{return json({ok:false,error:'Не удалось ответить Telegram.'},502);}}
   const chatId = message?.chat?.id;
 
   if (chatId) {
@@ -65,7 +73,7 @@ export async function handleTelegramWebhook(request, env) {
         }),
       });
     } catch (e) {
-      console.error('telegram_webhook_dispatch_error', e?.message || e);
+      console.error('telegram_webhook_dispatch_error');
     }
   }
 

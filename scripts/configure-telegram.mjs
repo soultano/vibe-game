@@ -1,6 +1,7 @@
 // Administrative helper: secrets arrive through non-echoing stdin, never argv.
 import { writeFile, readFile, chmod } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import {telegramWebhookSecret} from '../src/server/telegram-bot-login.js';
 
 async function readInput() {
   process.stdin.setEncoding('utf8');
@@ -56,7 +57,14 @@ try {
     menuConfigured = menu.type === 'web_app' && menu.web_app?.url === url.href;
     if (!menuConfigured) throw new Error('Menu verification failed');
   }
-  console.log(JSON.stringify({ id: bot.id, username: bot.username, name: bot.first_name, localSaved: !!input.saveLocal, menuConfigured }));
+  let webhookConfigured=false;
+  if(input.webhookUrl){
+    const url=new URL(input.webhookUrl);if(url.protocol!=='https:')throw new Error('Menu URL must use HTTPS');
+    await api('setWebhook',{url:url.href,secret_token:await telegramWebhookSecret(input.token),allowed_updates:['message','callback_query']});
+    const info=await api('getWebhookInfo');webhookConfigured=info.url===url.href&&info.allowed_updates?.includes('callback_query');
+    if(!webhookConfigured)throw new Error('Menu verification failed');
+  }
+  console.log(JSON.stringify({ id: bot.id, username: bot.username, name: bot.first_name, localSaved: !!input.saveLocal, menuConfigured,webhookConfigured }));
 } catch (error) {
   // Never print fetch exceptions or request URLs: they can contain credentials.
   console.error(error.message.startsWith('Telegram ') || ['Invalid token format', 'Not a bot account', 'Menu URL must use HTTPS', 'Menu verification failed', 'Invalid input', 'Input too large'].includes(error.message) ? error.message : 'Telegram configuration failed');

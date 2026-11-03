@@ -6,7 +6,7 @@ import { ABILITIES, abilityDefinition, factionAbilityName, captureMultiplierAt }
 import { CATALOG } from '../shared/catalog.js';
 import { resolveCombat } from '../shared/combat.js';
 import { troopDeployment } from '../shared/troops.js';
-import { createArmy, advanceArmies, publicArmy, reconcileArmy, findRoute } from './npc-simulation.js';
+import { createArmy, advanceArmies, publicArmy, reconcileArmy, findRoute, ensureOrderKeys } from './npc-simulation.js';
 import { traversable, adjacentCells } from '../shared/landscape.js';
 import { aggregateOverview, mapEntry } from './map-overview.js';
 import { nearbyPlayerIds, indexPlayer, projectedRadius } from './spatial-index.js';
@@ -14,7 +14,7 @@ export { CATALOG } from '../shared/catalog.js';
 import { sectorCellIterator, terrainForCell, validatePlayableCell, tileForCell, encodeTile, decodeTile, cellIsLand } from '../shared/geography.js';
 import { isClanHallCell } from '../shared/clan-hall.js';
 import { validateSettlementPlacement, CONTINENTS, getContinent } from '../shared/continents.js';
-import { UNIT_GROUP_LIMIT, UNIT_CONTROL_SLOTS, UNIT_ORDER_LIMIT, TARGET_ORDER_MODES, remainingOrders, controlGroups, groupOrderMode } from '../shared/unit-orders.js';
+import { UNIT_GROUP_LIMIT, UNIT_CONTROL_SLOTS, UNIT_ORDER_LIMIT, TARGET_ORDER_MODES, remainingOrders, queueEntries, controlGroups, groupOrderMode } from '../shared/unit-orders.js';
 import { playerProfile, promotionUrl } from '../shared/player-profile.js';
 import {
   HERO_CONFIG, HERO_STATES, HERO_EVENTS, globalHeroEvents,
@@ -382,7 +382,7 @@ export class GameService {
         fail(distance(p.baseCell,input.cell)<=Math.max(12,projectedRadius(p)+8),'Цель слишком далеко.');
       }
       p.army??=createArmy(p,now);p.army.order={mode:input.mode,cell:input.mode==='attack'?input.cell:null};
-      for(const u of p.army.units){delete u.order;delete u.orderQueue;u.path=[];u.targetCell=null;u.waitUntil=0;u.blockedGoals={};u.activity=input.mode==='defend'?'guard':'advance';}
+      for(const u of p.army.units){delete u.order;delete u.orderQueue;delete u.orderKeys;u.path=[];u.targetCell=null;u.waitUntil=0;u.blockedGoals={};u.activity=input.mode==='defend'?'guard':'advance';}
     });
   }
 
@@ -594,7 +594,30 @@ export class GameService {
   commandableUnit(player,id){
     const unit=player.army?.units.find(u=>u.id===id&&!u.neutral&&u.owner===player.id);
     fail(unit,'Можно управлять только своим отрядом.',403);fail(unit.hp>0,'Отряд погиб. Дождитесь возрождения.');
-    return unit;
+    ensureOrderKeys(unit);return unit;
+  }
+
+  async editUnitQueues(accountId,input={}){
+    const edits=input.edits;
+    fail(Array.isArray(edits)&&edits.length>0&&edits.length<=UNIT_GROUP_LIMIT&&new Set(edits.map(e=>e?.unitId)).size===edits.length,'Укажите разные собственные отряды.');
+    for(const e of edits)fail(e&&typeof e.unitId==='string'&&e.unitId.length<=160&&[e.expectedKeys,e.keys].every(list=>Array.isArray(list)&&list.length<=UNIT_ORDER_LIMIT&&new Set(list).size===list.length&&list.every(k=>typeof k==='string'&&k.length<=64)),'Некорректное изменение очереди.');
+    return this.action(accountId,async(p,tx,now)=>{
+      const routes=new Map(),prepared=[];
+      for(const edit of edits){
+        const unit=this.commandableUnit(p,edit.unitId),current=queueEntries(unit),keys=current.map(o=>o.key),offset=edit.expectedKeys.length-keys.length;
+        fail(offset>=0&&keys.every((key,i)=>key===edit.expectedKeys[offset+i]),'Очередь изменена в другом окне. Обновите список и повторите.',409,'QUEUE_CHANGED');
+        fail(edit.keys.every(key=>edit.expectedKeys.includes(key)),'Нельзя добавлять неизвестные приказы.');
+        const wanted=edit.keys.map(key=>current.find(o=>o.key===key)).filter(Boolean),keep=wanted.length&&wanted[0].key===unit.orderKeys?.[0]&&unit.order?.status!=='complete';
+        let plan;
+        if(keep){
+          const captured=new Set(unit.order.mode==='capture'?[unit.order.cell]:[]),plans=[];let from=unit.order.cell;
+          for(const order of wanted.slice(1)){const next=await this.planUnitOrder(p,unit,order.mode,order.cell,tx,now,routes,{from,captured});plans.push(next);from=next.goal;if(order.mode==='capture')captured.add(order.cell);}
+          plan={keep:true,plans,prior:[]};
+        }else plan=await this.planUnitSequence(p,unit,{orders:wanted.length?wanted:[{mode:'hold'}],append:false},tx,now,routes);
+        prepared.push({unit,plan,keys:wanted.map(o=>o.key)});
+      }
+      for(const {unit,plan,keys} of prepared){this.applyUnitSequence(unit,plan,now);if(keys.length)unit.orderKeys=keys;else delete unit.orderKeys;}
+    });
   }
 
   readUnitSequence(input){
@@ -622,9 +645,11 @@ export class GameService {
   }
 
   applyUnitSequence(unit,{keep,plans,prior},now){
+    const keys=keep?[...(unit.orderKeys||[]),...plans.map(()=>crypto.randomUUID())]:plans.map(()=>crypto.randomUUID());
     const pending=keep?[...prior,...plans.map(p=>({mode:p.mode,cell:p.goal}))]:plans.slice(1).map(p=>({mode:p.mode,cell:p.goal}));
     if(!keep)this.applyUnitOrder(unit,plans[0],now);
     if(pending.length)unit.orderQueue=pending;else delete unit.orderQueue;
+    if(TARGET_ORDER_MODES.includes(unit.order?.mode))unit.orderKeys=keys;else delete unit.orderKeys;
   }
 
   async planUnitOrder(p,unit,mode,cell,tx,now,routes=new Map(),options={}){
@@ -655,6 +680,7 @@ export class GameService {
   }
 
   applyUnitOrder(unit,{mode,goal,path},now){
+    delete unit.orderKeys;
     delete unit.orderQueue;
     unit.path=[...path];unit.targetId=null;unit.targetCell=mode==='auto'?null:goal;unit.waitUntil=0;unit.blockedGoals={};
     if(mode==='auto'){delete unit.order;unit.activity='advance';}

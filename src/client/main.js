@@ -98,8 +98,8 @@ async function ensureControlGroups(){
  return unitGroupsPromise;
 }
 async function ensureUnitControls(){
- if(!unitControlsPromise)unitControlsPromise=Promise.all([import('./unit-controls.js'),import('./unit-queue.js')]).then(async([{createUnitControls},{createUnitQueue}])=>{
-  unitControls=createUnitControls({$,createQueue:createUnitQueue,getPlayer:()=>model?.player,getUnits:()=>battlefield.units(serverNow()),getView:unitCommandView,
+ if(!unitControlsPromise)unitControlsPromise=Promise.all([import('./unit-controls.js'),import('./unit-queue.js'),import('./queue-editor.js')]).then(async([{createUnitControls},{createUnitQueue},{createQueueEditor}])=>{
+  unitControls=createUnitControls({$,createQueue:options=>createUnitQueue({...options,createEditor:createQueueEditor}),editQueue:edits=>action('/api/army/queue-edit',{edits}),getPlayer:()=>model?.player,getUnits:()=>battlefield.units(serverNow()),getView:unitCommandView,
    send:input=>action(input.unitIds?'/api/army/unit-orders':'/api/army/unit-order',input,input.orders?`Очередь принята: ${input.orders.length} приказов.`:input.unitIds?`Приказ группе принят: ${input.unitIds.length}.`:'Приказ отряду принят.'),notify:toast,invalidate:paint,onChange:()=>{if(!unitControls?.isOpen())unitGroups?.cancel();const tm=unitControls?.state().targetMode;const banner=$('targetingBanner');if(banner){banner.hidden=!tm;if(tm){const s=banner.querySelector('span');if(s)s.textContent=tm==='attack'?'⚔ Режим атаки: нажмите на цель на карте':tm==='capture'?'⚑ Режим захвата: выберите золотой гекс':'↗ Режим движения: выберите гекс';}}surfaces.sync();},
    ownerAt:cell=>ownerCells().get(cell),onSelect:id=>{battlefield.select(id);unitGroups?.update();},
    focus:cell=>focusAt(...cellToLatLng(cell),Math.max(2048,zoom)),
@@ -390,7 +390,7 @@ async function api(path, body, options = {}) {
     const error = Object.assign(new Error(result.error || "Действие отклонено."), { status: response.status });
     throw error;
   }
-  if (result.sessionToken) { saveSession(result.sessionToken); loginToken = ''; }
+  if (result.sessionToken&&(!options.acceptSession||options.acceptSession())) { saveSession(result.sessionToken); loginToken = ''; }
   return result;
 }
 const heroView = new HeroView({ $, api, toast, paint, showDialog, getPlayer: () => model?.player, surfaces });
@@ -1530,6 +1530,7 @@ $("telegramLogin").onclick = () => {
 function openAuthModal() {
   setText('modalAuthNotice', telegramLaunchData && !account ? $('authNotice').textContent : '');
   showDialog("authModal");
+  ensureBotLogin().then(flow=>flow.resume()).catch(()=>{});
 }
 function closeAuthModal() {
   $("authModal")?.close();
@@ -1537,11 +1538,13 @@ function closeAuthModal() {
 if ($("openAuthModalBtn")) $("openAuthModalBtn").onclick = () => openAuthModal();
 if ($("closeAuthModalBtn")) $("closeAuthModalBtn").onclick = () => closeAuthModal();
 
-if ($("modalTelegramBtn")) $("modalTelegramBtn").onclick = () => {
+let botLogin=null,botLoginPromise=null;
+async function ensureBotLogin(){if(!botLoginPromise)botLoginPromise=import('./telegram-bot-login.js').then(({createTelegramBotLogin})=>botLogin=createTelegramBotLogin({$,api,fingerprint,refreshAuth,getAccount:()=>account,setBusy:setAuthBusy})).catch(error=>{botLoginPromise=null;setText('modalAuthNotice','Не удалось загрузить вход. Повторите.');throw error;});return botLoginPromise;}
+if ($("modalTelegramBtn")) $("modalTelegramBtn").onclick = async () => {
   if (!providers.telegram?.enabled) return;
   if (telegramLaunchData) return $('telegramLogin').onclick();
-  window.openTelegramWidget();
-  setText('modalAuthNotice', 'Подтвердите вход в виджете Telegram. Игра продолжится в этом окне.');
+  const popup=typeof window.open==='function'?window.open('about:blank','_blank'):null;
+  try{return(await ensureBotLogin()).start(popup);}catch{popup?.close();}
 };
 
 $("logoutBtn").onclick = async () => {

@@ -5,6 +5,12 @@ import { troopDeployment } from '../shared/troops.js';
 import { sectorAllows, captureHash } from '../shared/geography.js';
 import { adjacentCells, landscape, traversable } from '../shared/landscape.js';
 import { CAPTURE_DEPLOY_MS } from '../shared/conquest.js';
+import {TARGET_ORDER_MODES} from '../shared/unit-orders.js';
+export function ensureOrderKeys(unit){
+ const size=(unit.order&&TARGET_ORDER_MODES.includes(unit.order.mode)?1:0)+(unit.orderQueue?.length||0);
+ if(size&&unit.orderKeys?.length!==size)unit.orderKeys=Array.from({length:size},()=>crypto.randomUUID());
+ if(!size)delete unit.orderKeys;
+}
 import { HERO_CONFIG, calculateNeutralMobXp, calculatePvpUnitXp, awardHeroXp, globalHeroEvents, HERO_EVENTS } from '../shared/hero-engine.js';
 
 export const NPC_RULES = Object.freeze({ stepMs:500, maxCatchupMs:60000, captureMs:CAPTURE_DEPLOY_MS, respawnMs:18000,
@@ -51,6 +57,7 @@ function addUnit(army,player,type,index,at){
     cell:player.baseCell,hp:spec.hp,maxHp:spec.hp,state:'idle',stateAt:at,createdAt:at,path:[],nextAttackAt:at,targetId:null,targetCell:null});
 }
 export function reconcileArmy(army,player,at){
+  for(const unit of army.units)ensureOrderKeys(unit);
   const wanted=new Map(troopDeployment(player,at).map(g=>[g.type,g.count]));
   army.units=army.units.filter(u=>u.neutral || u.index<(wanted.get(u.type)||0));
   for(const [type,count]of wanted)for(let i=0;i<count;i++)if(!army.units.some(u=>!u.neutral&&u.type===type&&u.index===i))addUnit(army,player,type,i,at);
@@ -119,11 +126,11 @@ export async function advanceArmies({players,armies,now,owner,locked,claim,terra
       const reservations=new Set(army.units.filter(u=>u.hp>0).map(u=>u.targetCell).filter(Boolean));
       for(const unit of [...army.units].sort((a,b)=>a.id.localeCompare(b.id))){
         const spec=unitStats(unit.faction,unit.type);
-        if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.life=(unit.life||0)+1;unit.cell=player.baseCell;unit.path=[];delete unit.move;delete unit.order;delete unit.orderQueue;delete unit.lastDamage;unit.targetCell=null;state(unit,'idle',at);}continue;}
+        if(unit.hp<=0){state(unit,'death',at);if(!unit.neutral&&at-unit.stateAt>=NPC_RULES.respawnMs){unit.hp=unit.maxHp;unit.life=(unit.life||0)+1;unit.cell=player.baseCell;unit.path=[];delete unit.move;delete unit.order;delete unit.orderQueue;delete unit.orderKeys;delete unit.lastDamage;unit.targetCell=null;state(unit,'idle',at);}continue;}
         if(unit.move){if(at<unit.move.endsAt)continue;unit.cell=unit.move.to;delete unit.move;
           if(unit.activity==='patrol'&&!unit.path.length){unit.patrolStep=(unit.patrolStep||0)+1;unit.waitUntil=at+2000+captureHash(unit.cell,unit.index+unit.patrolStep)%2000;state(unit,'idle',at);}}
         if(unit.orderQueue?.length&&unit.order?.status!=='blocked'&&(unit.order?.status==='complete'||unit.order?.mode==='move'&&unit.cell===unit.order.cell)){
-          const next=unit.orderQueue.shift();unit.order={...next,status:'queued',issuedAt:at,reason:null};
+          const next=unit.orderQueue.shift();unit.orderKeys?.shift();unit.order={...next,status:'queued',issuedAt:at,reason:null};
           unit.path=[];unit.targetId=null;unit.targetCell=next.cell;unit.waitUntil=0;unit.activity='command';
           if(!unit.orderQueue.length)delete unit.orderQueue;
         }

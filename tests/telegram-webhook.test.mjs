@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleTelegramWebhook } from '../src/server/telegram-webhook.js';
+import {telegramWebhookSecret} from '../src/server/telegram-bot-login.js';
 
 test('Telegram webhook rejects non-POST requests with 405', async () => {
   const req = new Request('https://vibe-game-ten.vercel.app/api/telegram/webhook', { method: 'GET' });
@@ -42,7 +43,7 @@ test('Telegram webhook handles /start and sends welcome with mini app button', a
 
   const req = new Request('https://vibe-game-ten.vercel.app/api/telegram/webhook', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json','x-telegram-bot-api-secret-token':await telegramWebhookSecret(env.TELEGRAM_BOT_TOKEN) },
     body: JSON.stringify(update),
   });
 
@@ -72,7 +73,7 @@ test('Telegram webhook ignores updates without chat id gracefully', async () => 
 
   const req = new Request('https://vibe-game-ten.vercel.app/api/telegram/webhook', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json','x-telegram-bot-api-secret-token':await telegramWebhookSecret(env.TELEGRAM_BOT_TOKEN) },
     body: JSON.stringify({ update_id: 99 }),
   });
 

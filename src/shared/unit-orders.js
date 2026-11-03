@@ -9,3 +9,7 @@ export const remainingOrders = unit => [
 ];
 export const controlGroups = player => Array.from({length: UNIT_CONTROL_SLOTS}, (_, i) => player?.unitGroups?.[i] || []);
 export const groupOrderMode = (mode, unit) => mode === 'capture' && unit.type === 'air' ? 'attack' : mode;
+export function queueEntries(unit){
+ const active=unit.order&&TARGET_ORDER_MODES.includes(unit.order.mode),all=[...(active?[unit.order]:[]),...(unit.orderQueue||[])];
+ return all.map((o,i)=>({key:unit.orderKeys?.[i],mode:o.mode,cell:o.cell})).filter((o,i)=>!(active&&i===0&&unit.order.status==='complete'));
+}
